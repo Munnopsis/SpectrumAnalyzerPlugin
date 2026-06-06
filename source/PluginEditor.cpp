@@ -19,6 +19,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (rmsButton);
     addAndMakeVisible (peakButton);
     addAndMakeVisible (clearPeakButton);
+    addAndMakeVisible (tooltipButton);
     addAndMakeVisible (inputModeBox);
     addAndMakeVisible (fftSizeBox);
     addAndMakeVisible (peakHoldDecayBox);
@@ -31,6 +32,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     rmsButton.setName ("RmsButton");
     peakButton.setName ("PeakButton");
     clearPeakButton.setName ("ClearPeakButton");
+    tooltipButton.setName ("TooltipButton");
     inputModeBox.setName ("InputModeBox");
     fftSizeBox.setName ("FftSizeBox");
     peakHoldDecayBox.setName ("PeakHoldDecayBox");
@@ -43,6 +45,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     rmsButton.setWantsKeyboardFocus (true);
     peakButton.setWantsKeyboardFocus (true);
     clearPeakButton.setWantsKeyboardFocus (true);
+    tooltipButton.setWantsKeyboardFocus (true);
     inputModeBox.setWantsKeyboardFocus (true);
     fftSizeBox.setWantsKeyboardFocus (true);
     peakHoldDecayBox.setWantsKeyboardFocus (true);
@@ -55,6 +58,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     rmsButton.setTooltip ("Show or hide the RMS spectrum curve");
     peakButton.setTooltip ("Show or hide the peak hold curve");
     clearPeakButton.setTooltip ("Clear the peak hold curve");
+    tooltipButton.setTooltip ("Show or hide tooltips");
 
     clearPeakButton.onClick = [this]
     {
@@ -64,6 +68,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     liveButton.setClickingTogglesState (true);
     rmsButton.setClickingTogglesState (true);
     peakButton.setClickingTogglesState (true);
+    tooltipButton.setClickingTogglesState (true);
+    tooltipButton.setToggleState (true, juce::dontSendNotification);
+
+    tooltipButton.onClick = [this]
+    {
+        setTooltipsEnabled (tooltipButton.getToggleState());
+    };
 
     auto& state = processorRef.getValueTreeState();
 
@@ -158,7 +169,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         inspector->setVisible (true);
     };
 
-    setSize (1500, 650);
+    setSize (1562, 650);
 
     startTimerHz (30);
 }
@@ -187,7 +198,7 @@ void PluginEditor::resized()
 
     auto topBar = bounds.reduced (12).removeFromTop (32);
 
-    auto rightControls = topBar.removeFromRight (1200);
+    auto rightControls = topBar.removeFromRight (1262);
 
     inputModeBox.setBounds (rightControls.removeFromLeft (150));
     rightControls.removeFromLeft (8);
@@ -220,6 +231,9 @@ void PluginEditor::resized()
     rightControls.removeFromLeft (8);
 
     inspectButton.setBounds (rightControls.removeFromLeft (140));
+    rightControls.removeFromLeft (8);
+
+    tooltipButton.setBounds (rightControls.removeFromLeft (54));
 }
 
 void PluginEditor::timerCallback()
@@ -239,4 +253,9 @@ void PluginEditor::timerCallback()
         spectrumDisplay.setPeakHoldSpectrumDb (analyzerFrame.peakHoldDb);
         spectrumDisplay.setRmsSpectrumDb (analyzerFrame.rmsDb);
     }
+}
+
+void PluginEditor::setTooltipsEnabled (bool shouldBeEnabled)
+{
+    tooltipWindow.setTooltipsEnabled (shouldBeEnabled);
 }

@@ -26,11 +26,49 @@ private:
     using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
     void timerCallback() override;
+    void setTooltipsEnabled (bool shouldBeEnabled);
 
     PluginProcessor& processorRef;
 
     std::unique_ptr<melatonin::Inspector> inspector;
-    juce::TooltipWindow tooltipWindow { this, 700 };
+    static constexpr int tooltipDelayMs = 700;
+
+    class ToggleableTooltipWindow : public juce::TooltipWindow
+    {
+    public:
+        ToggleableTooltipWindow (juce::Component* parentComponent,
+                                 int millisecondsBeforeTipAppears)
+            : juce::TooltipWindow (parentComponent, millisecondsBeforeTipAppears)
+        {
+        }
+
+        void setTooltipsEnabled (bool shouldBeEnabled)
+        {
+            if (tooltipsEnabled == shouldBeEnabled)
+                return;
+
+            tooltipsEnabled = shouldBeEnabled;
+            hideTip();
+        }
+
+        bool areTooltipsEnabled() const noexcept
+        {
+            return tooltipsEnabled;
+        }
+
+        juce::String getTipFor (juce::Component& component) override
+        {
+            if (! tooltipsEnabled)
+                return {};
+
+            return juce::TooltipWindow::getTipFor (component);
+        }
+
+    private:
+        bool tooltipsEnabled = true;
+    };
+
+    ToggleableTooltipWindow tooltipWindow { this, tooltipDelayMs };
     juce::TextButton inspectButton { "Inspect the UI" };
 
     // Buttons / Boxes / ui elements
@@ -38,6 +76,7 @@ private:
     juce::TextButton rmsButton { "RMS" };
     juce::TextButton peakButton { "Peak" };
     juce::TextButton clearPeakButton { "Clear Peak" };
+    juce::TextButton tooltipButton { "Tips" };
     juce::ComboBox inputModeBox;
     juce::ComboBox fftSizeBox;
     juce::ComboBox peakHoldDecayBox;
