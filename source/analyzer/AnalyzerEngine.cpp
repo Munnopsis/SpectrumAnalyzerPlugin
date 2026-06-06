@@ -10,7 +10,10 @@ AnalyzerEngine::AnalyzerEngine()
 {
     rawSpectrumDb.resize (displayBinCount, -100.0f);
     smoothedSpectrumDb.resize (displayBinCount, -100.0f);
+    peakHoldSpectrumDb.resize (displayBinCount, -100.0f);
+
     latestSpectrumDb.resize (displayBinCount, -100.0f);
+    latestPeakHoldSpectrumDb.resize (displayBinCount, -100.0f);
 }
 
 AnalyzerEngine::~AnalyzerEngine()
@@ -34,10 +37,12 @@ void AnalyzerEngine::reset()
     std::fill (fftData.begin(), fftData.end(), 0.0f);
     std::fill (rawSpectrumDb.begin(), rawSpectrumDb.end(), -100.0f);
     std::fill (smoothedSpectrumDb.begin(), smoothedSpectrumDb.end(), -100.0f);
+    std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
 
     {
         std::lock_guard<std::mutex> lock (latestSpectrumMutex);
         std::fill (latestSpectrumDb.begin(), latestSpectrumDb.end(), -100.0f);
+        std::fill (latestPeakHoldSpectrumDb.begin(), latestPeakHoldSpectrumDb.end(), -100.0f);
     }
 
     hasFrame.store (false, std::memory_order_relaxed);
@@ -66,6 +71,17 @@ bool AnalyzerEngine::copyLatestSpectrumDb (std::vector<float>& destination)
 
     std::lock_guard<std::mutex> lock (latestSpectrumMutex);
     destination = latestSpectrumDb;
+
+    return true;
+}
+
+bool AnalyzerEngine::copyLatestPeakHoldSpectrumDb (std::vector<float>& destination)
+{
+    if (! hasFrame.load (std::memory_order_relaxed))
+        return false;
+
+    std::lock_guard<std::mutex> lock (latestSpectrumMutex);
+    destination = latestPeakHoldSpectrumDb;
 
     return true;
 }
@@ -113,6 +129,10 @@ void AnalyzerEngine::processOneFftBlock()
         juce::jmin (20000.0f, static_cast<float> (currentSampleRate * 0.5))
     );
 
+    const auto decayPerFrame =
+        peakHoldDecayDbPerSecond * static_cast<float> (fftSize)
+        / static_cast<float> (currentSampleRate);
+
     for (int i = 0; i < displayBinCount; ++i)
     {
         const auto normalisedX =
@@ -142,11 +162,17 @@ void AnalyzerEngine::processOneFftBlock()
         const auto smoothing = targetDb > previousDb ? attackSmoothing : releaseSmoothing;
 
         smoothedSpectrumDb[index] = previousDb + smoothing * (targetDb - previousDb);
+
+        if (targetDb > peakHoldSpectrumDb[index])
+            peakHoldSpectrumDb[index] = targetDb;
+        else
+            peakHoldSpectrumDb[index] = juce::jmax (-100.0f, peakHoldSpectrumDb[index] - decayPerFrame);
     }
 
     {
         std::lock_guard<std::mutex> lock (latestSpectrumMutex);
         latestSpectrumDb = smoothedSpectrumDb;
+        latestPeakHoldSpectrumDb = peakHoldSpectrumDb;
     }
 
     hasFrame.store (true, std::memory_order_relaxed);

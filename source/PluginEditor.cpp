@@ -60,4 +60,7 @@ void PluginEditor::timerCallback()
 
     if (processorRef.copyLatestSpectrumDb (spectrumBuffer))
         spectrumDisplay.setSpectrumDb (spectrumBuffer);
+
+    if (processorRef.copyLatestPeakHoldSpectrumDb (peakHoldBuffer))
+        spectrumDisplay.setPeakHoldSpectrumDb (peakHoldBuffer);
 }

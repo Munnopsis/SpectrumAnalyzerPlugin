@@ -53,6 +53,11 @@ public:
         return analyzerEngine.copyLatestSpectrumDb (destination);
     }
 
+    bool copyLatestPeakHoldSpectrumDb (std::vector<float>& destination)
+    {
+        return analyzerEngine.copyLatestPeakHoldSpectrumDb (destination);
+    }
+
 private:
     std::atomic<float> inputLevelDb { -100.0f };
 
