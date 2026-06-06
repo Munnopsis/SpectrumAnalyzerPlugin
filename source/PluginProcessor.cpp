@@ -16,6 +16,7 @@ PluginProcessor::PluginProcessor()
 
 PluginProcessor::~PluginProcessor()
 {
+    analyzerEngine.stop();
 }
 
 //==============================================================================
@@ -90,13 +91,20 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     // initialisation that you need..
     juce::ignoreUnused (sampleRate, samplesPerBlock);
 
+    analyzerEngine.stop();
+
     analyzerFifo.prepare (sampleRate, samplesPerBlock);
+
+    analyzerEngine.prepare (sampleRate, analyzerFifo);
+    analyzerEngine.start();
 }
 
 void PluginProcessor::releaseResources()
 {
     // When playback stops, you can use this as an opportunity to free up any
     // spare memory, etc.
+    analyzerEngine.stop();
+    analyzerFifo.reset();
 }
 
 bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <vector>
 
 class SpectrumDisplay : public juce::Component
 {
@@ -9,6 +10,7 @@ public:
     ~SpectrumDisplay() override = default;
 
     void setInputLevelDb (float newLevelDb);
+    void setSpectrumDb (const std::vector<float>& newSpectrumDb);
 
     void paint (juce::Graphics& g) override;
     void resized() override;
@@ -19,8 +21,10 @@ private:
     void drawDecibelGrid (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPlaceholderCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawInputLevelMeter (juce::Graphics& g, juce::Rectangle<int> bounds);
-    
+    void drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
+
     float inputLevelDb = -100.0f;
+    std::vector<float> spectrumDb;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectrumDisplay)
 };

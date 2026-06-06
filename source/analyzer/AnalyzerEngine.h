@@ -1,0 +1,52 @@
+#pragma once
+
+#include "AnalyzerFifo.h"
+
+#include <juce_core/juce_core.h>
+#include <juce_dsp/juce_dsp.h>
+
+#include <array>
+#include <atomic>
+#include <mutex>
+#include <vector>
+
+class AnalyzerEngine : private juce::Thread
+{
+public:
+    AnalyzerEngine();
+    ~AnalyzerEngine() override;
+
+    void prepare (double sampleRate, AnalyzerFifo& fifoToReadFrom);
+    void reset();
+
+    void start();
+    void stop();
+
+    bool copyLatestSpectrumDb (std::vector<float>& destination);
+
+private:
+    void run() override;
+    void processOneFftBlock();
+
+    static constexpr int fftOrder = 11;
+    static constexpr int fftSize = 1 << fftOrder;
+    static constexpr int displayBinCount = 256;
+
+    AnalyzerFifo* sourceFifo = nullptr;
+
+    double currentSampleRate = 44100.0;
+
+    juce::dsp::FFT forwardFFT;
+    juce::dsp::WindowingFunction<float> window;
+
+    std::array<float, fftSize> timeDomainBlock {};
+    std::array<float, fftSize * 2> fftData {};
+
+    std::vector<float> workingSpectrumDb;
+    std::vector<float> latestSpectrumDb;
+
+    std::mutex latestSpectrumMutex;
+    std::atomic<bool> hasFrame { false };
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AnalyzerEngine)
+};

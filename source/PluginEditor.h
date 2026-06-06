@@ -4,6 +4,7 @@
 #include "BinaryData.h"
 #include "melatonin_inspector/melatonin_inspector.h"
 #include "ui/SpectrumDisplay.h"
+#include <vector>
 
 //==============================================================================
 class PluginEditor : public juce::AudioProcessorEditor,
@@ -27,6 +28,7 @@ private:
     void timerCallback() override;
 
     SpectrumDisplay spectrumDisplay;
+    std::vector<float> spectrumBuffer;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

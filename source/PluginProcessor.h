@@ -3,6 +3,8 @@
 #include <atomic>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "analyzer/AnalyzerFifo.h"
+#include "analyzer/AnalyzerEngine.h"
+#include <vector>
 
 #if (MSVC)
 #include "ipps.h"
@@ -45,10 +47,16 @@ public:
         return inputLevelDb.load (std::memory_order_relaxed);
     }
 
+    bool copyLatestSpectrumDb (std::vector<float>& destination)
+    {
+        return analyzerEngine.copyLatestSpectrumDb (destination);
+    }
+
 private:
     std::atomic<float> inputLevelDb { -100.0f };
-    
+
     AnalyzerFifo analyzerFifo;
+    AnalyzerEngine analyzerEngine;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

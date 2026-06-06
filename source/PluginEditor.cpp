@@ -57,4 +57,7 @@ void PluginEditor::resized()
 void PluginEditor::timerCallback()
 {
     spectrumDisplay.setInputLevelDb (processorRef.getInputLevelDb());
+
+    if (processorRef.copyLatestSpectrumDb (spectrumBuffer))
+        spectrumDisplay.setSpectrumDb (spectrumBuffer);
 }

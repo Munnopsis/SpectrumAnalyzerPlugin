@@ -11,6 +11,12 @@ void SpectrumDisplay::setInputLevelDb (float newLevelDb)
     repaint();
 }
 
+void SpectrumDisplay::setSpectrumDb (const std::vector<float>& newSpectrumDb)
+{
+    spectrumDb = newSpectrumDb;
+    repaint();
+}
+
 void SpectrumDisplay::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
@@ -18,7 +24,11 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     drawBackground (g, bounds);
     drawFrequencyGrid (g, bounds);
     drawDecibelGrid (g, bounds);
-    drawPlaceholderCurve (g, bounds);
+
+    if (spectrumDb.empty())
+        drawPlaceholderCurve (g, bounds);
+    else
+        drawSpectrumCurve (g, bounds);
 
     drawInputLevelMeter (g, bounds);
 
@@ -110,4 +120,43 @@ void SpectrumDisplay::drawInputLevelMeter (juce::Graphics& g, juce::Rectangle<in
     g.drawText ("Input: " + juce::String (inputLevelDb, 1) + " dB",
                 meterBounds.toNearestInt().reduced (6, 0),
                 juce::Justification::centredLeft);
+}
+
+void SpectrumDisplay::drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int> bounds)
+{
+    if (spectrumDb.size() < 2)
+        return;
+
+    auto spectrumBounds = bounds.reduced (40, 50);
+    spectrumBounds.removeFromBottom (34);
+
+    const auto area = spectrumBounds.toFloat();
+
+    juce::Path curve;
+
+    const auto minDb = -100.0f;
+    const auto maxDb = 0.0f;
+
+    const auto firstDb = juce::jlimit (minDb, maxDb, spectrumDb.front());
+
+    curve.startNewSubPath (
+        area.getX(),
+        juce::jmap (firstDb, minDb, maxDb, area.getBottom(), area.getY())
+    );
+
+    for (size_t i = 1; i < spectrumDb.size(); ++i)
+    {
+        const auto normalisedX =
+            static_cast<float> (i) / static_cast<float> (spectrumDb.size() - 1);
+
+        const auto x = area.getX() + normalisedX * area.getWidth();
+
+        const auto db = juce::jlimit (minDb, maxDb, spectrumDb[i]);
+        const auto y = juce::jmap (db, minDb, maxDb, area.getBottom(), area.getY());
+
+        curve.lineTo (x, y);
+    }
+
+    g.setColour (juce::Colour::fromRGB (90, 220, 255));
+    g.strokePath (curve, juce::PathStrokeType (2.0f));
 }
