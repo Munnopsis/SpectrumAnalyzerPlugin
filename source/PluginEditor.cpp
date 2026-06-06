@@ -2,6 +2,7 @@
 #include "analyzer/AnalyzerInputMode.h"
 #include "analyzer/AnalyzerFftSize.h"
 #include "analyzer/AnalyzerPeakHoldDecay.h"
+#include "analyzer/AnalyzerRmsTime.h"
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p)
@@ -18,6 +19,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (inputModeBox);
     addAndMakeVisible (fftSizeBox);
     addAndMakeVisible (peakHoldDecayBox);
+    addAndMakeVisible (rmsTimeBox);
 
     clearPeakButton.onClick = [this]
     {
@@ -50,12 +52,21 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     peakHoldDecayBox.addItemList (getAnalyzerPeakHoldDecayChoices(), 1);
     peakHoldDecayBox.setJustificationType (juce::Justification::centred);
-    peakHoldDecayBox.setTooltip ("Peak hold decay speed");
+    peakHoldDecayBox.setTooltip ("Peak hold decay");
 
     peakHoldDecayAttachment = std::make_unique<ComboBoxAttachment> (
         state,
         PluginProcessor::peakHoldDecayParamId,
         peakHoldDecayBox);
+
+    rmsTimeBox.addItemList (getAnalyzerRmsTimeChoices(), 1);
+    rmsTimeBox.setJustificationType (juce::Justification::centred);
+    rmsTimeBox.setTooltip ("RMS averaging time");
+
+    rmsTimeAttachment = std::make_unique<ComboBoxAttachment> (
+        state,
+        PluginProcessor::rmsTimeParamId,
+        rmsTimeBox);
 
     liveButtonAttachment = std::make_unique<ButtonAttachment> (
         state,
@@ -88,7 +99,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         inspector->setVisible (true);
     };
 
-    setSize (1180, 650);
+    setSize (1260, 650);
 
     startTimerHz (30);
 }
@@ -117,7 +128,7 @@ void PluginEditor::resized()
 
     auto topBar = bounds.reduced (12).removeFromTop (32);
 
-    auto rightControls = topBar.removeFromRight (870);
+    auto rightControls = topBar.removeFromRight (970);
 
     inputModeBox.setBounds (rightControls.removeFromLeft (150));
     rightControls.removeFromLeft (8);
@@ -126,6 +137,9 @@ void PluginEditor::resized()
     rightControls.removeFromLeft (8);
 
     peakHoldDecayBox.setBounds (rightControls.removeFromLeft (130));
+    rightControls.removeFromLeft (8);
+
+    rmsTimeBox.setBounds (rightControls.removeFromLeft (120));
     rightControls.removeFromLeft (8);
 
     liveButton.setBounds (rightControls.removeFromLeft (64));

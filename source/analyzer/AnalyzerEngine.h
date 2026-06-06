@@ -25,6 +25,7 @@ public:
     void stop();
 
     void requestClearPeakHold() noexcept;
+    void setRmsTimeSeconds (float newRmsTimeSeconds) noexcept;
 
     void setRequestedFftOrder (int newFftOrder) noexcept;
     void setPeakHoldDecayDbPerSecond (float newDecayDbPerSecond) noexcept;
@@ -36,7 +37,6 @@ public:
 private:
     void run() override;
     void processOneFftBlock();
-
     void updateFftSizeIfNeeded();
     void configureFft (int newFftOrder);
 
@@ -73,12 +73,13 @@ private:
 
     static constexpr float attackSmoothing = 0.35f;
     static constexpr float releaseSmoothing = 0.08f;
-    static constexpr float rmsTimeSeconds = 0.300f;
+    static constexpr float defaultRmsTimeSeconds = 0.300f;
 
     std::mutex latestSpectrumMutex;
     std::atomic<bool> hasFrame { false };
     std::atomic<bool> clearPeakHoldRequested { false };
     std::atomic<float> peakHoldDecayDbPerSecond { defaultPeakHoldDecayDbPerSecond };
+    std::atomic<float> rmsTimeSeconds { defaultRmsTimeSeconds };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AnalyzerEngine)
 };

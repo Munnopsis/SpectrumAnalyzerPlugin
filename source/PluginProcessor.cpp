@@ -16,10 +16,12 @@ PluginProcessor::PluginProcessor()
     inputModeParameter = parameters.getRawParameterValue (inputModeParamId);
     fftSizeParameter = parameters.getRawParameterValue (fftSizeParamId);
     peakHoldDecayParameter = parameters.getRawParameterValue (peakHoldDecayParamId);
+    rmsTimeParameter = parameters.getRawParameterValue (rmsTimeParamId);
 
     jassert (inputModeParameter != nullptr);
     jassert (fftSizeParameter != nullptr);
     jassert (peakHoldDecayParameter != nullptr);
+    jassert (rmsTimeParameter != nullptr);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
@@ -58,6 +60,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         "Peak Hold Decay",
         getAnalyzerPeakHoldDecayChoices(),
         3));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID { rmsTimeParamId, 1 },
+        "RMS Time",
+        getAnalyzerRmsTimeChoices(),
+        1));
 
     return { params.begin(), params.end() };
 }
@@ -150,18 +158,27 @@ float PluginProcessor::getPeakHoldDecayDbPerSecond() const noexcept
         peakHoldDecayParameter->load (std::memory_order_relaxed));
 }
 
+float PluginProcessor::getRmsTimeSeconds() const noexcept
+{
+    if (rmsTimeParameter == nullptr)
+        return 0.300f;
+
+    return analyzerRmsTimeSecondsFromParameterValue (
+        rmsTimeParameter->load (std::memory_order_relaxed));
+}
+
 //==============================================================================
 
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    juce::ignoreUnused (samplesPerBlock);
-
     analyzerEngine.stop();
 
     analyzerFifo.prepare (sampleRate, samplesPerBlock);
 
     analyzerEngine.setRequestedFftOrder (getAnalyzerFftOrder());
     analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
+    analyzerEngine.setRmsTimeSeconds (getRmsTimeSeconds());
+
     analyzerEngine.prepare (sampleRate, analyzerFifo);
     analyzerEngine.start();
 }
@@ -205,21 +222,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
-
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
 
     float maxSample = 0.0f;
 
@@ -239,12 +243,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     analyzerEngine.setRequestedFftOrder (getAnalyzerFftOrder());
     analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
+    analyzerEngine.setRmsTimeSeconds (getRmsTimeSeconds());
 
     analyzerFifo.pushMonoFromBuffer (
         buffer,
         numChannelsToAnalyse,
         getAnalyzerInputMode());
-
 }
 
 //==============================================================================

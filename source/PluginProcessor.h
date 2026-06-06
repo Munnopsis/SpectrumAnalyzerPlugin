@@ -8,6 +8,7 @@
 #include "analyzer/AnalyzerInputMode.h"
 #include "analyzer/AnalyzerFftSize.h"
 #include "analyzer/AnalyzerPeakHoldDecay.h"
+#include "analyzer/AnalyzerRmsTime.h"
 
 #if (MSVC)
 #include "ipps.h"
@@ -71,6 +72,7 @@ public:
     static inline const juce::String inputModeParamId { "inputMode" };
     static inline const juce::String fftSizeParamId { "fftSize" };
     static inline const juce::String peakHoldDecayParamId { "peakHoldDecay" };
+    static inline const juce::String rmsTimeParamId { "rmsTime" };
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept
     {
@@ -103,11 +105,14 @@ private:
 
     int getAnalyzerFftOrder() const noexcept;
     float getPeakHoldDecayDbPerSecond() const noexcept;
+    float getRmsTimeSeconds() const noexcept;
 
+    // cached parameters
     std::atomic<float> inputLevelDb { -100.0f };
     std::atomic<float>* inputModeParameter = nullptr;
     std::atomic<float>* fftSizeParameter = nullptr;
     std::atomic<float>* peakHoldDecayParameter = nullptr;
+    std::atomic<float>* rmsTimeParameter = nullptr;
 
     AnalyzerFifo analyzerFifo;
     AnalyzerEngine analyzerEngine;

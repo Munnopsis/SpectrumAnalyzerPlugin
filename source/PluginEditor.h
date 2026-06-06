@@ -32,7 +32,7 @@ private:
     std::unique_ptr<melatonin::Inspector> inspector;
     juce::TextButton inspectButton { "Inspect the UI" };
 
-    // Buttons
+    // Buttons / Boxes / ui elements
     juce::TextButton liveButton { "Live" };
     juce::TextButton rmsButton { "RMS" };
     juce::TextButton peakButton { "Peak" };
@@ -40,13 +40,16 @@ private:
     juce::ComboBox inputModeBox;
     juce::ComboBox fftSizeBox;
     juce::ComboBox peakHoldDecayBox;
+    juce::ComboBox rmsTimeBox;
 
+    // Attachments
     std::unique_ptr<ButtonAttachment> liveButtonAttachment;
     std::unique_ptr<ButtonAttachment> rmsButtonAttachment;
     std::unique_ptr<ButtonAttachment> peakButtonAttachment;
     std::unique_ptr<ComboBoxAttachment> inputModeAttachment;
     std::unique_ptr<ComboBoxAttachment> fftSizeAttachment;
     std::unique_ptr<ComboBoxAttachment> peakHoldDecayAttachment;
+    std::unique_ptr<ComboBoxAttachment> rmsTimeAttachment;
 
     SpectrumDisplay spectrumDisplay;
     std::vector<float> spectrumBuffer;

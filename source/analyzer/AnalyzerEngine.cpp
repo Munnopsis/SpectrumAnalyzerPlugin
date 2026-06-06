@@ -66,6 +66,13 @@ void AnalyzerEngine::setPeakHoldDecayDbPerSecond (float newDecayDbPerSecond) noe
         std::memory_order_relaxed);
 }
 
+void AnalyzerEngine::setRmsTimeSeconds (float newRmsTimeSeconds) noexcept
+{
+    rmsTimeSeconds.store (
+        juce::jlimit (0.010f, 10.0f, newRmsTimeSeconds),
+        std::memory_order_relaxed);
+}
+
 void AnalyzerEngine::setRequestedFftOrder (int newFftOrder) noexcept
 {
     requestedFftOrder.store (
@@ -201,15 +208,21 @@ void AnalyzerEngine::processOneFftBlock()
         juce::jmin (20000.0f, static_cast<float> (currentSampleRate * 0.5))
     );
 
+    const auto currentPeakHoldDecayDbPerSecond =
+        peakHoldDecayDbPerSecond.load (std::memory_order_relaxed);
+
     const auto decayPerFrame =
-        peakHoldDecayDbPerSecond * static_cast<float> (fftSizeForBlock)
+        currentPeakHoldDecayDbPerSecond * static_cast<float> (fftSizeForBlock)
         / static_cast<float> (currentSampleRate);
 
     const auto frameDurationSeconds =
         static_cast<float> (fftSizeForBlock) / static_cast<float> (currentSampleRate);
 
+    const auto currentRmsTimeSeconds =
+        rmsTimeSeconds.load (std::memory_order_relaxed);
+
     const auto rmsAlpha =
-        1.0f - std::exp (-frameDurationSeconds / rmsTimeSeconds);
+        1.0f - std::exp (-frameDurationSeconds / currentRmsTimeSeconds);
 
     if (clearPeakHoldRequested.exchange (false, std::memory_order_relaxed))
     {
