@@ -30,6 +30,7 @@ private:
     PluginProcessor& processorRef;
 
     std::unique_ptr<melatonin::Inspector> inspector;
+    juce::TooltipWindow tooltipWindow { this, 700 };
     juce::TextButton inspectButton { "Inspect the UI" };
 
     // Buttons / Boxes / ui elements

@@ -5,7 +5,6 @@
 #include <juce_core/juce_core.h>
 #include <juce_dsp/juce_dsp.h>
 
-#include <array>
 #include <atomic>
 #include <mutex>
 #include <vector>

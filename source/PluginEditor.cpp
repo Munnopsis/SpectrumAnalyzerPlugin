@@ -12,6 +12,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     juce::ignoreUnused (processorRef);
 
     addAndMakeVisible (spectrumDisplay);
+    spectrumDisplay.setName ("SpectrumDisplay");
 
     addAndMakeVisible (inspectButton);
     addAndMakeVisible (liveButton);
@@ -24,6 +25,36 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (rmsTimeBox);
     addAndMakeVisible (dbRangeBox);
     addAndMakeVisible (slopeBox);
+
+    inspectButton.setName ("InspectButton");
+    liveButton.setName ("LiveButton");
+    rmsButton.setName ("RmsButton");
+    peakButton.setName ("PeakButton");
+    clearPeakButton.setName ("ClearPeakButton");
+    inputModeBox.setName ("InputModeBox");
+    fftSizeBox.setName ("FftSizeBox");
+    peakHoldDecayBox.setName ("PeakHoldDecayBox");
+    rmsTimeBox.setName ("RmsTimeBox");
+    dbRangeBox.setName ("DbRangeBox");
+    slopeBox.setName ("SlopeBox");
+
+    inspectButton.setWantsKeyboardFocus (true);
+    liveButton.setWantsKeyboardFocus (true);
+    rmsButton.setWantsKeyboardFocus (true);
+    peakButton.setWantsKeyboardFocus (true);
+    clearPeakButton.setWantsKeyboardFocus (true);
+    inputModeBox.setWantsKeyboardFocus (true);
+    fftSizeBox.setWantsKeyboardFocus (true);
+    peakHoldDecayBox.setWantsKeyboardFocus (true);
+    rmsTimeBox.setWantsKeyboardFocus (true);
+    dbRangeBox.setWantsKeyboardFocus (true);
+    slopeBox.setWantsKeyboardFocus (true);
+
+    inspectButton.setTooltip ("Open the Melatonin UI inspector");
+    liveButton.setTooltip ("Show or hide the live spectrum curve");
+    rmsButton.setTooltip ("Show or hide the RMS spectrum curve");
+    peakButton.setTooltip ("Show or hide the peak hold curve");
+    clearPeakButton.setTooltip ("Clear the peak hold curve");
 
     clearPeakButton.onClick = [this]
     {
@@ -38,7 +69,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     inputModeBox.addItemList (getAnalyzerInputModeChoices(), 1);
     inputModeBox.setJustificationType (juce::Justification::centred);
-    inputModeBox.setTooltip ("Analyzer input mode");
+    inputModeBox.setTextWhenNothingSelected ("Input");
+    inputModeBox.setTooltip ("Select which channel signal is analysed");
 
     inputModeAttachment = std::make_unique<ComboBoxAttachment> (
         state,
@@ -47,7 +79,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     fftSizeBox.addItemList (getAnalyzerFftSizeChoices(), 1);
     fftSizeBox.setJustificationType (juce::Justification::centred);
-    fftSizeBox.setTooltip ("FFT size");
+    fftSizeBox.setTextWhenNothingSelected ("FFT");
+    fftSizeBox.setTooltip ("Select FFT size: smaller is faster, larger gives better bass resolution");
 
     fftSizeAttachment = std::make_unique<ComboBoxAttachment> (
         state,
@@ -56,7 +89,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     peakHoldDecayBox.addItemList (getAnalyzerPeakHoldDecayChoices(), 1);
     peakHoldDecayBox.setJustificationType (juce::Justification::centred);
-    peakHoldDecayBox.setTooltip ("Peak hold decay");
+    peakHoldDecayBox.setTextWhenNothingSelected ("Peak");
+    peakHoldDecayBox.setTooltip ("Select how quickly the peak hold curve falls");
 
     peakHoldDecayAttachment = std::make_unique<ComboBoxAttachment> (
         state,
@@ -65,7 +99,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     rmsTimeBox.addItemList (getAnalyzerRmsTimeChoices(), 1);
     rmsTimeBox.setJustificationType (juce::Justification::centred);
-    rmsTimeBox.setTooltip ("RMS averaging time");
+    rmsTimeBox.setTextWhenNothingSelected ("RMS");
+    rmsTimeBox.setTooltip ("Select RMS averaging time");
 
     rmsTimeAttachment = std::make_unique<ComboBoxAttachment> (
         state,
@@ -74,7 +109,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     dbRangeBox.addItemList (getAnalyzerDbRangeChoices(), 1);
     dbRangeBox.setJustificationType (juce::Justification::centred);
-    dbRangeBox.setTooltip ("Analyzer dB display range");
+    dbRangeBox.setTextWhenNothingSelected ("Range");
+    dbRangeBox.setTooltip ("Select analyzer dB display range");
 
     dbRangeAttachment = std::make_unique<ComboBoxAttachment> (
         state,
@@ -83,7 +119,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     slopeBox.addItemList (getAnalyzerSlopeChoices(), 1);
     slopeBox.setJustificationType (juce::Justification::centred);
-    slopeBox.setTooltip ("Analyzer slope compensation");
+    slopeBox.setTextWhenNothingSelected ("Slope");
+    slopeBox.setTooltip ("Select display-only spectrum slope compensation");
 
     slopeAttachment = std::make_unique<ComboBoxAttachment> (
         state,
