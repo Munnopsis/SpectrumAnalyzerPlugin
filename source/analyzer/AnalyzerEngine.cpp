@@ -182,7 +182,8 @@ void AnalyzerEngine::prepare (double sampleRate, AnalyzerFifo& fifoToReadFrom)
 
 void AnalyzerEngine::reset()
 {
-    std::fill (timeDomainBlock.begin(), timeDomainBlock.end(), 0.0f);
+    resetOverlapBuffer();
+
     std::fill (fftData.begin(), fftData.end(), 0.0f);
     std::fill (rawSpectrumDb.begin(), rawSpectrumDb.end(), -100.0f);
     std::fill (smoothedSpectrumDb.begin(), smoothedSpectrumDb.end(), -100.0f);
@@ -258,8 +259,24 @@ void AnalyzerEngine::configureFft (int newFftOrder)
         false);
 
     timeDomainBlock.assign (static_cast<size_t> (currentFftSize), 0.0f);
+    hopBuffer.assign (static_cast<size_t> (getFftHopSize()), 0.0f);
     fftData.assign (static_cast<size_t> (currentFftSize * 2), 0.0f);
     notePeakBinDecibels.assign (static_cast<size_t> (currentFftSize / 2), notePeakMinAbsoluteDb);
+
+    overlapBufferPrimed = false;
+}
+
+void AnalyzerEngine::resetOverlapBuffer()
+{
+    std::fill (timeDomainBlock.begin(), timeDomainBlock.end(), 0.0f);
+    std::fill (hopBuffer.begin(), hopBuffer.end(), 0.0f);
+
+    overlapBufferPrimed = false;
+}
+
+int AnalyzerEngine::getFftHopSize() const noexcept
+{
+    return juce::jmax (1, currentFftSize / fftOverlapFactor);
 }
 
 void AnalyzerEngine::updateFftSizeIfNeeded()
@@ -351,7 +368,10 @@ void AnalyzerEngine::run()
         handleClearPeakHoldRequest();
         updateFftSizeIfNeeded();
 
-        if (sourceFifo->getNumAvailableForReading() >= currentFftSize)
+        const auto requiredSamples =
+            overlapBufferPrimed ? getFftHopSize() : currentFftSize;
+
+        if (sourceFifo->getNumAvailableForReading() >= requiredSamples)
         {
             processOneFftBlock();
             continue;
@@ -367,17 +387,45 @@ void AnalyzerEngine::processOneFftBlock()
         return;
 
     const auto fftSizeForBlock = currentFftSize;
+    const auto hopSize = getFftHopSize();
 
-    if (fftSizeForBlock <= 0)
+    if (fftSizeForBlock <= 0 || hopSize <= 0)
         return;
 
     if (currentSampleRate <= 0.0)
         return;
 
-    const auto numRead = sourceFifo->pop (timeDomainBlock.data(), fftSizeForBlock);
-
-    if (numRead != fftSizeForBlock)
+    if (timeDomainBlock.size() < static_cast<size_t> (fftSizeForBlock)
+        || hopBuffer.size() < static_cast<size_t> (hopSize)
+        || fftData.size() < static_cast<size_t> (fftSizeForBlock * 2))
+    {
         return;
+    }
+
+    if (! overlapBufferPrimed)
+    {
+        const auto numRead = sourceFifo->pop (timeDomainBlock.data(), fftSizeForBlock);
+
+        if (numRead != fftSizeForBlock)
+            return;
+
+        overlapBufferPrimed = true;
+    }
+    else
+    {
+        const auto numRead = sourceFifo->pop (hopBuffer.data(), hopSize);
+
+        if (numRead != hopSize)
+            return;
+
+        std::copy (timeDomainBlock.begin() + hopSize,
+                   timeDomainBlock.begin() + fftSizeForBlock,
+                   timeDomainBlock.begin());
+
+        std::copy (hopBuffer.begin(),
+                   hopBuffer.begin() + hopSize,
+                   timeDomainBlock.begin() + (fftSizeForBlock - hopSize));
+    }
 
     std::fill (fftData.begin(), fftData.end(), 0.0f);
     std::copy (timeDomainBlock.begin(), timeDomainBlock.end(), fftData.begin());
@@ -390,14 +438,14 @@ void AnalyzerEngine::processOneFftBlock()
 
     const auto sampleRate = static_cast<float> (currentSampleRate);
 
-    const auto frameDurationSeconds =
-        static_cast<float> (fftSizeForBlock) / sampleRate;
+    const auto frameAdvanceSeconds =
+        static_cast<float> (hopSize) / sampleRate;
 
     const auto currentPeakHoldDecayDbPerSecond =
         peakHoldDecayDbPerSecond.load (std::memory_order_relaxed);
 
     extractInstantaneousNotePeaksFromFftData (fftSizeForBlock);
-    updateTrackedNotePeaks (frameDurationSeconds, currentPeakHoldDecayDbPerSecond);
+    updateTrackedNotePeaks (frameAdvanceSeconds, currentPeakHoldDecayDbPerSecond);
     publishStableNotePeaks();
 
     const auto minFrequency = 20.0f;
@@ -407,14 +455,13 @@ void AnalyzerEngine::processOneFftBlock()
     );
 
     const auto decayPerFrame =
-        currentPeakHoldDecayDbPerSecond * static_cast<float> (fftSizeForBlock)
-        / sampleRate;
+        currentPeakHoldDecayDbPerSecond * frameAdvanceSeconds;
 
     const auto currentRmsTimeSeconds =
         rmsTimeSeconds.load (std::memory_order_relaxed);
 
     const auto rmsAlpha =
-        1.0f - std::exp (-frameDurationSeconds / currentRmsTimeSeconds);
+        1.0f - std::exp (-frameAdvanceSeconds / currentRmsTimeSeconds);
 
     for (int i = 0; i < displayBinCount; ++i)
     {

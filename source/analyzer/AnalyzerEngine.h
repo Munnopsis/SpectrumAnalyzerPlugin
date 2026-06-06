@@ -71,7 +71,9 @@ private:
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
     void configureFft (int newFftOrder);
+    void resetOverlapBuffer();
     void handleClearPeakHoldRequest();
+    int getFftHopSize() const noexcept;
     int frequencyToMidiNote (float frequencyHz) const noexcept;
     int midiNoteToPitchClass (int midiNote) const noexcept;
     void extractInstantaneousNotePeaksFromFftData (int fftSizeForBlock);
@@ -86,6 +88,7 @@ private:
     static constexpr int maxFftOrder = 13;
 
     static constexpr int displayBinCount = 256;
+    static constexpr int fftOverlapFactor = 4; // 4 = 75% overlap, hop size = fftSize / 4
     static constexpr float defaultPeakHoldDecayDbPerSecond = 8.0f;
 
     static constexpr int maxInstantaneousNotePeaks = 60;
@@ -122,7 +125,10 @@ private:
     std::unique_ptr<juce::dsp::WindowingFunction<float>> window;
 
     std::vector<float> timeDomainBlock;
+    std::vector<float> hopBuffer;
     std::vector<float> fftData;
+
+    bool overlapBufferPrimed = false;
 
     std::vector<float> rawSpectrumDb;
     std::vector<float> smoothedSpectrumDb;
