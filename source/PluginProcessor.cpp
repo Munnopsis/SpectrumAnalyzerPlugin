@@ -89,6 +89,8 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
     juce::ignoreUnused (sampleRate, samplesPerBlock);
+
+    analyzerFifo.prepare (sampleRate, samplesPerBlock);
 }
 
 void PluginProcessor::releaseResources()
@@ -143,12 +145,25 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // the samples and the outer loop is handling the channels.
     // Alternatively, you can process the samples with the channels
     // interleaved by keeping the same state.
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+
+    float maxSample = 0.0f;
+
+    const auto numChannelsToAnalyse =
+        juce::jmin (totalNumInputChannels, buffer.getNumChannels());
+
+    for (int channel = 0; channel < numChannelsToAnalyse; ++channel)
     {
-        auto* channelData = buffer.getWritePointer (channel);
-        juce::ignoreUnused (channelData);
-        // ..do something to the data...
+        maxSample = juce::jmax (
+            maxSample,
+            buffer.getMagnitude (channel, 0, buffer.getNumSamples())
+        );
     }
+
+    const auto levelDb = juce::Decibels::gainToDecibels (maxSample, -100.0f);
+    inputLevelDb.store (levelDb, std::memory_order_relaxed);
+
+    analyzerFifo.pushMonoFromBuffer (buffer, numChannelsToAnalyse);
+
 }
 
 //==============================================================================

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "analyzer/AnalyzerFifo.h"
 
 #if (MSVC)
 #include "ipps.h"
@@ -38,6 +40,15 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    float getInputLevelDb() const noexcept
+    {
+        return inputLevelDb.load (std::memory_order_relaxed);
+    }
+
 private:
+    std::atomic<float> inputLevelDb { -100.0f };
+    
+    AnalyzerFifo analyzerFifo;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

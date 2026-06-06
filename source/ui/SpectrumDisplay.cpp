@@ -5,6 +5,12 @@ SpectrumDisplay::SpectrumDisplay()
     setOpaque (true);
 }
 
+void SpectrumDisplay::setInputLevelDb (float newLevelDb)
+{
+    inputLevelDb = newLevelDb;
+    repaint();
+}
+
 void SpectrumDisplay::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
@@ -13,6 +19,8 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     drawFrequencyGrid (g, bounds);
     drawDecibelGrid (g, bounds);
     drawPlaceholderCurve (g, bounds);
+
+    drawInputLevelMeter (g, bounds);
 
     g.setColour (juce::Colours::white.withAlpha (0.85f));
     g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
@@ -79,4 +87,27 @@ void SpectrumDisplay::drawPlaceholderCurve (juce::Graphics& g, juce::Rectangle<i
 
     g.setColour (juce::Colour::fromRGB (90, 220, 255));
     g.strokePath (curve, juce::PathStrokeType (2.0f));
+}
+
+void SpectrumDisplay::drawInputLevelMeter (juce::Graphics& g, juce::Rectangle<int> bounds)
+{
+    auto meterBounds = bounds.reduced (16).removeFromBottom (24).toFloat();
+
+    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    g.fillRoundedRectangle (meterBounds, 4.0f);
+
+    const auto clampedDb = juce::jlimit (-100.0f, 0.0f, inputLevelDb);
+    const auto normalised = juce::jmap (clampedDb, -100.0f, 0.0f, 0.0f, 1.0f);
+
+    auto fillBounds = meterBounds;
+    fillBounds.setWidth (meterBounds.getWidth() * normalised);
+
+    g.setColour (juce::Colour::fromRGB (90, 220, 255));
+    g.fillRoundedRectangle (fillBounds, 4.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.8f));
+    g.setFont (juce::FontOptions (12.0f));
+    g.drawText ("Input: " + juce::String (inputLevelDb, 1) + " dB",
+                meterBounds.toNearestInt().reduced (6, 0),
+                juce::Justification::centredLeft);
 }

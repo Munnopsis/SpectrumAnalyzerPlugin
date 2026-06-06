@@ -22,6 +22,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
     setSize (400, 300);
+
+    startTimerHz (30);
 }
 
 PluginEditor::~PluginEditor()
@@ -50,4 +52,9 @@ void PluginEditor::resized()
 
     //inspectButton.setBounds (getLocalBounds().withSizeKeepingCentre(100, 50));
     inspectButton.setBounds (getLocalBounds().reduced (12).removeFromTop (32).removeFromRight (140));
+}
+
+void PluginEditor::timerCallback()
+{
+    spectrumDisplay.setInputLevelDb (processorRef.getInputLevelDb());
 }

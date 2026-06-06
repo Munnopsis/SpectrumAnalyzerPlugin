@@ -6,7 +6,8 @@
 #include "ui/SpectrumDisplay.h"
 
 //==============================================================================
-class PluginEditor : public juce::AudioProcessorEditor
+class PluginEditor : public juce::AudioProcessorEditor,
+                     private juce::Timer
 {
 public:
     explicit PluginEditor (PluginProcessor&);
@@ -23,7 +24,9 @@ private:
     std::unique_ptr<melatonin::Inspector> inspector;
     juce::TextButton inspectButton { "Inspect the UI" };
 
+    void timerCallback() override;
+
     SpectrumDisplay spectrumDisplay;
-    
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

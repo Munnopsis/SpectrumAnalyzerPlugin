@@ -8,6 +8,8 @@ public:
     SpectrumDisplay();
     ~SpectrumDisplay() override = default;
 
+    void setInputLevelDb (float newLevelDb);
+
     void paint (juce::Graphics& g) override;
     void resized() override;
 
@@ -16,6 +18,9 @@ private:
     void drawFrequencyGrid (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawDecibelGrid (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPlaceholderCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawInputLevelMeter (juce::Graphics& g, juce::Rectangle<int> bounds);
+    
+    float inputLevelDb = -100.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectrumDisplay)
 };

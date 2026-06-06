@@ -72,6 +72,10 @@ juce_add_plugin("${PROJECT_NAME}"
     COMPANY_NAME "${COMPANY_NAME}"
     BUNDLE_ID "${BUNDLE_ID}"
 
+    # Enable Mic input for debugging
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "FullSpectrum needs microphone access to analyse incoming audio."
+
     # On MacOS, plugin is copied to /Users/yourname/Library/Audio/Plug-Ins/
     COPY_PLUGIN_AFTER_BUILD TRUE
 
