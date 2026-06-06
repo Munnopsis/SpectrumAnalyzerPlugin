@@ -1,4 +1,5 @@
 #include "AnalyzerEngine.h"
+#include "AnalyzerFrequencyRange.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -269,11 +270,9 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
 
     displayBinFftRanges.assign (static_cast<size_t> (displayBinCount), {});
 
-    const auto minFrequency = 20.0f;
-    const auto maxFrequency = juce::jmax (
-        minFrequency + 1.0f,
-        juce::jmin (20000.0f, sampleRateForRanges * 0.5f)
-    );
+    const auto minFrequency = AnalyzerFrequencyRange::minimumHz;
+    const auto maxFrequency =
+        AnalyzerFrequencyRange::getMaximumHzForSampleRate (sampleRateForRanges);
 
     const auto maxAvailableBin = (fftSizeForRanges / 2) - 1;
 

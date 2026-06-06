@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../analyzer/AnalyzerFrequencyRange.h"
+
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
 
@@ -77,8 +79,8 @@ private:
     float applySlopeCorrection (float decibels, float frequencyHz) const;
     void updateMouseReadout (juce::Point<float> newPosition);
 
-    static constexpr float minFrequencyHz = 20.0f;
-    static constexpr float maxFrequencyHz = 20000.0f;
+    static constexpr float minFrequencyHz = AnalyzerFrequencyRange::minimumHz;
+    static constexpr float maxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
     static constexpr float maxDecibels = 0.0f;
     static constexpr float slopeReferenceFrequencyHz = 1000.0f;
 
