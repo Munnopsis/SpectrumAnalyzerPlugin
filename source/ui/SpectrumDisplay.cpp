@@ -88,6 +88,8 @@ void SpectrumDisplay::paint (juce::Graphics& g)
             drawPeakHoldCurve (g, bounds);
     }
 
+    drawPeakNoteLabels (g, bounds);
+
     drawLegend (g, bounds);
 
     drawInputLevelMeter (g, bounds);
@@ -265,6 +267,124 @@ void SpectrumDisplay::updateMouseReadout (juce::Point<float> newPosition)
     mousePosition = newPosition;
     hasMouseReadout = true;
     repaint();
+}
+
+float SpectrumDisplay::indexToFrequency (size_t index, size_t numPoints) const
+{
+    if (numPoints < 2)
+        return minFrequencyHz;
+
+    const auto normalisedX =
+        juce::jlimit (0.0f,
+                      1.0f,
+                      static_cast<float> (index) / static_cast<float> (numPoints - 1));
+
+    return minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, normalisedX);
+}
+
+float SpectrumDisplay::frequencyToNormalisedX (float frequencyHz) const
+{
+    const auto safeFrequency = juce::jmax (1.0f, frequencyHz);
+    const auto normalised =
+        std::log (safeFrequency / minFrequencyHz)
+        / std::log (maxFrequencyHz / minFrequencyHz);
+
+    return juce::jlimit (0.0f, 1.0f, normalised);
+}
+
+bool SpectrumDisplay::isPeakCandidate (size_t index) const
+{
+    if (index == 0 || index + 1 >= peakHoldDb.size())
+        return false;
+
+    const auto previous = peakHoldDb[index - 1];
+    const auto current = peakHoldDb[index];
+    const auto next = peakHoldDb[index + 1];
+
+    return current >= previous
+           && current >= next
+           && (current > previous || current > next);
+}
+
+std::vector<SpectrumDisplay::PeakNoteLabel> SpectrumDisplay::buildPeakNoteLabels (
+    juce::Rectangle<float> area) const
+{
+    std::vector<PeakNoteLabel> candidates;
+
+    if (! showPeakHoldCurve || peakHoldDb.size() < 3)
+        return candidates;
+
+    const auto thresholdDb = minDecibels + 12.0f;
+    const auto numPoints = peakHoldDb.size();
+
+    for (size_t i = 1; i + 1 < numPoints; ++i)
+    {
+        if (! isPeakCandidate (i))
+            continue;
+
+        const auto frequency = indexToFrequency (i, numPoints);
+        const auto correctedDb = applySlopeCorrection (peakHoldDb[i], frequency);
+
+        if (correctedDb < thresholdDb)
+            continue;
+
+        const auto normalisedX = frequencyToNormalisedX (frequency);
+        const auto x = area.getX() + normalisedX * area.getWidth();
+        const auto yDb = juce::jlimit (minDecibels, maxDecibels, correctedDb);
+        const auto y = decibelsToY (yDb, area);
+
+        if (! area.contains (juce::Point<float> (x, y)))
+            continue;
+
+        candidates.push_back ({
+            frequency,
+            correctedDb,
+            x,
+            y,
+            frequencyToNoteName (frequency)
+        });
+    }
+
+    std::sort (candidates.begin(),
+               candidates.end(),
+               [] (const auto& first, const auto& second)
+               {
+                   return first.decibels > second.decibels;
+               });
+
+    std::vector<PeakNoteLabel> selected;
+    selected.reserve (8);
+
+    constexpr auto maxLabels = static_cast<size_t> (8);
+    constexpr auto minDistancePixels = 56.0f;
+
+    for (const auto& candidate : candidates)
+    {
+        const auto tooClose =
+            std::any_of (selected.begin(),
+                         selected.end(),
+                         [&candidate] (const auto& existing)
+                         {
+                             return std::abs (candidate.x - existing.x) < minDistancePixels;
+                         });
+
+        if (tooClose)
+            continue;
+
+        selected.push_back (candidate);
+
+        if (selected.size() >= maxLabels)
+            break;
+    }
+
+    std::sort (selected.begin(),
+               selected.end(),
+               [] (const auto& first, const auto& second)
+               {
+                   return first.x < second.x;
+               });
+
+    return selected;
 }
 
 void SpectrumDisplay::drawBackground (juce::Graphics& g, juce::Rectangle<int> bounds)
@@ -547,6 +667,60 @@ void SpectrumDisplay::drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds
                     false);
 
         x += itemWidth + 10.0f;
+    }
+}
+
+void SpectrumDisplay::drawPeakNoteLabels (juce::Graphics& g, juce::Rectangle<int> bounds)
+{
+    const auto area = getSpectrumArea (bounds);
+    const auto labels = buildPeakNoteLabels (area);
+
+    if (labels.empty())
+        return;
+
+    g.setFont (juce::FontOptions (11.0f));
+
+    constexpr auto labelWidth = 38.0f;
+    constexpr auto labelHeight = 18.0f;
+
+    for (const auto& label : labels)
+    {
+        auto labelY = label.y - 24.0f;
+
+        if (labelY < area.getY())
+            labelY = label.y + 8.0f;
+
+        labelY = juce::jlimit (area.getY(),
+                               area.getBottom() - labelHeight,
+                               labelY);
+
+        const auto labelX =
+            juce::jlimit (area.getX(),
+                          area.getRight() - labelWidth,
+                          label.x - labelWidth * 0.5f);
+
+        const auto labelBounds =
+            juce::Rectangle<float> (labelX, labelY, labelWidth, labelHeight);
+
+        const auto markerEndY =
+            labelBounds.getCentreY() < label.y
+                ? labelBounds.getBottom()
+                : labelBounds.getY();
+
+        g.setColour (juce::Colour::fromRGB (255, 190, 80).withAlpha (0.32f));
+        g.drawLine (label.x, label.y, label.x, markerEndY, 1.0f);
+
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.fillRoundedRectangle (labelBounds, 4.0f);
+
+        g.setColour (juce::Colours::white.withAlpha (0.18f));
+        g.drawRoundedRectangle (labelBounds, 4.0f, 1.0f);
+
+        g.setColour (juce::Colours::white.withAlpha (0.78f));
+        g.drawText (label.noteName,
+                    labelBounds.toNearestInt(),
+                    juce::Justification::centred,
+                    true);
     }
 }
 

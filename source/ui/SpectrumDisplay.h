@@ -28,6 +28,15 @@ public:
     void mouseExit (const juce::MouseEvent& event) override;
 
 private:
+    struct PeakNoteLabel
+    {
+        float frequencyHz = 0.0f;
+        float decibels = -100.0f;
+        float x = 0.0f;
+        float y = 0.0f;
+        juce::String noteName;
+    };
+
     void drawBackground (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawFrequencyGrid (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawDecibelGrid (juce::Graphics& g, juce::Rectangle<int> bounds);
@@ -38,8 +47,13 @@ private:
     void drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawMouseReadout (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawPeakNoteLabels (juce::Graphics& g, juce::Rectangle<int> bounds);
 
     juce::Rectangle<float> getSpectrumArea (juce::Rectangle<int> bounds) const;
+    std::vector<PeakNoteLabel> buildPeakNoteLabels (juce::Rectangle<float> area) const;
+    bool isPeakCandidate (size_t index) const;
+    float indexToFrequency (size_t index, size_t numPoints) const;
+    float frequencyToNormalisedX (float frequencyHz) const;
     float frequencyToX (float frequencyHz, juce::Rectangle<float> area) const;
     float xToFrequency (float x, juce::Rectangle<float> area) const;
     float decibelsToY (float decibels, juce::Rectangle<float> area) const;
