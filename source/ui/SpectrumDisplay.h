@@ -25,6 +25,12 @@ public:
     void setPeakHoldSpectrumDb (const std::vector<float>& newPeakHoldDb);
     void setRmsSpectrumDb (const std::vector<float>& newRmsDb);
     void setNotePeaks (const std::vector<DisplayNotePeak>& newNotePeaks);
+    void setAnalyzerFrameData (float dataMinimumFrequencyHz,
+                               float dataMaximumFrequencyHz,
+                               const std::vector<float>& liveDb,
+                               const std::vector<float>& peakHoldDb,
+                               const std::vector<float>& rmsDb,
+                               const std::vector<DisplayNotePeak>& newNotePeaks);
     void setMinimumDecibels (float newMinimumDecibels);
     void setSlopeDbPerOctave (float newSlopeDbPerOctave);
     void setVisibleFrequencyRange (float minimumHz, float maximumHz);

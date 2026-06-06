@@ -290,13 +290,6 @@ void PluginEditor::timerCallback()
 
     if (processorRef.copyLatestAnalyzerFrame (analyzerFrame))
     {
-        spectrumDisplay.setSpectrumDataFrequencyRange (analyzerFrame.dataMinFrequencyHz,
-                                                       analyzerFrame.dataMaxFrequencyHz);
-
-        spectrumDisplay.setSpectrumDb (analyzerFrame.liveDb);
-        spectrumDisplay.setPeakHoldSpectrumDb (analyzerFrame.peakHoldDb);
-        spectrumDisplay.setRmsSpectrumDb (analyzerFrame.rmsDb);
-
         std::vector<SpectrumDisplay::DisplayNotePeak> displayNotePeaks;
         displayNotePeaks.reserve (analyzerFrame.notePeaks.size());
 
@@ -310,7 +303,12 @@ void PluginEditor::timerCallback()
             });
         }
 
-        spectrumDisplay.setNotePeaks (displayNotePeaks);
+        spectrumDisplay.setAnalyzerFrameData (analyzerFrame.dataMinFrequencyHz,
+                                              analyzerFrame.dataMaxFrequencyHz,
+                                              analyzerFrame.liveDb,
+                                              analyzerFrame.peakHoldDb,
+                                              analyzerFrame.rmsDb,
+                                              displayNotePeaks);
     }
 }
 

@@ -38,6 +38,35 @@ void SpectrumDisplay::setNotePeaks (const std::vector<DisplayNotePeak>& newNoteP
     repaint();
 }
 
+void SpectrumDisplay::setAnalyzerFrameData (
+    float dataMinimumFrequencyHz,
+    float dataMaximumFrequencyHz,
+    const std::vector<float>& newLiveDb,
+    const std::vector<float>& newPeakHoldDb,
+    const std::vector<float>& newRmsDb,
+    const std::vector<DisplayNotePeak>& newNotePeaks)
+{
+    const auto clampedMinimum =
+        juce::jlimit (AnalyzerFrequencyRange::minimumHz,
+                      AnalyzerFrequencyRange::maximumHz - 1.0f,
+                      dataMinimumFrequencyHz);
+
+    const auto clampedMaximum =
+        juce::jlimit (clampedMinimum + 1.0f,
+                      AnalyzerFrequencyRange::maximumHz,
+                      dataMaximumFrequencyHz);
+
+    dataMinFrequencyHz = clampedMinimum;
+    dataMaxFrequencyHz = clampedMaximum;
+
+    spectrumDb = newLiveDb;
+    peakHoldDb = newPeakHoldDb;
+    rmsDb = newRmsDb;
+    notePeaks = newNotePeaks;
+
+    repaint();
+}
+
 void SpectrumDisplay::setMinimumDecibels (float newMinimumDecibels)
 {
     const auto clampedMinimum = juce::jlimit (-120.0f, -20.0f, newMinimumDecibels);
