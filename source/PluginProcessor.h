@@ -6,6 +6,7 @@
 #include "analyzer/AnalyzerEngine.h"
 #include <vector>
 
+
 #if (MSVC)
 #include "ipps.h"
 #endif
