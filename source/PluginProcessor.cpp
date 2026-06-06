@@ -17,11 +17,13 @@ PluginProcessor::PluginProcessor()
     fftSizeParameter = parameters.getRawParameterValue (fftSizeParamId);
     peakHoldDecayParameter = parameters.getRawParameterValue (peakHoldDecayParamId);
     rmsTimeParameter = parameters.getRawParameterValue (rmsTimeParamId);
+    dbRangeParameter = parameters.getRawParameterValue (dbRangeParamId);
 
     jassert (inputModeParameter != nullptr);
     jassert (fftSizeParameter != nullptr);
     jassert (peakHoldDecayParameter != nullptr);
     jassert (rmsTimeParameter != nullptr);
+    jassert (dbRangeParameter != nullptr);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
@@ -66,6 +68,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         "RMS Time",
         getAnalyzerRmsTimeChoices(),
         1));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID { dbRangeParamId, 1 },
+        "dB Range",
+        getAnalyzerDbRangeChoices(),
+        2));
 
     return { params.begin(), params.end() };
 }
@@ -165,6 +173,15 @@ float PluginProcessor::getRmsTimeSeconds() const noexcept
 
     return analyzerRmsTimeSecondsFromParameterValue (
         rmsTimeParameter->load (std::memory_order_relaxed));
+}
+
+float PluginProcessor::getAnalyzerMinimumDecibels() const noexcept
+{
+    if (dbRangeParameter == nullptr)
+        return -100.0f;
+
+    return analyzerDbRangeMinimumDecibelsFromParameterValue (
+        dbRangeParameter->load (std::memory_order_relaxed));
 }
 
 //==============================================================================

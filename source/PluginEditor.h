@@ -41,6 +41,7 @@ private:
     juce::ComboBox fftSizeBox;
     juce::ComboBox peakHoldDecayBox;
     juce::ComboBox rmsTimeBox;
+    juce::ComboBox dbRangeBox;
 
     // Attachments
     std::unique_ptr<ButtonAttachment> liveButtonAttachment;
@@ -50,6 +51,7 @@ private:
     std::unique_ptr<ComboBoxAttachment> fftSizeAttachment;
     std::unique_ptr<ComboBoxAttachment> peakHoldDecayAttachment;
     std::unique_ptr<ComboBoxAttachment> rmsTimeAttachment;
+    std::unique_ptr<ComboBoxAttachment> dbRangeAttachment;
 
     SpectrumDisplay spectrumDisplay;
     AnalyzerEngine::Frame analyzerFrame;

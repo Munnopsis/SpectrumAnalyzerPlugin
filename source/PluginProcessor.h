@@ -9,6 +9,7 @@
 #include "analyzer/AnalyzerFftSize.h"
 #include "analyzer/AnalyzerPeakHoldDecay.h"
 #include "analyzer/AnalyzerRmsTime.h"
+#include "analyzer/AnalyzerDbRange.h"
 
 #if (MSVC)
 #include "ipps.h"
@@ -73,6 +74,7 @@ public:
     static inline const juce::String fftSizeParamId { "fftSize" };
     static inline const juce::String peakHoldDecayParamId { "peakHoldDecay" };
     static inline const juce::String rmsTimeParamId { "rmsTime" };
+    static inline const juce::String dbRangeParamId { "dbRange" };
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept
     {
@@ -93,6 +95,8 @@ public:
     {
         return parameters.getRawParameterValue (showPeakHoldCurveParamId)->load() > 0.5f;
     }
+
+    float getAnalyzerMinimumDecibels() const noexcept;
 
     bool copyLatestAnalyzerFrame (AnalyzerEngine::Frame& destination)
     {
@@ -118,6 +122,7 @@ private:
     std::atomic<float>* fftSizeParameter = nullptr;
     std::atomic<float>* peakHoldDecayParameter = nullptr;
     std::atomic<float>* rmsTimeParameter = nullptr;
+    std::atomic<float>* dbRangeParameter = nullptr;
 
     AnalyzerFifo analyzerFifo;
     AnalyzerEngine analyzerEngine;

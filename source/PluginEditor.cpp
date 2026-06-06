@@ -3,6 +3,7 @@
 #include "analyzer/AnalyzerFftSize.h"
 #include "analyzer/AnalyzerPeakHoldDecay.h"
 #include "analyzer/AnalyzerRmsTime.h"
+#include "analyzer/AnalyzerDbRange.h"
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p)
@@ -20,6 +21,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (fftSizeBox);
     addAndMakeVisible (peakHoldDecayBox);
     addAndMakeVisible (rmsTimeBox);
+    addAndMakeVisible (dbRangeBox);
 
     clearPeakButton.onClick = [this]
     {
@@ -68,6 +70,15 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         PluginProcessor::rmsTimeParamId,
         rmsTimeBox);
 
+    dbRangeBox.addItemList (getAnalyzerDbRangeChoices(), 1);
+    dbRangeBox.setJustificationType (juce::Justification::centred);
+    dbRangeBox.setTooltip ("Analyzer dB display range");
+
+    dbRangeAttachment = std::make_unique<ComboBoxAttachment> (
+        state,
+        PluginProcessor::dbRangeParamId,
+        dbRangeBox);
+
     liveButtonAttachment = std::make_unique<ButtonAttachment> (
         state,
         PluginProcessor::showLiveCurveParamId,
@@ -99,7 +110,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         inspector->setVisible (true);
     };
 
-    setSize (1260, 650);
+    setSize (1380, 650);
 
     startTimerHz (30);
 }
@@ -128,7 +139,7 @@ void PluginEditor::resized()
 
     auto topBar = bounds.reduced (12).removeFromTop (32);
 
-    auto rightControls = topBar.removeFromRight (970);
+    auto rightControls = topBar.removeFromRight (1082);
 
     inputModeBox.setBounds (rightControls.removeFromLeft (150));
     rightControls.removeFromLeft (8);
@@ -140,6 +151,9 @@ void PluginEditor::resized()
     rightControls.removeFromLeft (8);
 
     rmsTimeBox.setBounds (rightControls.removeFromLeft (120));
+    rightControls.removeFromLeft (8);
+
+    dbRangeBox.setBounds (rightControls.removeFromLeft (90));
     rightControls.removeFromLeft (8);
 
     liveButton.setBounds (rightControls.removeFromLeft (64));
@@ -160,6 +174,7 @@ void PluginEditor::resized()
 void PluginEditor::timerCallback()
 {
     spectrumDisplay.setInputLevelDb (processorRef.getInputLevelDb());
+    spectrumDisplay.setMinimumDecibels (processorRef.getAnalyzerMinimumDecibels());
 
     spectrumDisplay.setCurveVisibility (
         processorRef.shouldShowLiveCurve(),

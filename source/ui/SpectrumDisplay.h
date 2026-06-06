@@ -13,6 +13,7 @@ public:
     void setSpectrumDb (const std::vector<float>& newSpectrumDb);
     void setPeakHoldSpectrumDb (const std::vector<float>& newPeakHoldDb);
     void setRmsSpectrumDb (const std::vector<float>& newRmsDb);
+    void setMinimumDecibels (float newMinimumDecibels);
 
     void setCurveVisibility (bool shouldShowLive,
                          bool shouldShowRms,
@@ -38,9 +39,9 @@ private:
 
     static constexpr float minFrequencyHz = 20.0f;
     static constexpr float maxFrequencyHz = 20000.0f;
-    static constexpr float minDecibels = -100.0f;
     static constexpr float maxDecibels = 0.0f;
 
+    float minDecibels = -100.0f;
     float inputLevelDb = -100.0f;
     std::vector<float> spectrumDb;
     std::vector<float> peakHoldDb;

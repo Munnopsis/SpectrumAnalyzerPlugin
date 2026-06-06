@@ -30,6 +30,17 @@ void SpectrumDisplay::setRmsSpectrumDb (const std::vector<float>& newRmsDb)
     repaint();
 }
 
+void SpectrumDisplay::setMinimumDecibels (float newMinimumDecibels)
+{
+    const auto clampedMinimum = juce::jlimit (-120.0f, -20.0f, newMinimumDecibels);
+
+    if (std::abs (minDecibels - clampedMinimum) < 0.001f)
+        return;
+
+    minDecibels = clampedMinimum;
+    repaint();
+}
+
 void SpectrumDisplay::setCurveVisibility (bool shouldShowLive,
                                           bool shouldShowRms,
                                           bool shouldShowPeakHold)
@@ -144,14 +155,14 @@ void SpectrumDisplay::drawDecibelGrid (juce::Graphics& g, juce::Rectangle<int> b
 
     const auto drawArea = area.toFloat();
 
-    const std::array<float, 6> decibels {
-        0.0f, -20.0f, -40.0f, -60.0f, -80.0f, -100.0f
-    };
-
     g.setFont (juce::FontOptions (11.0f));
 
-    for (const auto db : decibels)
+    constexpr auto numGridLines = 6;
+
+    for (int i = 0; i < numGridLines; ++i)
     {
+        const auto normalised = static_cast<float> (i) / static_cast<float> (numGridLines - 1);
+        const auto db = juce::jmap (normalised, 0.0f, 1.0f, maxDecibels, minDecibels);
         const auto y = decibelsToY (db, drawArea);
 
         g.setColour (juce::Colours::white.withAlpha (0.12f));
