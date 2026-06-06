@@ -23,6 +23,14 @@ private:
     void drawInputLevelMeter (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
 
+    float frequencyToX (float frequencyHz, juce::Rectangle<float> area) const;
+    float decibelsToY (float decibels, juce::Rectangle<float> area) const;
+
+    static constexpr float minFrequencyHz = 20.0f;
+    static constexpr float maxFrequencyHz = 20000.0f;
+    static constexpr float minDecibels = -100.0f;
+    static constexpr float maxDecibels = 0.0f;
+
     float inputLevelDb = -100.0f;
     std::vector<float> spectrumDb;
 

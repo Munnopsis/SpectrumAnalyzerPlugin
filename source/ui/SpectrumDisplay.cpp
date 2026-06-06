@@ -1,4 +1,5 @@
 #include "SpectrumDisplay.h"
+#include <cmath>
 
 SpectrumDisplay::SpectrumDisplay()
 {
@@ -41,6 +42,23 @@ void SpectrumDisplay::resized()
 {
 }
 
+float SpectrumDisplay::frequencyToX (float frequencyHz, juce::Rectangle<float> area) const
+{
+    const auto clampedFrequency = juce::jlimit (minFrequencyHz, maxFrequencyHz, frequencyHz);
+
+    const auto normalised =
+        std::log (clampedFrequency / minFrequencyHz)
+        / std::log (maxFrequencyHz / minFrequencyHz);
+
+    return area.getX() + normalised * area.getWidth();
+}
+
+float SpectrumDisplay::decibelsToY (float decibels, juce::Rectangle<float> area) const
+{
+    const auto clampedDb = juce::jlimit (minDecibels, maxDecibels, decibels);
+    return juce::jmap (clampedDb, minDecibels, maxDecibels, area.getBottom(), area.getY());
+}
+
 void SpectrumDisplay::drawBackground (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
     juce::ignoreUnused (bounds);
@@ -50,27 +68,63 @@ void SpectrumDisplay::drawBackground (juce::Graphics& g, juce::Rectangle<int> bo
 
 void SpectrumDisplay::drawFrequencyGrid (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
-    g.setColour (juce::Colours::white.withAlpha (0.10f));
+    auto area = bounds.reduced (40, 50);
+    area.removeFromBottom (34);
 
-    constexpr int numberOfVerticalLines = 10;
+    const auto drawArea = area.toFloat();
 
-    for (int i = 0; i <= numberOfVerticalLines; ++i)
+    const std::array<float, 10> frequencies {
+        20.0f, 50.0f, 100.0f, 200.0f, 500.0f,
+        1000.0f, 2000.0f, 5000.0f, 10000.0f, 20000.0f
+    };
+
+    g.setFont (juce::FontOptions (11.0f));
+
+    for (const auto frequency : frequencies)
     {
-        const auto x = bounds.getX() + bounds.getWidth() * i / numberOfVerticalLines;
-        g.drawVerticalLine (x, static_cast<float> (bounds.getY()), static_cast<float> (bounds.getBottom()));
+        const auto x = frequencyToX (frequency, drawArea);
+
+        g.setColour (juce::Colours::white.withAlpha (0.12f));
+        g.drawVerticalLine (juce::roundToInt (x), drawArea.getY(), drawArea.getBottom());
+
+        juce::String label;
+
+        if (frequency >= 1000.0f)
+            label = juce::String (frequency / 1000.0f, frequency >= 10000.0f ? 0 : 1) + "k";
+        else
+            label = juce::String (static_cast<int> (frequency));
+
+        g.setColour (juce::Colours::white.withAlpha (0.55f));
+        g.drawText (label,
+                    juce::Rectangle<float> (x - 24.0f, drawArea.getBottom() + 4.0f, 48.0f, 16.0f),
+                    juce::Justification::centred);
     }
 }
 
 void SpectrumDisplay::drawDecibelGrid (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
-    g.setColour (juce::Colours::white.withAlpha (0.10f));
+    auto area = bounds.reduced (40, 50);
+    area.removeFromBottom (34);
 
-    constexpr int numberOfHorizontalLines = 8;
+    const auto drawArea = area.toFloat();
 
-    for (int i = 0; i <= numberOfHorizontalLines; ++i)
+    const std::array<float, 6> decibels {
+        0.0f, -20.0f, -40.0f, -60.0f, -80.0f, -100.0f
+    };
+
+    g.setFont (juce::FontOptions (11.0f));
+
+    for (const auto db : decibels)
     {
-        const auto y = bounds.getY() + bounds.getHeight() * i / numberOfHorizontalLines;
-        g.drawHorizontalLine (y, static_cast<float> (bounds.getX()), static_cast<float> (bounds.getRight()));
+        const auto y = decibelsToY (db, drawArea);
+
+        g.setColour (juce::Colours::white.withAlpha (0.12f));
+        g.drawHorizontalLine (juce::roundToInt (y), drawArea.getX(), drawArea.getRight());
+
+        g.setColour (juce::Colours::white.withAlpha (0.55f));
+        g.drawText (juce::String (static_cast<int> (db)) + " dB",
+                    juce::Rectangle<float> (4.0f, y - 8.0f, 34.0f, 16.0f),
+                    juce::Justification::centredRight);
     }
 }
 
@@ -134,14 +188,11 @@ void SpectrumDisplay::drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int>
 
     juce::Path curve;
 
-    const auto minDb = -100.0f;
-    const auto maxDb = 0.0f;
-
-    const auto firstDb = juce::jlimit (minDb, maxDb, spectrumDb.front());
+    const auto firstDb = juce::jlimit (minDecibels, maxDecibels, spectrumDb.front());
 
     curve.startNewSubPath (
         area.getX(),
-        juce::jmap (firstDb, minDb, maxDb, area.getBottom(), area.getY())
+        decibelsToY (firstDb, area)
     );
 
     for (size_t i = 1; i < spectrumDb.size(); ++i)
@@ -151,8 +202,8 @@ void SpectrumDisplay::drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int>
 
         const auto x = area.getX() + normalisedX * area.getWidth();
 
-        const auto db = juce::jlimit (minDb, maxDb, spectrumDb[i]);
-        const auto y = juce::jmap (db, minDb, maxDb, area.getBottom(), area.getY());
+        const auto db = juce::jlimit (minDecibels, maxDecibels, spectrumDb[i]);
+        const auto y = decibelsToY (db, area);
 
         curve.lineTo (x, y);
     }

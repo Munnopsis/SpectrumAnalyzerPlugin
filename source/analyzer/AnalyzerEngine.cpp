@@ -8,7 +8,8 @@ AnalyzerEngine::AnalyzerEngine()
       forwardFFT (fftOrder),
       window (fftSize, juce::dsp::WindowingFunction<float>::hann, false)
 {
-    workingSpectrumDb.resize (displayBinCount, -100.0f);
+    rawSpectrumDb.resize (displayBinCount, -100.0f);
+    smoothedSpectrumDb.resize (displayBinCount, -100.0f);
     latestSpectrumDb.resize (displayBinCount, -100.0f);
 }
 
@@ -31,7 +32,8 @@ void AnalyzerEngine::reset()
 {
     std::fill (timeDomainBlock.begin(), timeDomainBlock.end(), 0.0f);
     std::fill (fftData.begin(), fftData.end(), 0.0f);
-    std::fill (workingSpectrumDb.begin(), workingSpectrumDb.end(), -100.0f);
+    std::fill (rawSpectrumDb.begin(), rawSpectrumDb.end(), -100.0f);
+    std::fill (smoothedSpectrumDb.begin(), smoothedSpectrumDb.end(), -100.0f);
 
     {
         std::lock_guard<std::mutex> lock (latestSpectrumMutex);
@@ -131,13 +133,20 @@ void AnalyzerEngine::processOneFftBlock()
         const auto db =
             juce::Decibels::gainToDecibels (magnitude * 2.0f, -100.0f);
 
-        workingSpectrumDb[static_cast<size_t> (i)] =
-            juce::jlimit (-100.0f, 0.0f, db);
+        const auto targetDb = juce::jlimit (-100.0f, 0.0f, db);
+        const auto index = static_cast<size_t> (i);
+
+        rawSpectrumDb[index] = targetDb;
+
+        const auto previousDb = smoothedSpectrumDb[index];
+        const auto smoothing = targetDb > previousDb ? attackSmoothing : releaseSmoothing;
+
+        smoothedSpectrumDb[index] = previousDb + smoothing * (targetDb - previousDb);
     }
 
     {
         std::lock_guard<std::mutex> lock (latestSpectrumMutex);
-        latestSpectrumDb = workingSpectrumDb;
+        latestSpectrumDb = smoothedSpectrumDb;
     }
 
     hasFrame.store (true, std::memory_order_relaxed);

@@ -42,8 +42,12 @@ private:
     std::array<float, fftSize> timeDomainBlock {};
     std::array<float, fftSize * 2> fftData {};
 
-    std::vector<float> workingSpectrumDb;
+    std::vector<float> rawSpectrumDb;
+    std::vector<float> smoothedSpectrumDb;
     std::vector<float> latestSpectrumDb;
+
+    static constexpr float attackSmoothing = 0.35f;
+    static constexpr float releaseSmoothing = 0.08f;
 
     std::mutex latestSpectrumMutex;
     std::atomic<bool> hasFrame { false };
