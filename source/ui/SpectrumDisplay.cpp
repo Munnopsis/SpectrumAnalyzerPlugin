@@ -1,7 +1,6 @@
 #include "SpectrumDisplay.h"
 #include <algorithm>
 #include <cmath>
-#include <limits>
 
 SpectrumDisplay::SpectrumDisplay()
 {
@@ -29,6 +28,12 @@ void SpectrumDisplay::setPeakHoldSpectrumDb (const std::vector<float>& newPeakHo
 void SpectrumDisplay::setRmsSpectrumDb (const std::vector<float>& newRmsDb)
 {
     rmsDb = newRmsDb;
+    repaint();
+}
+
+void SpectrumDisplay::setNotePeaks (const std::vector<DisplayNotePeak>& newNotePeaks)
+{
+    notePeaks = newNotePeaks;
     repaint();
 }
 
@@ -267,29 +272,6 @@ void SpectrumDisplay::updateMouseReadout (juce::Point<float> newPosition)
     repaint();
 }
 
-float SpectrumDisplay::indexToFrequency (size_t index, size_t numPoints) const
-{
-    if (numPoints < 2)
-        return minFrequencyHz;
-
-    const auto normalisedX =
-        juce::jlimit (0.0f,
-                      1.0f,
-                      static_cast<float> (index) / static_cast<float> (numPoints - 1));
-
-    return minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, normalisedX);
-}
-
-float SpectrumDisplay::frequencyToNormalisedX (float frequencyHz) const
-{
-    const auto safeFrequency = juce::jmax (1.0f, frequencyHz);
-    const auto normalised =
-        std::log (safeFrequency / minFrequencyHz)
-        / std::log (maxFrequencyHz / minFrequencyHz);
-
-    return juce::jlimit (0.0f, 1.0f, normalised);
-}
-
 int SpectrumDisplay::frequencyToMidiNote (float frequencyHz) const
 {
     if (frequencyHz <= 0.0f)
@@ -309,97 +291,44 @@ int SpectrumDisplay::midiNoteToPitchClass (int midiNote) const
     return midiNote % 12;
 }
 
-float SpectrumDisplay::getCorrectedPeakHoldDbAtIndex (size_t index) const
-{
-    if (index >= peakHoldDb.size())
-        return -100.0f;
-
-    return applySlopeCorrection (peakHoldDb[index],
-                                 indexToFrequency (index, peakHoldDb.size()));
-}
-
-bool SpectrumDisplay::isPeakCandidate (size_t index) const
-{
-    if (! showPeakHoldCurve
-        || peakHoldDb.size() < 3
-        || index == 0
-        || index + 1 >= peakHoldDb.size())
-    {
-        return false;
-    }
-
-    const auto frequency = indexToFrequency (index, peakHoldDb.size());
-
-    if (frequency < 40.0f || frequency > 8000.0f)
-        return false;
-
-    const auto previous = getCorrectedPeakHoldDbAtIndex (index - 1);
-    const auto current = getCorrectedPeakHoldDbAtIndex (index);
-    const auto next = getCorrectedPeakHoldDbAtIndex (index + 1);
-
-    if (current < minDecibels + 12.0f)
-        return false;
-
-    if (! (current >= previous
-           && current >= next
-           && (current > previous || current > next)))
-    {
-        return false;
-    }
-
-    const auto firstNeighbour = index > 3 ? index - 3 : static_cast<size_t> (0);
-    const auto lastNeighbour = std::min (peakHoldDb.size() - 1, index + 3);
-    auto strongestNeighbour = -std::numeric_limits<float>::max();
-
-    for (auto neighbour = firstNeighbour; neighbour <= lastNeighbour; ++neighbour)
-    {
-        if (neighbour == index)
-            continue;
-
-        strongestNeighbour = std::max (strongestNeighbour,
-                                       getCorrectedPeakHoldDbAtIndex (neighbour));
-    }
-
-    return current - strongestNeighbour >= 3.0f;
-}
-
 std::vector<SpectrumDisplay::PeakNoteLabel> SpectrumDisplay::buildPeakNoteLabels (
     juce::Rectangle<float> area) const
 {
     std::vector<PeakNoteLabel> candidates;
 
-    if (! showPeakHoldCurve || peakHoldDb.size() < 3)
+    if (! showPeakHoldCurve || notePeaks.empty())
         return candidates;
 
-    const auto numPoints = peakHoldDb.size();
-
-    for (size_t i = 1; i + 1 < numPoints; ++i)
+    for (const auto& notePeak : notePeaks)
     {
-        if (! isPeakCandidate (i))
+        if (notePeak.frequencyHz < minFrequencyHz
+            || notePeak.frequencyHz > maxFrequencyHz
+            || notePeak.midiNote < 0)
+        {
             continue;
+        }
 
-        const auto frequency = indexToFrequency (i, numPoints);
-        const auto midiNote = frequencyToMidiNote (frequency);
+        auto displayDb = applySlopeCorrection (notePeak.decibels, notePeak.frequencyHz);
 
-        if (midiNote < 0)
-            continue;
+        float peakHoldCurveDb = displayDb;
 
-        const auto correctedDb = getCorrectedPeakHoldDbAtIndex (i);
-        const auto normalisedX = frequencyToNormalisedX (frequency);
-        const auto x = area.getX() + normalisedX * area.getWidth();
-        const auto yDb = juce::jlimit (minDecibels, maxDecibels, correctedDb);
+        if (getInterpolatedCurveValueDb (peakHoldDb, notePeak.frequencyHz, peakHoldCurveDb))
+            displayDb = peakHoldCurveDb;
+
+        const auto x = frequencyToX (notePeak.frequencyHz, area);
+        const auto yDb = juce::jlimit (minDecibels, maxDecibels, displayDb);
         const auto y = decibelsToY (yDb, area);
 
         if (! area.contains (juce::Point<float> (x, y)))
             continue;
 
         candidates.push_back ({
-            frequency,
-            correctedDb,
+            notePeak.frequencyHz,
+            displayDb,
             x,
             y,
-            midiNote,
-            frequencyToNoteName (frequency)
+            notePeak.midiNote,
+            frequencyToNoteName (notePeak.frequencyHz)
         });
     }
 
@@ -411,35 +340,33 @@ std::vector<SpectrumDisplay::PeakNoteLabel> SpectrumDisplay::buildPeakNoteLabels
                });
 
     std::vector<PeakNoteLabel> selected;
-    selected.reserve (8);
+    selected.reserve (10);
 
-    constexpr auto maxLabels = static_cast<size_t> (8);
-    constexpr auto minDistancePixels = 56.0f;
+    constexpr auto maxLabels = static_cast<size_t> (10);
+    constexpr auto minNoteLabelDistancePixels = 34.0f;
 
     for (const auto& candidate : candidates)
     {
+        const auto duplicateMidiNote =
+            std::any_of (selected.begin(),
+                         selected.end(),
+                         [&candidate] (const auto& existing)
+                         {
+                             return existing.midiNote == candidate.midiNote;
+                         });
+
+        if (duplicateMidiNote)
+            continue;
+
         const auto tooClose =
             std::any_of (selected.begin(),
                          selected.end(),
                          [&candidate] (const auto& existing)
                          {
-                             return std::abs (candidate.x - existing.x) < minDistancePixels;
+                             return std::abs (candidate.x - existing.x) < minNoteLabelDistancePixels;
                          });
 
         if (tooClose)
-            continue;
-
-        const auto candidatePitchClass = midiNoteToPitchClass (candidate.midiNote);
-        const auto hasSimilarPitchClass =
-            std::any_of (selected.begin(),
-                         selected.end(),
-                         [this, candidatePitchClass, &candidate] (const auto& existing)
-                         {
-                             return midiNoteToPitchClass (existing.midiNote) == candidatePitchClass
-                                    && std::abs (candidate.midiNote - existing.midiNote) < 24;
-                         });
-
-        if (hasSimilarPitchClass)
             continue;
 
         selected.push_back (candidate);

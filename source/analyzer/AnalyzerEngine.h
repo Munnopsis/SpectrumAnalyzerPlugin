@@ -17,11 +17,20 @@ public:
     AnalyzerEngine();
     ~AnalyzerEngine() override;
 
+    struct NotePeak
+    {
+        float frequencyHz = 0.0f;
+        float decibels = -100.0f;
+        int midiNote = -1;
+        int pitchClass = -1;
+    };
+
     struct Frame
     {
         std::vector<float> liveDb;
         std::vector<float> peakHoldDb;
         std::vector<float> rmsDb;
+        std::vector<NotePeak> notePeaks;
     };
 
     void prepare (double sampleRate, AnalyzerFifo& fifoToReadFrom);
@@ -42,11 +51,35 @@ public:
     bool copyLatestFrame (Frame& destination);
 
 private:
+    struct TrackedNotePeak
+    {
+        float frequencyHz = 0.0f;
+        float decibels = -100.0f;
+        float heldDecibels = -100.0f;
+
+        int midiNote = -1;
+        int pitchClass = -1;
+
+        int hitCount = 0;
+        int framesSinceSeen = 0;
+        float secondsSinceSeen = 0.0f;
+        float confidence = 0.0f;
+        bool hasBecomeStable = false;
+    };
+
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
     void configureFft (int newFftOrder);
     void handleClearPeakHoldRequest();
+    int frequencyToMidiNote (float frequencyHz) const noexcept;
+    int midiNoteToPitchClass (int midiNote) const noexcept;
+    void extractInstantaneousNotePeaksFromFftData (int fftSizeForBlock);
+    void updateTrackedNotePeaks (float frameDurationSeconds,
+                             float peakHoldDecayDbPerSecondForFrame);
+    static float smoothingCoefficientForTimeConstant (float frameDurationSeconds,
+                                                      float timeConstantSeconds) noexcept;
+    void publishStableNotePeaks();
 
     static constexpr int minFftOrder = 10;
     static constexpr int defaultFftOrder = 11;
@@ -54,6 +87,27 @@ private:
 
     static constexpr int displayBinCount = 256;
     static constexpr float defaultPeakHoldDecayDbPerSecond = 8.0f;
+
+    static constexpr int maxInstantaneousNotePeaks = 60;
+    static constexpr int maxPublishedNotePeaks = 16;
+
+    static constexpr float minNotePeakFrequencyHz = 40.0f;
+    static constexpr float maxNotePeakFrequencyHz = 5000.0f;
+
+    static constexpr float notePeakRelativeThresholdDb = 36.0f;
+    static constexpr float notePeakMinAbsoluteDb = -90.0f;
+    static constexpr float notePeakMinProminenceDb = 2.5f;
+
+    static constexpr int notePeakMinimumHitCount = 1;
+
+    static constexpr float notePeakPublishAttackSeconds = 0.100f;
+    static constexpr float notePeakReleaseSeconds = 0.650f;
+    static constexpr float notePeakFrequencySmoothingSeconds = 0.080f;
+    static constexpr float notePeakDbAttackSeconds = 0.080f;
+    static constexpr float notePeakDbReleaseSeconds = 0.300f;
+
+    static constexpr float notePeakPublishConfidence = 0.60f;
+    static constexpr float notePeakRemoveConfidence = 0.02f;
 
     AnalyzerFifo* sourceFifo = nullptr;
 
@@ -74,10 +128,15 @@ private:
     std::vector<float> smoothedSpectrumDb;
     std::vector<float> peakHoldSpectrumDb;
     std::vector<float> rmsPowerSpectrum;
+    std::vector<float> notePeakBinDecibels;
 
     std::vector<float> latestSpectrumDb;
     std::vector<float> latestPeakHoldSpectrumDb;
     std::vector<float> latestRmsSpectrumDb;
+    std::vector<NotePeak> instantaneousNotePeaks;
+    std::vector<TrackedNotePeak> trackedNotePeaks;
+    std::vector<NotePeak> currentNotePeaks;
+    std::vector<NotePeak> latestNotePeaks;
 
     static constexpr float attackSmoothing = 0.35f;
     static constexpr float releaseSmoothing = 0.08f;

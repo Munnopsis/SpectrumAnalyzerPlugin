@@ -252,6 +252,21 @@ void PluginEditor::timerCallback()
         spectrumDisplay.setSpectrumDb (analyzerFrame.liveDb);
         spectrumDisplay.setPeakHoldSpectrumDb (analyzerFrame.peakHoldDb);
         spectrumDisplay.setRmsSpectrumDb (analyzerFrame.rmsDb);
+
+        std::vector<SpectrumDisplay::DisplayNotePeak> displayNotePeaks;
+        displayNotePeaks.reserve (analyzerFrame.notePeaks.size());
+
+        for (const auto& notePeak : analyzerFrame.notePeaks)
+        {
+            displayNotePeaks.push_back ({
+                notePeak.frequencyHz,
+                notePeak.decibels,
+                notePeak.midiNote,
+                notePeak.pitchClass
+            });
+        }
+
+        spectrumDisplay.setNotePeaks (displayNotePeaks);
     }
 }
 

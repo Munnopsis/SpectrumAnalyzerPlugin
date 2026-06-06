@@ -9,10 +9,19 @@ public:
     SpectrumDisplay();
     ~SpectrumDisplay() override = default;
 
+    struct DisplayNotePeak
+    {
+        float frequencyHz = 0.0f;
+        float decibels = -100.0f;
+        int midiNote = -1;
+        int pitchClass = -1;
+    };
+
     void setInputLevelDb (float newLevelDb);
     void setSpectrumDb (const std::vector<float>& newSpectrumDb);
     void setPeakHoldSpectrumDb (const std::vector<float>& newPeakHoldDb);
     void setRmsSpectrumDb (const std::vector<float>& newRmsDb);
+    void setNotePeaks (const std::vector<DisplayNotePeak>& newNotePeaks);
     void setMinimumDecibels (float newMinimumDecibels);
     void setSlopeDbPerOctave (float newSlopeDbPerOctave);
 
@@ -52,10 +61,6 @@ private:
 
     juce::Rectangle<float> getSpectrumArea (juce::Rectangle<int> bounds) const;
     std::vector<PeakNoteLabel> buildPeakNoteLabels (juce::Rectangle<float> area) const;
-    bool isPeakCandidate (size_t index) const;
-    float getCorrectedPeakHoldDbAtIndex (size_t index) const;
-    float indexToFrequency (size_t index, size_t numPoints) const;
-    float frequencyToNormalisedX (float frequencyHz) const;
     int frequencyToMidiNote (float frequencyHz) const;
     int midiNoteToPitchClass (int midiNote) const;
     float frequencyToX (float frequencyHz, juce::Rectangle<float> area) const;
@@ -83,6 +88,7 @@ private:
     std::vector<float> spectrumDb;
     std::vector<float> peakHoldDb;
     std::vector<float> rmsDb;
+    std::vector<DisplayNotePeak> notePeaks;
 
     bool showLiveCurve = true;
     bool showRmsCurve = true;

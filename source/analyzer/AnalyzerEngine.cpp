@@ -1,7 +1,9 @@
 #include "AnalyzerEngine.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 
 AnalyzerEngine::AnalyzerEngine()
     : juce::Thread ("FullSpectrum Analyzer Engine")
@@ -10,6 +12,10 @@ AnalyzerEngine::AnalyzerEngine()
     smoothedSpectrumDb.resize (displayBinCount, -100.0f);
     peakHoldSpectrumDb.resize (displayBinCount, -100.0f);
     rmsPowerSpectrum.resize (displayBinCount, 0.0f);
+    instantaneousNotePeaks.reserve (maxInstantaneousNotePeaks);
+    trackedNotePeaks.reserve (maxInstantaneousNotePeaks);
+    currentNotePeaks.reserve (maxPublishedNotePeaks);
+    latestNotePeaks.reserve (maxPublishedNotePeaks);
 
     latestSpectrumDb.resize (displayBinCount, -100.0f);
     latestPeakHoldSpectrumDb.resize (displayBinCount, -100.0f);
@@ -43,12 +49,16 @@ void AnalyzerEngine::reset()
     std::fill (smoothedSpectrumDb.begin(), smoothedSpectrumDb.end(), -100.0f);
     std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
     std::fill (rmsPowerSpectrum.begin(), rmsPowerSpectrum.end(), 0.0f);
+    instantaneousNotePeaks.clear();
+    trackedNotePeaks.clear();
+    currentNotePeaks.clear();
 
     {
         std::lock_guard<std::mutex> lock (latestSpectrumMutex);
         std::fill (latestSpectrumDb.begin(), latestSpectrumDb.end(), -100.0f);
         std::fill (latestPeakHoldSpectrumDb.begin(), latestPeakHoldSpectrumDb.end(), -100.0f);
         std::fill (latestRmsSpectrumDb.begin(), latestRmsSpectrumDb.end(), -100.0f);
+        latestNotePeaks.clear();
     }
 
     hasFrame.store (false, std::memory_order_relaxed);
@@ -66,9 +76,13 @@ void AnalyzerEngine::handleClearPeakHoldRequest()
         return;
 
     std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
+    instantaneousNotePeaks.clear();
+    trackedNotePeaks.clear();
+    currentNotePeaks.clear();
 
     std::lock_guard<std::mutex> lock (latestSpectrumMutex);
     std::fill (latestPeakHoldSpectrumDb.begin(), latestPeakHoldSpectrumDb.end(), -100.0f);
+    latestNotePeaks.clear();
 }
 
 void AnalyzerEngine::setPeakHoldDecayDbPerSecond (float newDecayDbPerSecond) noexcept
@@ -106,6 +120,7 @@ void AnalyzerEngine::configureFft (int newFftOrder)
 
     timeDomainBlock.assign (static_cast<size_t> (currentFftSize), 0.0f);
     fftData.assign (static_cast<size_t> (currentFftSize * 2), 0.0f);
+    notePeakBinDecibels.assign (static_cast<size_t> (currentFftSize / 2), notePeakMinAbsoluteDb);
 }
 
 void AnalyzerEngine::updateFftSizeIfNeeded()
@@ -178,6 +193,7 @@ bool AnalyzerEngine::copyLatestFrame (Frame& destination)
     destination.liveDb = latestSpectrumDb;
     destination.peakHoldDb = latestPeakHoldSpectrumDb;
     destination.rmsDb = latestRmsSpectrumDb;
+    destination.notePeaks = latestNotePeaks;
 
     return true;
 }
@@ -230,21 +246,25 @@ void AnalyzerEngine::processOneFftBlock()
 
     forwardFFT->performFrequencyOnlyForwardTransform (fftData.data());
 
+    const auto frameDurationSeconds =
+        static_cast<float> (fftSizeForBlock) / static_cast<float> (currentSampleRate);
+
+    const auto currentPeakHoldDecayDbPerSecond =
+        peakHoldDecayDbPerSecond.load (std::memory_order_relaxed);
+
+    extractInstantaneousNotePeaksFromFftData (fftSizeForBlock);
+    updateTrackedNotePeaks (frameDurationSeconds, currentPeakHoldDecayDbPerSecond);
+    publishStableNotePeaks();
+
     const auto minFrequency = 20.0f;
     const auto maxFrequency = juce::jmax (
         minFrequency + 1.0f,
         juce::jmin (20000.0f, static_cast<float> (currentSampleRate * 0.5))
     );
 
-    const auto currentPeakHoldDecayDbPerSecond =
-        peakHoldDecayDbPerSecond.load (std::memory_order_relaxed);
-
     const auto decayPerFrame =
         currentPeakHoldDecayDbPerSecond * static_cast<float> (fftSizeForBlock)
         / static_cast<float> (currentSampleRate);
-
-    const auto frameDurationSeconds =
-        static_cast<float> (fftSizeForBlock) / static_cast<float> (currentSampleRate);
 
     const auto currentRmsTimeSeconds =
         rmsTimeSeconds.load (std::memory_order_relaxed);
@@ -299,6 +319,7 @@ void AnalyzerEngine::processOneFftBlock()
 
         latestSpectrumDb = smoothedSpectrumDb;
         latestPeakHoldSpectrumDb = peakHoldSpectrumDb;
+        latestNotePeaks = currentNotePeaks;
 
         for (size_t i = 0; i < latestRmsSpectrumDb.size(); ++i)
         {
@@ -312,4 +333,350 @@ void AnalyzerEngine::processOneFftBlock()
     }
 
     hasFrame.store (true, std::memory_order_relaxed);
+}
+
+int AnalyzerEngine::frequencyToMidiNote (float frequencyHz) const noexcept
+{
+    if (frequencyHz <= 0.0f)
+        return -1;
+
+    const auto midi =
+        juce::roundToInt (69.0f + 12.0f * std::log2 (frequencyHz / 440.0f));
+
+    return juce::jlimit (0, 127, midi);
+}
+
+int AnalyzerEngine::midiNoteToPitchClass (int midiNote) const noexcept
+{
+    if (midiNote < 0)
+        return -1;
+
+    return midiNote % 12;
+}
+
+void AnalyzerEngine::extractInstantaneousNotePeaksFromFftData (int fftSizeForBlock)
+{
+    instantaneousNotePeaks.clear();
+
+    if (fftSizeForBlock <= 0 || currentSampleRate <= 0.0)
+        return;
+
+    const auto maxAvailableBin = (fftSizeForBlock / 2) - 1;
+
+    if (maxAvailableBin < 3)
+        return;
+
+    const auto sampleRate = static_cast<float> (currentSampleRate);
+    const auto maxFrequency =
+        juce::jmin (maxNotePeakFrequencyHz, sampleRate * 0.5f);
+
+    const auto minBin =
+        juce::jlimit (1,
+                      maxAvailableBin,
+                      static_cast<int> (std::ceil (minNotePeakFrequencyHz
+                                                   * static_cast<float> (fftSizeForBlock)
+                                                   / sampleRate)));
+
+    const auto maxBin =
+        juce::jlimit (1,
+                      maxAvailableBin,
+                      static_cast<int> (std::floor (maxFrequency
+                                                    * static_cast<float> (fftSizeForBlock)
+                                                    / sampleRate)));
+
+    if (maxBin - minBin < 2)
+        return;
+
+    const auto numBins = static_cast<size_t> (maxBin - minBin + 1);
+
+    if (notePeakBinDecibels.size() < numBins)
+        notePeakBinDecibels.resize (numBins, notePeakMinAbsoluteDb);
+
+    auto maxDb = std::numeric_limits<float>::lowest();
+
+    for (auto bin = minBin; bin <= maxBin; ++bin)
+    {
+        const auto magnitude =
+            (fftData[static_cast<size_t> (bin)] / static_cast<float> (fftSizeForBlock)) * 2.0f;
+
+        const auto db = juce::Decibels::gainToDecibels (magnitude, notePeakMinAbsoluteDb);
+
+        notePeakBinDecibels[static_cast<size_t> (bin - minBin)] = db;
+        maxDb = std::max (maxDb, db);
+    }
+
+    if (maxDb <= notePeakMinAbsoluteDb)
+        return;
+
+    const auto thresholdDb =
+        std::max (notePeakMinAbsoluteDb, maxDb - notePeakRelativeThresholdDb);
+
+    for (auto bin = minBin + 1; bin <= maxBin - 1; ++bin)
+    {
+        const auto binIndex = static_cast<size_t> (bin - minBin);
+        const auto previousDb = notePeakBinDecibels[binIndex - 1];
+        const auto currentDb = notePeakBinDecibels[binIndex];
+        const auto nextDb = notePeakBinDecibels[binIndex + 1];
+
+        if (currentDb < thresholdDb)
+            continue;
+
+        if (! (currentDb >= previousDb
+               && currentDb >= nextDb
+               && (currentDb > previousDb || currentDb > nextDb)))
+        {
+            continue;
+        }
+
+        if (currentDb - std::max (previousDb, nextDb) < notePeakMinProminenceDb)
+            continue;
+
+        const auto denominator = previousDb - 2.0f * currentDb + nextDb;
+        auto offset = 0.0f;
+
+        if (std::abs (denominator) > 0.000001f)
+            offset = 0.5f * (previousDb - nextDb) / denominator;
+
+        offset = juce::jlimit (-0.5f, 0.5f, offset);
+
+        const auto refinedBin = static_cast<float> (bin) + offset;
+        const auto frequencyHz =
+            refinedBin * sampleRate / static_cast<float> (fftSizeForBlock);
+
+        if (frequencyHz < minNotePeakFrequencyHz || frequencyHz > maxNotePeakFrequencyHz)
+            continue;
+
+        const auto midiNote = frequencyToMidiNote (frequencyHz);
+        const auto pitchClass = midiNoteToPitchClass (midiNote);
+
+        if (midiNote < 0 || pitchClass < 0)
+            continue;
+
+        const auto refinedDb =
+            currentDb - 0.25f * (previousDb - nextDb) * offset;
+
+        instantaneousNotePeaks.push_back ({
+            frequencyHz,
+            refinedDb,
+            midiNote,
+            pitchClass
+        });
+    }
+
+    std::sort (instantaneousNotePeaks.begin(),
+               instantaneousNotePeaks.end(),
+               [] (const auto& first, const auto& second)
+               {
+                   return first.decibels > second.decibels;
+               });
+
+    std::array<bool, 128> usedMidiNotes {};
+    auto writeIndex = static_cast<size_t> (0);
+
+    for (const auto& candidate : instantaneousNotePeaks)
+    {
+        if (candidate.midiNote < 0 || candidate.midiNote >= static_cast<int> (usedMidiNotes.size()))
+            continue;
+
+        const auto midiIndex = static_cast<size_t> (candidate.midiNote);
+
+        if (usedMidiNotes[midiIndex])
+            continue;
+
+        usedMidiNotes[midiIndex] = true;
+        instantaneousNotePeaks[writeIndex] = candidate;
+        ++writeIndex;
+
+        if (writeIndex >= static_cast<size_t> (maxInstantaneousNotePeaks))
+            break;
+    }
+
+    instantaneousNotePeaks.resize (writeIndex);
+
+    std::sort (instantaneousNotePeaks.begin(),
+               instantaneousNotePeaks.end(),
+               [] (const auto& first, const auto& second)
+               {
+                   return first.frequencyHz < second.frequencyHz;
+               });
+}
+
+float AnalyzerEngine::smoothingCoefficientForTimeConstant (float frameDurationSeconds,
+                                                           float timeConstantSeconds) noexcept
+{
+    if (frameDurationSeconds <= 0.0f)
+        return 0.0f;
+
+    if (timeConstantSeconds <= 0.0f)
+        return 1.0f;
+
+    return 1.0f - std::exp (-frameDurationSeconds / timeConstantSeconds);
+}
+
+void AnalyzerEngine::updateTrackedNotePeaks (float frameDurationSeconds,
+                                             float peakHoldDecayDbPerSecondForFrame)
+{
+    const auto confidenceAttack =
+        smoothingCoefficientForTimeConstant (frameDurationSeconds,
+                                             notePeakPublishAttackSeconds);
+
+    const auto confidenceRelease =
+        smoothingCoefficientForTimeConstant (frameDurationSeconds,
+                                             notePeakReleaseSeconds);
+
+    const auto frequencySmoothing =
+        smoothingCoefficientForTimeConstant (frameDurationSeconds,
+                                             notePeakFrequencySmoothingSeconds);
+
+    const auto dbAttack =
+        smoothingCoefficientForTimeConstant (frameDurationSeconds,
+                                             notePeakDbAttackSeconds);
+
+    const auto dbRelease =
+        smoothingCoefficientForTimeConstant (frameDurationSeconds,
+                                             notePeakDbReleaseSeconds);
+
+    const auto heldDecayDb =
+        peakHoldDecayDbPerSecondForFrame * frameDurationSeconds;
+
+    for (auto& trackedPeak : trackedNotePeaks)
+    {
+        ++trackedPeak.framesSinceSeen;
+        trackedPeak.secondsSinceSeen += frameDurationSeconds;
+
+        trackedPeak.heldDecibels =
+            juce::jmax (notePeakMinAbsoluteDb,
+                        trackedPeak.heldDecibels - heldDecayDb);
+    }
+
+    for (const auto& candidate : instantaneousNotePeaks)
+    {
+        auto matchingPeak =
+            std::find_if (trackedNotePeaks.begin(),
+                          trackedNotePeaks.end(),
+                          [&candidate] (const auto& trackedPeak)
+                          {
+                              return trackedPeak.midiNote == candidate.midiNote;
+                          });
+
+        if (matchingPeak != trackedNotePeaks.end())
+        {
+            matchingPeak->framesSinceSeen = 0;
+            matchingPeak->secondsSinceSeen = 0.0f;
+            matchingPeak->hitCount += 1;
+
+            matchingPeak->confidence +=
+                confidenceAttack * (1.0f - matchingPeak->confidence);
+
+            matchingPeak->frequencyHz +=
+                frequencySmoothing * (candidate.frequencyHz - matchingPeak->frequencyHz);
+
+            const auto dbSmoothing =
+                candidate.decibels > matchingPeak->decibels
+                    ? dbAttack
+                    : dbRelease;
+
+            matchingPeak->decibels +=
+                dbSmoothing * (candidate.decibels - matchingPeak->decibels);
+
+            matchingPeak->heldDecibels =
+                juce::jmax (matchingPeak->heldDecibels, candidate.decibels);
+
+            matchingPeak->pitchClass = candidate.pitchClass;
+
+            if (matchingPeak->hitCount >= notePeakMinimumHitCount
+                && matchingPeak->confidence >= notePeakPublishConfidence)
+            {
+                matchingPeak->hasBecomeStable = true;
+            }
+
+            continue;
+        }
+
+        TrackedNotePeak newPeak;
+        newPeak.frequencyHz = candidate.frequencyHz;
+        newPeak.decibels = candidate.decibels;
+        newPeak.heldDecibels = candidate.decibels;
+        newPeak.midiNote = candidate.midiNote;
+        newPeak.pitchClass = candidate.pitchClass;
+        newPeak.hitCount = 1;
+        newPeak.framesSinceSeen = 0;
+        newPeak.secondsSinceSeen = 0.0f;
+        newPeak.confidence = confidenceAttack;
+        newPeak.hasBecomeStable =
+            newPeak.hitCount >= notePeakMinimumHitCount
+            && newPeak.confidence >= notePeakPublishConfidence;
+
+        trackedNotePeaks.push_back (newPeak);
+    }
+
+    for (auto& trackedPeak : trackedNotePeaks)
+    {
+        if (trackedPeak.framesSinceSeen == 0)
+            continue;
+
+        trackedPeak.confidence +=
+            confidenceRelease * (0.0f - trackedPeak.confidence);
+    }
+
+    trackedNotePeaks.erase (
+        std::remove_if (trackedNotePeaks.begin(),
+                        trackedNotePeaks.end(),
+                        [] (const auto& trackedPeak)
+                        {
+                            const auto unstablePeakIsGone =
+                                ! trackedPeak.hasBecomeStable
+                                && (trackedPeak.secondsSinceSeen > notePeakReleaseSeconds
+                                    || trackedPeak.confidence <= notePeakRemoveConfidence);
+
+                            const auto stablePeakHasDecayed =
+                                trackedPeak.hasBecomeStable
+                                && trackedPeak.heldDecibels <= notePeakMinAbsoluteDb + 0.001f
+                                && trackedPeak.confidence <= notePeakRemoveConfidence;
+
+                            return unstablePeakIsGone || stablePeakHasDecayed;
+                        }),
+        trackedNotePeaks.end());
+}
+
+void AnalyzerEngine::publishStableNotePeaks()
+{
+    currentNotePeaks.clear();
+
+    for (const auto& trackedPeak : trackedNotePeaks)
+    {
+        if (! trackedPeak.hasBecomeStable
+            || trackedPeak.heldDecibels <= notePeakMinAbsoluteDb + 0.001f
+            || trackedPeak.frequencyHz < minNotePeakFrequencyHz
+            || trackedPeak.frequencyHz > maxNotePeakFrequencyHz
+            || trackedPeak.midiNote < 0
+            || trackedPeak.pitchClass < 0)
+        {
+            continue;
+        }
+
+        currentNotePeaks.push_back ({
+            trackedPeak.frequencyHz,
+            trackedPeak.heldDecibels,
+            trackedPeak.midiNote,
+            trackedPeak.pitchClass
+        });
+    }
+
+    std::sort (currentNotePeaks.begin(),
+               currentNotePeaks.end(),
+               [] (const auto& first, const auto& second)
+               {
+                   return first.decibels > second.decibels;
+               });
+
+    if (currentNotePeaks.size() > static_cast<size_t> (maxPublishedNotePeaks))
+        currentNotePeaks.resize (static_cast<size_t> (maxPublishedNotePeaks));
+
+    std::sort (currentNotePeaks.begin(),
+               currentNotePeaks.end(),
+               [] (const auto& first, const auto& second)
+               {
+                   return first.frequencyHz < second.frequencyHz;
+               });
 }
