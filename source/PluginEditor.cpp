@@ -72,7 +72,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     spectrumDisplay.onVisibleFrequencyRangeChanged =
         [this] (float minimumHz, float maximumHz)
         {
-            processorRef.setAnalyzerDisplayFrequencyRange (minimumHz, maximumHz);
+            pendingAnalyzerDisplayMinFrequencyHz = minimumHz;
+            pendingAnalyzerDisplayMaxFrequencyHz = maximumHz;
+            hasPendingAnalyzerDisplayRange = true;
         };
 
     freezeButton.onClick = [this]
@@ -267,6 +269,8 @@ void PluginEditor::resized()
 
 void PluginEditor::timerCallback()
 {
+    flushPendingAnalyzerDisplayRange();
+
     spectrumDisplay.setInputLevelDb (processorRef.getInputLevelDb());
     spectrumDisplay.setMinimumDecibels (processorRef.getAnalyzerMinimumDecibels());
     spectrumDisplay.setSlopeDbPerOctave (processorRef.getAnalyzerSlopeDbPerOctave());
@@ -300,6 +304,19 @@ void PluginEditor::timerCallback()
 
         spectrumDisplay.setNotePeaks (displayNotePeaks);
     }
+}
+
+void PluginEditor::flushPendingAnalyzerDisplayRange()
+{
+    if (! hasPendingAnalyzerDisplayRange)
+        return;
+
+    const auto minimumHz = pendingAnalyzerDisplayMinFrequencyHz;
+    const auto maximumHz = pendingAnalyzerDisplayMaxFrequencyHz;
+
+    hasPendingAnalyzerDisplayRange = false;
+
+    processorRef.setAnalyzerDisplayFrequencyRange (minimumHz, maximumHz);
 }
 
 void PluginEditor::setTooltipsEnabled (bool shouldBeEnabled)

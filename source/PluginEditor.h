@@ -27,6 +27,7 @@ private:
 
     void timerCallback() override;
     void setTooltipsEnabled (bool shouldBeEnabled);
+    void flushPendingAnalyzerDisplayRange();
 
     PluginProcessor& processorRef;
 
@@ -98,6 +99,9 @@ private:
 
     SpectrumDisplay spectrumDisplay;
     AnalyzerEngine::Frame analyzerFrame;
+    bool hasPendingAnalyzerDisplayRange = false;
+    float pendingAnalyzerDisplayMinFrequencyHz = 0.0f;
+    float pendingAnalyzerDisplayMaxFrequencyHz = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };
