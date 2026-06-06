@@ -38,6 +38,9 @@ public:
     void mouseMove (const juce::MouseEvent& event) override;
     void mouseDrag (const juce::MouseEvent& event) override;
     void mouseExit (const juce::MouseEvent& event) override;
+    void mouseWheelMove (const juce::MouseEvent& event,
+                         const juce::MouseWheelDetails& wheel) override;
+    void mouseDoubleClick (const juce::MouseEvent& event) override;
 
 private:
     struct PeakNoteLabel
@@ -84,9 +87,14 @@ private:
     juce::String buildCurveReadoutText (float frequencyHz) const;
     float applySlopeCorrection (float decibels, float frequencyHz) const;
     void updateMouseReadout (juce::Point<float> newPosition);
+    void zoomVisibleFrequencyRangeAround (float centreFrequencyHz,
+                                          float zoomFactor);
+    void resetVisibleFrequencyRangeToDefault();
 
     static constexpr float defaultMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
     static constexpr float defaultMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
+    static constexpr float mouseWheelZoomBase = 1.18f;
+    static constexpr float minimumVisibleFrequencyRatio = 2.0f;
     static constexpr float maxDecibels = 0.0f;
     static constexpr float slopeReferenceFrequencyHz = 1000.0f;
 

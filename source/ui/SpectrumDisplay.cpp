@@ -156,6 +156,44 @@ void SpectrumDisplay::mouseExit (const juce::MouseEvent& event)
     repaint();
 }
 
+void SpectrumDisplay::mouseWheelMove (const juce::MouseEvent& event,
+                                      const juce::MouseWheelDetails& wheel)
+{
+    const auto area = getSpectrumArea (getLocalBounds());
+
+    if (! area.contains (event.position))
+        return;
+
+    if (std::abs (wheel.deltaY) < 0.000001f)
+        return;
+
+    const auto centreFrequencyHz = xToFrequency (event.position.x, area);
+    const auto wheelSteps = juce::jlimit (-4.0f, 4.0f, wheel.deltaY * 8.0f);
+
+    if (std::abs (wheelSteps) < 0.000001f)
+        return;
+
+    const auto zoomFactor = std::pow (mouseWheelZoomBase, std::abs (wheelSteps));
+
+    if (wheelSteps > 0.0f)
+        zoomVisibleFrequencyRangeAround (centreFrequencyHz, zoomFactor);
+    else
+        zoomVisibleFrequencyRangeAround (centreFrequencyHz, 1.0f / zoomFactor);
+
+    updateMouseReadout (event.position);
+}
+
+void SpectrumDisplay::mouseDoubleClick (const juce::MouseEvent& event)
+{
+    const auto area = getSpectrumArea (getLocalBounds());
+
+    if (! area.contains (event.position))
+        return;
+
+    resetVisibleFrequencyRangeToDefault();
+    updateMouseReadout (event.position);
+}
+
 juce::Rectangle<float> SpectrumDisplay::getSpectrumArea (juce::Rectangle<int> bounds) const
 {
     auto area = bounds.reduced (40, 50);
@@ -304,6 +342,70 @@ void SpectrumDisplay::updateMouseReadout (juce::Point<float> newPosition)
     repaint();
 }
 
+void SpectrumDisplay::zoomVisibleFrequencyRangeAround (float centreFrequencyHz,
+                                                       float zoomFactor)
+{
+    if (zoomFactor <= 0.0f)
+        return;
+
+    if (visibleMinFrequencyHz <= 0.0f
+        || visibleMaxFrequencyHz <= visibleMinFrequencyHz)
+    {
+        resetVisibleFrequencyRangeToDefault();
+        return;
+    }
+
+    const auto clampedCentre =
+        juce::jlimit (defaultMinFrequencyHz,
+                      defaultMaxFrequencyHz,
+                      centreFrequencyHz);
+
+    const auto currentRatio = visibleMaxFrequencyHz / visibleMinFrequencyHz;
+    const auto fullRatio = defaultMaxFrequencyHz / defaultMinFrequencyHz;
+
+    auto targetRatio = currentRatio / zoomFactor;
+    targetRatio = juce::jlimit (minimumVisibleFrequencyRatio, fullRatio, targetRatio);
+
+    const auto logMin = std::log (visibleMinFrequencyHz);
+    const auto logMax = std::log (visibleMaxFrequencyHz);
+    const auto logCentre = std::log (clampedCentre);
+
+    const auto centrePosition =
+        juce::jlimit (0.0f,
+                      1.0f,
+                      (logCentre - logMin) / juce::jmax (0.000001f, logMax - logMin));
+
+    const auto targetLogWidth = std::log (targetRatio);
+
+    auto newLogMin = logCentre - centrePosition * targetLogWidth;
+    auto newLogMax = newLogMin + targetLogWidth;
+
+    const auto defaultLogMin = std::log (defaultMinFrequencyHz);
+    const auto defaultLogMax = std::log (defaultMaxFrequencyHz);
+
+    if (newLogMin < defaultLogMin)
+    {
+        newLogMin = defaultLogMin;
+        newLogMax = newLogMin + targetLogWidth;
+    }
+
+    if (newLogMax > defaultLogMax)
+    {
+        newLogMax = defaultLogMax;
+        newLogMin = newLogMax - targetLogWidth;
+    }
+
+    const auto newMinFrequency = std::exp (newLogMin);
+    const auto newMaxFrequency = std::exp (newLogMax);
+
+    setVisibleFrequencyRange (newMinFrequency, newMaxFrequency);
+}
+
+void SpectrumDisplay::resetVisibleFrequencyRangeToDefault()
+{
+    setVisibleFrequencyRange (defaultMinFrequencyHz, defaultMaxFrequencyHz);
+}
+
 int SpectrumDisplay::frequencyToMidiNote (float frequencyHz) const
 {
     if (frequencyHz <= 0.0f)
@@ -437,6 +539,9 @@ void SpectrumDisplay::drawFrequencyGrid (juce::Graphics& g, juce::Rectangle<int>
 
     for (const auto frequency : frequencies)
     {
+        if (frequency < visibleMinFrequencyHz || frequency > visibleMaxFrequencyHz)
+            continue;
+
         const auto x = frequencyToX (frequency, drawArea);
 
         g.setColour (juce::Colours::white.withAlpha (0.12f));
