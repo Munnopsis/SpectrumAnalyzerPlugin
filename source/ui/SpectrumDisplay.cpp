@@ -84,6 +84,33 @@ void SpectrumDisplay::setVisibleFrequencyRange (float minimumHz, float maximumHz
     repaint();
 }
 
+void SpectrumDisplay::freezeCurrentSpectrumAsReference()
+{
+    if (spectrumDb.size() < 2)
+        return;
+
+    frozenReferenceDb = spectrumDb;
+    hasFrozenReferenceDb = true;
+
+    repaint();
+}
+
+void SpectrumDisplay::clearFrozenReferenceSpectrum()
+{
+    if (! hasFrozenReferenceDb && frozenReferenceDb.empty())
+        return;
+
+    frozenReferenceDb.clear();
+    hasFrozenReferenceDb = false;
+
+    repaint();
+}
+
+bool SpectrumDisplay::hasFrozenReferenceSpectrum() const noexcept
+{
+    return hasFrozenReferenceDb && frozenReferenceDb.size() >= 2;
+}
+
 void SpectrumDisplay::setCurveVisibility (bool shouldShowLive,
                                           bool shouldShowRms,
                                           bool shouldShowPeakHold)
@@ -109,6 +136,8 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     }
     else
     {
+        drawFrozenReferenceCurve (g, bounds);
+
         if (showRmsCurve && ! rmsDb.empty())
             drawRmsCurve (g, bounds);
 
@@ -794,6 +823,19 @@ void SpectrumDisplay::drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int>
                        2.0f);
 }
 
+void SpectrumDisplay::drawFrozenReferenceCurve (juce::Graphics& g,
+                                                juce::Rectangle<int> bounds)
+{
+    if (! hasFrozenReferenceSpectrum())
+        return;
+
+    drawCurveFromData (g,
+                       bounds,
+                       frozenReferenceDb,
+                       juce::Colours::white.withAlpha (0.34f),
+                       1.25f);
+}
+
 void SpectrumDisplay::drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
     drawCurveFromData (g,
@@ -880,10 +922,11 @@ void SpectrumDisplay::drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds
         bool visible;
     };
 
-    const std::array<LegendItem, 3> items {{
+    const std::array<LegendItem, 4> items {{
         { "Live", juce::Colour::fromRGB (90, 220, 255), showLiveCurve },
         { "RMS", juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f), showRmsCurve },
-        { "Peak", juce::Colour::fromRGB (255, 190, 80).withAlpha (0.9f), showPeakHoldCurve }
+        { "Peak", juce::Colour::fromRGB (255, 190, 80).withAlpha (0.9f), showPeakHoldCurve },
+        { "Ref", juce::Colours::white.withAlpha (0.34f), hasFrozenReferenceSpectrum() }
     }};
 
     g.setFont (juce::FontOptions (12.0f));

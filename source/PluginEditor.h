@@ -76,6 +76,7 @@ private:
     juce::TextButton rmsButton { "RMS" };
     juce::TextButton peakButton { "Peak" };
     juce::TextButton clearPeakButton { "Clear Peak" };
+    juce::TextButton freezeButton { "Freeze" };
     juce::TextButton tooltipButton { "Tips" };
     juce::ComboBox inputModeBox;
     juce::ComboBox fftSizeBox;

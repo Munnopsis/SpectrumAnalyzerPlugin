@@ -27,6 +27,9 @@ public:
     void setMinimumDecibels (float newMinimumDecibels);
     void setSlopeDbPerOctave (float newSlopeDbPerOctave);
     void setVisibleFrequencyRange (float minimumHz, float maximumHz);
+    void freezeCurrentSpectrumAsReference();
+    void clearFrozenReferenceSpectrum();
+    bool hasFrozenReferenceSpectrum() const noexcept;
 
     void setCurveVisibility (bool shouldShowLive,
                          bool shouldShowRms,
@@ -61,6 +64,7 @@ private:
     void drawPlaceholderCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawInputLevelMeter (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawFrozenReferenceCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawCurveFromData (juce::Graphics& g,
@@ -122,7 +126,9 @@ private:
     std::vector<float> spectrumDb;
     std::vector<float> peakHoldDb;
     std::vector<float> rmsDb;
+    std::vector<float> frozenReferenceDb;
     std::vector<DisplayNotePeak> notePeaks;
+    bool hasFrozenReferenceDb = false;
 
     bool showLiveCurve = true;
     bool showRmsCurve = true;

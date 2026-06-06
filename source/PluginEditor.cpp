@@ -19,6 +19,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (rmsButton);
     addAndMakeVisible (peakButton);
     addAndMakeVisible (clearPeakButton);
+    addAndMakeVisible (freezeButton);
     addAndMakeVisible (tooltipButton);
     addAndMakeVisible (inputModeBox);
     addAndMakeVisible (fftSizeBox);
@@ -32,6 +33,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     rmsButton.setName ("RmsButton");
     peakButton.setName ("PeakButton");
     clearPeakButton.setName ("ClearPeakButton");
+    freezeButton.setName ("FreezeButton");
     tooltipButton.setName ("TooltipButton");
     inputModeBox.setName ("InputModeBox");
     fftSizeBox.setName ("FftSizeBox");
@@ -45,6 +47,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     rmsButton.setWantsKeyboardFocus (true);
     peakButton.setWantsKeyboardFocus (true);
     clearPeakButton.setWantsKeyboardFocus (true);
+    freezeButton.setWantsKeyboardFocus (true);
     tooltipButton.setWantsKeyboardFocus (true);
     inputModeBox.setWantsKeyboardFocus (true);
     fftSizeBox.setWantsKeyboardFocus (true);
@@ -58,11 +61,28 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     rmsButton.setTooltip ("Show or hide the RMS spectrum curve");
     peakButton.setTooltip ("Show or hide the peak hold curve");
     clearPeakButton.setTooltip ("Clear the peak hold curve");
+    freezeButton.setTooltip ("Freeze the current live spectrum as a reference curve");
     tooltipButton.setTooltip ("Show or hide tooltips");
 
     clearPeakButton.onClick = [this]
     {
         processorRef.requestClearPeakHold();
+    };
+
+    freezeButton.onClick = [this]
+    {
+        if (spectrumDisplay.hasFrozenReferenceSpectrum())
+        {
+            spectrumDisplay.clearFrozenReferenceSpectrum();
+            freezeButton.setButtonText ("Freeze");
+        }
+        else
+        {
+            spectrumDisplay.freezeCurrentSpectrumAsReference();
+
+            if (spectrumDisplay.hasFrozenReferenceSpectrum())
+                freezeButton.setButtonText ("Clear Freeze");
+        }
     };
 
     liveButton.setClickingTogglesState (true);
@@ -198,7 +218,7 @@ void PluginEditor::resized()
 
     auto topBar = bounds.reduced (12).removeFromTop (32);
 
-    auto rightControls = topBar.removeFromRight (1262);
+    auto rightControls = topBar.removeFromRight (1374);
 
     inputModeBox.setBounds (rightControls.removeFromLeft (150));
     rightControls.removeFromLeft (8);
@@ -228,6 +248,9 @@ void PluginEditor::resized()
     rightControls.removeFromLeft (8);
 
     clearPeakButton.setBounds (rightControls.removeFromLeft (92));
+    rightControls.removeFromLeft (8);
+
+    freezeButton.setBounds (rightControls.removeFromLeft (104));
     rightControls.removeFromLeft (8);
 
     inspectButton.setBounds (rightControls.removeFromLeft (140));
