@@ -14,9 +14,12 @@ PluginProcessor::PluginProcessor()
        parameters (*this, nullptr, "Parameters", createParameterLayout())
 {
     inputModeParameter = parameters.getRawParameterValue (inputModeParamId);
-    jassert (inputModeParameter != nullptr);
     fftSizeParameter = parameters.getRawParameterValue (fftSizeParamId);
+    peakHoldDecayParameter = parameters.getRawParameterValue (peakHoldDecayParamId);
+
+    jassert (inputModeParameter != nullptr);
     jassert (fftSizeParameter != nullptr);
+    jassert (peakHoldDecayParameter != nullptr);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
@@ -39,16 +42,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         true));
 
     params.push_back (std::make_unique<juce::AudioParameterChoice>(
-    juce::ParameterID { inputModeParamId, 1 },
-    "Input Mode",
-    getAnalyzerInputModeChoices(),
-    0));
+        juce::ParameterID { inputModeParamId, 1 },
+        "Input Mode",
+        getAnalyzerInputModeChoices(),
+        0));
 
     params.push_back (std::make_unique<juce::AudioParameterChoice>(
-    juce::ParameterID { fftSizeParamId, 1 },
-    "FFT Size",
-    getAnalyzerFftSizeChoices(),
-    1));
+        juce::ParameterID { fftSizeParamId, 1 },
+        "FFT Size",
+        getAnalyzerFftSizeChoices(),
+        1));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID { peakHoldDecayParamId, 1 },
+        "Peak Hold Decay",
+        getAnalyzerPeakHoldDecayChoices(),
+        3));
 
     return { params.begin(), params.end() };
 }
@@ -132,19 +141,27 @@ AnalyzerInputMode PluginProcessor::getAnalyzerInputMode() const noexcept
         inputModeParameter->load (std::memory_order_relaxed));
 }
 
+float PluginProcessor::getPeakHoldDecayDbPerSecond() const noexcept
+{
+    if (peakHoldDecayParameter == nullptr)
+        return 8.0f;
+
+    return analyzerPeakHoldDecayFromParameterValue (
+        peakHoldDecayParameter->load (std::memory_order_relaxed));
+}
+
 //==============================================================================
 
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
-    juce::ignoreUnused (sampleRate, samplesPerBlock);
+    juce::ignoreUnused (samplesPerBlock);
 
     analyzerEngine.stop();
 
     analyzerFifo.prepare (sampleRate, samplesPerBlock);
 
     analyzerEngine.setRequestedFftOrder (getAnalyzerFftOrder());
+    analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
     analyzerEngine.prepare (sampleRate, analyzerFifo);
     analyzerEngine.start();
 }
@@ -180,7 +197,7 @@ bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 }
 
 void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
-                                              juce::MidiBuffer& midiMessages)
+                                    juce::MidiBuffer& midiMessages)
 {
     juce::ignoreUnused (midiMessages);
 
@@ -221,7 +238,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     inputLevelDb.store (levelDb, std::memory_order_relaxed);
 
     analyzerEngine.setRequestedFftOrder (getAnalyzerFftOrder());
-    
+    analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
+
     analyzerFifo.pushMonoFromBuffer (
         buffer,
         numChannelsToAnalyse,

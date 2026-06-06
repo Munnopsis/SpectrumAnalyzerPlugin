@@ -1,14 +1,15 @@
 #include "PluginEditor.h"
 #include "analyzer/AnalyzerInputMode.h"
 #include "analyzer/AnalyzerFftSize.h"
+#include "analyzer/AnalyzerPeakHoldDecay.h"
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p)
 {
     juce::ignoreUnused (processorRef);
 
-    // ui elements
     addAndMakeVisible (spectrumDisplay);
+
     addAndMakeVisible (inspectButton);
     addAndMakeVisible (liveButton);
     addAndMakeVisible (rmsButton);
@@ -16,8 +17,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (clearPeakButton);
     addAndMakeVisible (inputModeBox);
     addAndMakeVisible (fftSizeBox);
+    addAndMakeVisible (peakHoldDecayBox);
 
-    // button actions
     clearPeakButton.onClick = [this]
     {
         processorRef.requestClearPeakHold();
@@ -29,7 +30,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     auto& state = processorRef.getValueTreeState();
 
-    // combo box options
     inputModeBox.addItemList (getAnalyzerInputModeChoices(), 1);
     inputModeBox.setJustificationType (juce::Justification::centred);
     inputModeBox.setTooltip ("Analyzer input mode");
@@ -48,7 +48,15 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         PluginProcessor::fftSizeParamId,
         fftSizeBox);
 
-    // link button with action
+    peakHoldDecayBox.addItemList (getAnalyzerPeakHoldDecayChoices(), 1);
+    peakHoldDecayBox.setJustificationType (juce::Justification::centred);
+    peakHoldDecayBox.setTooltip ("Peak hold decay speed");
+
+    peakHoldDecayAttachment = std::make_unique<ComboBoxAttachment> (
+        state,
+        PluginProcessor::peakHoldDecayParamId,
+        peakHoldDecayBox);
+
     liveButtonAttachment = std::make_unique<ButtonAttachment> (
         state,
         PluginProcessor::showLiveCurveParamId,
@@ -69,9 +77,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         processorRef.shouldShowRmsCurve(),
         processorRef.shouldShowPeakHoldCurve());
 
-    // this chunk of code instantiates and opens the melatonin inspector
-    inspectButton.onClick = [&] {
-        if (!inspector)
+    inspectButton.onClick = [&]
+    {
+        if (! inspector)
         {
             inspector = std::make_unique<melatonin::Inspector> (*this);
             inspector->onClose = [this]() { inspector.reset(); };
@@ -80,9 +88,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         inspector->setVisible (true);
     };
 
-    // Make sure that before the constructor has finished, you've set the
-    // editor's size to whatever you need it to be.
-    setSize (1100, 650);
+    setSize (1180, 650);
 
     startTimerHz (30);
 }
@@ -111,12 +117,15 @@ void PluginEditor::resized()
 
     auto topBar = bounds.reduced (12).removeFromTop (32);
 
-    auto rightControls = topBar.removeFromRight (740);
+    auto rightControls = topBar.removeFromRight (870);
 
     inputModeBox.setBounds (rightControls.removeFromLeft (150));
     rightControls.removeFromLeft (8);
 
-    fftSizeBox.setBounds (rightControls.removeFromLeft (110));
+    fftSizeBox.setBounds (rightControls.removeFromLeft (100));
+    rightControls.removeFromLeft (8);
+
+    peakHoldDecayBox.setBounds (rightControls.removeFromLeft (130));
     rightControls.removeFromLeft (8);
 
     liveButton.setBounds (rightControls.removeFromLeft (64));

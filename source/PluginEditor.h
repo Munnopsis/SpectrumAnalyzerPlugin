@@ -39,12 +39,14 @@ private:
     juce::TextButton clearPeakButton { "Clear Peak" };
     juce::ComboBox inputModeBox;
     juce::ComboBox fftSizeBox;
+    juce::ComboBox peakHoldDecayBox;
 
     std::unique_ptr<ButtonAttachment> liveButtonAttachment;
     std::unique_ptr<ButtonAttachment> rmsButtonAttachment;
     std::unique_ptr<ButtonAttachment> peakButtonAttachment;
     std::unique_ptr<ComboBoxAttachment> inputModeAttachment;
     std::unique_ptr<ComboBoxAttachment> fftSizeAttachment;
+    std::unique_ptr<ComboBoxAttachment> peakHoldDecayAttachment;
 
     SpectrumDisplay spectrumDisplay;
     std::vector<float> spectrumBuffer;

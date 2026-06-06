@@ -59,6 +59,13 @@ void AnalyzerEngine::requestClearPeakHold() noexcept
     clearPeakHoldRequested.store (true, std::memory_order_relaxed);
 }
 
+void AnalyzerEngine::setPeakHoldDecayDbPerSecond (float newDecayDbPerSecond) noexcept
+{
+    peakHoldDecayDbPerSecond.store (
+        juce::jlimit (0.0f, 60.0f, newDecayDbPerSecond),
+        std::memory_order_relaxed);
+}
+
 void AnalyzerEngine::setRequestedFftOrder (int newFftOrder) noexcept
 {
     requestedFftOrder.store (
@@ -182,7 +189,9 @@ void AnalyzerEngine::processOneFftBlock()
     std::fill (fftData.begin(), fftData.end(), 0.0f);
     std::copy (timeDomainBlock.begin(), timeDomainBlock.end(), fftData.begin());
 
-    window->multiplyWithWindowingTable (fftData.data(), fftSizeForBlock);
+    window->multiplyWithWindowingTable (
+        fftData.data(),
+        static_cast<size_t> (fftSizeForBlock));
 
     forwardFFT->performFrequencyOnlyForwardTransform (fftData.data());
 
