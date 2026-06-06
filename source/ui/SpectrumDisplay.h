@@ -46,6 +46,11 @@ private:
     float yToDecibels (float y, juce::Rectangle<float> area) const;
     juce::String formatFrequency (float frequencyHz) const;
     juce::String frequencyToNoteName (float frequencyHz) const;
+    bool getInterpolatedCurveValueDb (const std::vector<float>& values,
+                                      float frequencyHz,
+                                      float& resultDb) const;
+    juce::String formatCurveValue (const juce::String& label, float valueDb) const;
+    juce::String buildCurveReadoutText (float frequencyHz) const;
     float applySlopeCorrection (float decibels, float frequencyHz) const;
     void updateMouseReadout (juce::Point<float> newPosition);
 

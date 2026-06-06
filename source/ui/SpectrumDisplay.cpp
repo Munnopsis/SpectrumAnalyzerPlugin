@@ -1,4 +1,5 @@
 #include "SpectrumDisplay.h"
+#include <algorithm>
 #include <cmath>
 
 SpectrumDisplay::SpectrumDisplay()
@@ -189,6 +190,52 @@ juce::String SpectrumDisplay::frequencyToNoteName (float frequencyHz) const
     const auto octave = midiNote / 12 - 1;
     return juce::String (noteNames[static_cast<size_t> (midiNote % 12)])
            + juce::String (octave);
+}
+
+bool SpectrumDisplay::getInterpolatedCurveValueDb (const std::vector<float>& values,
+                                                   float frequencyHz,
+                                                   float& resultDb) const
+{
+    if (values.size() < 2 || frequencyHz <= 0.0f)
+        return false;
+
+    const auto normalisedX =
+        std::log (frequencyHz / minFrequencyHz)
+        / std::log (maxFrequencyHz / minFrequencyHz);
+
+    const auto clampedX = juce::jlimit (0.0f, 1.0f, normalisedX);
+    const auto maxIndex = values.size() - 1;
+    const auto position = clampedX * static_cast<float> (maxIndex);
+    const auto lowerIndex = static_cast<size_t> (std::floor (position));
+    const auto upperIndex = std::min (lowerIndex + 1, maxIndex);
+    const auto alpha = position - static_cast<float> (lowerIndex);
+    const auto interpolatedDb =
+        values[lowerIndex] + alpha * (values[upperIndex] - values[lowerIndex]);
+
+    resultDb = applySlopeCorrection (interpolatedDb, frequencyHz);
+    return true;
+}
+
+juce::String SpectrumDisplay::formatCurveValue (const juce::String& label, float valueDb) const
+{
+    return label + " " + juce::String (valueDb, 1);
+}
+
+juce::String SpectrumDisplay::buildCurveReadoutText (float frequencyHz) const
+{
+    juce::StringArray values;
+    float valueDb = 0.0f;
+
+    if (showLiveCurve && getInterpolatedCurveValueDb (spectrumDb, frequencyHz, valueDb))
+        values.add (formatCurveValue ("Live", valueDb));
+
+    if (showRmsCurve && getInterpolatedCurveValueDb (rmsDb, frequencyHz, valueDb))
+        values.add (formatCurveValue ("RMS", valueDb));
+
+    if (showPeakHoldCurve && getInterpolatedCurveValueDb (peakHoldDb, frequencyHz, valueDb))
+        values.add (formatCurveValue ("Peak", valueDb));
+
+    return values.joinIntoString ("  ");
 }
 
 float SpectrumDisplay::applySlopeCorrection (float decibels, float frequencyHz) const
@@ -515,13 +562,15 @@ void SpectrumDisplay::drawMouseReadout (juce::Graphics& g, juce::Rectangle<int> 
 
     const auto frequency = xToFrequency (mousePosition.x, area);
     const auto db = yToDecibels (mousePosition.y, area);
-    const auto text =
+    const auto firstLineText =
         formatFrequency (frequency)
         + "  "
         + frequencyToNoteName (frequency)
         + "  "
         + juce::String (db, 1)
         + " dB";
+    const auto curveReadoutText = buildCurveReadoutText (frequency);
+    const auto hasCurveReadout = curveReadoutText.isNotEmpty();
 
     g.setColour (juce::Colours::white.withAlpha (0.18f));
     g.drawLine (mousePosition.x, area.getY(), mousePosition.x, area.getBottom(), 1.0f);
@@ -529,11 +578,14 @@ void SpectrumDisplay::drawMouseReadout (juce::Graphics& g, juce::Rectangle<int> 
 
     g.setFont (juce::FontOptions (12.0f));
 
-    const auto readoutHeight = 24.0f;
+    const auto readoutHeight = hasCurveReadout ? 40.0f : 24.0f;
     const auto maxReadoutWidth = area.getWidth() - 12.0f;
     const auto readoutWidth =
         juce::jmin (maxReadoutWidth,
-                    juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 18.0f);
+                    juce::jmax (
+                        juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), firstLineText),
+                        juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), curveReadoutText))
+                    + 18.0f);
 
     const auto readoutX =
         juce::jlimit (area.getX() + 6.0f,
@@ -555,8 +607,18 @@ void SpectrumDisplay::drawMouseReadout (juce::Graphics& g, juce::Rectangle<int> 
     g.drawRoundedRectangle (readoutBounds, 4.0f, 1.0f);
 
     g.setColour (juce::Colours::white.withAlpha (0.88f));
-    g.drawText (text,
-                readoutBounds.toNearestInt().reduced (8, 0),
+    auto textBounds = readoutBounds.toNearestInt().reduced (8, 0);
+    g.drawText (firstLineText,
+                hasCurveReadout ? textBounds.removeFromTop (20) : textBounds,
                 juce::Justification::centredLeft,
                 true);
+
+    if (hasCurveReadout)
+    {
+        g.setColour (juce::Colours::white.withAlpha (0.72f));
+        g.drawText (curveReadoutText,
+                    textBounds,
+                    juce::Justification::centredLeft,
+                    true);
+    }
 }
