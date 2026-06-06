@@ -1,1 +1,4 @@
 Command to build changes and make standalone app: cmake --build Builds --config Debug --target FullSpectrum_Standalone
+
+TODO:
+    - test peak note label detection with test signals, peak note label detection looks to hectic at the moment
