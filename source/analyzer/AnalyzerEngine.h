@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AnalyzerFifo.h"
+#include "AnalyzerFrequencyRange.h"
 
 #include <juce_core/juce_core.h>
 #include <juce_dsp/juce_dsp.h>
@@ -44,6 +45,7 @@ public:
 
     void setRequestedFftOrder (int newFftOrder) noexcept;
     void setPeakHoldDecayDbPerSecond (float newDecayDbPerSecond) noexcept;
+    void setDisplayFrequencyRange (float minimumHz, float maximumHz) noexcept;
 
     bool copyLatestSpectrumDb (std::vector<float>& destination);
     bool copyLatestPeakHoldSpectrumDb (std::vector<float>& destination);
@@ -128,11 +130,15 @@ private:
     AnalyzerFifo* sourceFifo = nullptr;
 
     double currentSampleRate = 44100.0;
+    float currentDisplayMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
+    float currentDisplayMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
 
     int currentFftOrder = defaultFftOrder;
     int currentFftSize = analyzerFftSizeFromOrder (defaultFftOrder);
 
     std::atomic<int> requestedFftOrder { defaultFftOrder };
+    std::atomic<float> requestedDisplayMinFrequencyHz { AnalyzerFrequencyRange::minimumHz };
+    std::atomic<float> requestedDisplayMaxFrequencyHz { AnalyzerFrequencyRange::maximumHz };
 
     std::unique_ptr<juce::dsp::FFT> forwardFFT;
     std::unique_ptr<juce::dsp::WindowingFunction<float>> window;
@@ -143,6 +149,8 @@ private:
 
     std::vector<DisplayBinFftRange> displayBinFftRanges;
     float displayBinRangeSampleRate = 0.0f;
+    float displayBinRangeMinFrequencyHz = 0.0f;
+    float displayBinRangeMaxFrequencyHz = 0.0f;
     int displayBinRangeFftSize = 0;
 
     bool overlapBufferPrimed = false;

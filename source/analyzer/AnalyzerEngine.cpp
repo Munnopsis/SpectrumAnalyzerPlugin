@@ -159,6 +159,19 @@ void AnalyzerEngine::reset()
 
     secondsSinceLastFramePublish = 0.0f;
 
+    requestedDisplayMinFrequencyHz.store (AnalyzerFrequencyRange::minimumHz,
+                                          std::memory_order_relaxed);
+    requestedDisplayMaxFrequencyHz.store (AnalyzerFrequencyRange::maximumHz,
+                                          std::memory_order_relaxed);
+
+    currentDisplayMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
+    currentDisplayMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
+
+    displayBinRangeSampleRate = 0.0f;
+    displayBinRangeFftSize = 0;
+    displayBinRangeMinFrequencyHz = 0.0f;
+    displayBinRangeMaxFrequencyHz = 0.0f;
+
     std::fill (fftData.begin(), fftData.end(), 0.0f);
     std::fill (rawSpectrumDb.begin(), rawSpectrumDb.end(), -100.0f);
     std::fill (smoothedSpectrumDb.begin(), smoothedSpectrumDb.end(), -100.0f);
@@ -221,6 +234,22 @@ void AnalyzerEngine::setRequestedFftOrder (int newFftOrder) noexcept
         std::memory_order_relaxed);
 }
 
+void AnalyzerEngine::setDisplayFrequencyRange (float minimumHz, float maximumHz) noexcept
+{
+    const auto clampedMinimum =
+        juce::jlimit (AnalyzerFrequencyRange::minimumHz,
+                      AnalyzerFrequencyRange::maximumHz - 1.0f,
+                      minimumHz);
+
+    const auto clampedMaximum =
+        juce::jlimit (clampedMinimum + 1.0f,
+                      AnalyzerFrequencyRange::maximumHz,
+                      maximumHz);
+
+    requestedDisplayMinFrequencyHz.store (clampedMinimum, std::memory_order_relaxed);
+    requestedDisplayMaxFrequencyHz.store (clampedMaximum, std::memory_order_relaxed);
+}
+
 void AnalyzerEngine::configureFft (int newFftOrder)
 {
     currentFftOrder = juce::jlimit (minFftOrder, maxFftOrder, newFftOrder);
@@ -241,6 +270,8 @@ void AnalyzerEngine::configureFft (int newFftOrder)
     displayBinFftRanges.assign (static_cast<size_t> (displayBinCount), {});
     displayBinRangeSampleRate = 0.0f;
     displayBinRangeFftSize = 0;
+    displayBinRangeMinFrequencyHz = 0.0f;
+    displayBinRangeMaxFrequencyHz = 0.0f;
 
     overlapBufferPrimed = false;
 }
@@ -261,18 +292,44 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
     if (fftSizeForRanges <= 0 || sampleRateForRanges <= 0.0f)
         return;
 
+    const auto nyquistLimitedMaximum =
+        AnalyzerFrequencyRange::getMaximumHzForSampleRate (sampleRateForRanges);
+
+    if (nyquistLimitedMaximum <= AnalyzerFrequencyRange::minimumHz)
+        return;
+
+    const auto requestedMinimum =
+        requestedDisplayMinFrequencyHz.load (std::memory_order_relaxed);
+
+    const auto requestedMaximum =
+        requestedDisplayMaxFrequencyHz.load (std::memory_order_relaxed);
+
+    const auto clampedMinimum =
+        juce::jlimit (AnalyzerFrequencyRange::minimumHz,
+                      nyquistLimitedMaximum - 1.0f,
+                      requestedMinimum);
+
+    const auto clampedMaximum =
+        juce::jlimit (clampedMinimum + 1.0f,
+                      nyquistLimitedMaximum,
+                      requestedMaximum);
+
+    currentDisplayMinFrequencyHz = clampedMinimum;
+    currentDisplayMaxFrequencyHz = clampedMaximum;
+
     if (displayBinFftRanges.size() == static_cast<size_t> (displayBinCount)
         && displayBinRangeFftSize == fftSizeForRanges
-        && std::abs (displayBinRangeSampleRate - sampleRateForRanges) < 0.001f)
+        && std::abs (displayBinRangeSampleRate - sampleRateForRanges) < 0.001f
+        && std::abs (displayBinRangeMinFrequencyHz - currentDisplayMinFrequencyHz) < 0.001f
+        && std::abs (displayBinRangeMaxFrequencyHz - currentDisplayMaxFrequencyHz) < 0.001f)
     {
         return;
     }
 
     displayBinFftRanges.assign (static_cast<size_t> (displayBinCount), {});
 
-    const auto minFrequency = AnalyzerFrequencyRange::minimumHz;
-    const auto maxFrequency =
-        AnalyzerFrequencyRange::getMaximumHzForSampleRate (sampleRateForRanges);
+    const auto minFrequency = currentDisplayMinFrequencyHz;
+    const auto maxFrequency = currentDisplayMaxFrequencyHz;
 
     const auto maxAvailableBin = (fftSizeForRanges / 2) - 1;
 
@@ -280,6 +337,8 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
     {
         displayBinRangeSampleRate = sampleRateForRanges;
         displayBinRangeFftSize = fftSizeForRanges;
+        displayBinRangeMinFrequencyHz = currentDisplayMinFrequencyHz;
+        displayBinRangeMaxFrequencyHz = currentDisplayMaxFrequencyHz;
         return;
     }
 
@@ -320,6 +379,8 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
 
     displayBinRangeSampleRate = sampleRateForRanges;
     displayBinRangeFftSize = fftSizeForRanges;
+    displayBinRangeMinFrequencyHz = currentDisplayMinFrequencyHz;
+    displayBinRangeMaxFrequencyHz = currentDisplayMaxFrequencyHz;
 }
 
 int AnalyzerEngine::getFftHopSize() const noexcept
