@@ -914,6 +914,8 @@ void SpectrumDisplay::drawVisibleFrequencyRangeIndicator (juce::Graphics& g,
     if (isVisibleFrequencyRangeDefault())
         return;
 
+    const auto drawArea = getSpectrumArea (bounds);
+
     const auto rangeSeparator =
         juce::String (juce::CharPointer_UTF8 (" \xe2\x80\x93 "));
 
@@ -929,7 +931,7 @@ void SpectrumDisplay::drawVisibleFrequencyRangeIndicator (juce::Graphics& g,
         juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text);
 
     const auto indicatorWidth =
-        juce::jmin (static_cast<float> (bounds.getWidth()) - 32.0f,
+        juce::jmin (drawArea.getWidth() - 16.0f,
                     textWidth + 18.0f);
 
     if (indicatorWidth <= 40.0f)
@@ -940,9 +942,8 @@ void SpectrumDisplay::drawVisibleFrequencyRangeIndicator (juce::Graphics& g,
     auto indicatorBounds =
         juce::Rectangle<float> (0.0f, 0.0f, indicatorWidth, indicatorHeight);
 
-    indicatorBounds.setX (
-        static_cast<float> (bounds.getRight()) - indicatorWidth - 16.0f);
-    indicatorBounds.setY (static_cast<float> (bounds.getY()) + 36.0f);
+    indicatorBounds.setX (drawArea.getRight() - indicatorWidth - 8.0f);
+    indicatorBounds.setY (drawArea.getY() + 8.0f);
 
     g.setColour (juce::Colours::black.withAlpha (0.58f));
     g.fillRoundedRectangle (indicatorBounds, 5.0f);
