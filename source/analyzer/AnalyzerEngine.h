@@ -144,8 +144,8 @@ private:
     std::vector<NotePeak> currentNotePeaks;
     std::vector<NotePeak> latestNotePeaks;
 
-    static constexpr float attackSmoothing = 0.35f;
-    static constexpr float releaseSmoothing = 0.08f;
+    static constexpr float liveAttackTimeSeconds = 0.100f;
+    static constexpr float liveReleaseTimeSeconds = 0.500f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
 
     std::mutex latestSpectrumMutex;

@@ -461,7 +461,13 @@ void AnalyzerEngine::processOneFftBlock()
         rmsTimeSeconds.load (std::memory_order_relaxed);
 
     const auto rmsAlpha =
-        1.0f - std::exp (-frameAdvanceSeconds / currentRmsTimeSeconds);
+        smoothingCoefficientForTimeConstant (frameAdvanceSeconds, currentRmsTimeSeconds);
+
+    const auto liveAttackSmoothing =
+        smoothingCoefficientForTimeConstant (frameAdvanceSeconds, liveAttackTimeSeconds);
+
+    const auto liveReleaseSmoothing =
+        smoothingCoefficientForTimeConstant (frameAdvanceSeconds, liveReleaseTimeSeconds);
 
     for (int i = 0; i < displayBinCount; ++i)
     {
@@ -488,15 +494,18 @@ void AnalyzerEngine::processOneFftBlock()
         rawSpectrumDb[index] = targetDb;
 
         const auto previousDb = smoothedSpectrumDb[index];
-        const auto smoothing = targetDb > previousDb ? attackSmoothing : releaseSmoothing;
 
-        smoothedSpectrumDb[index] = previousDb + smoothing * (targetDb - previousDb);
+        const auto smoothing =
+            targetDb > previousDb ? liveAttackSmoothing : liveReleaseSmoothing;
+
+        smoothedSpectrumDb[index] =
+            previousDb + smoothing * (targetDb - previousDb);
 
         if (targetDb > peakHoldSpectrumDb[index])
             peakHoldSpectrumDb[index] = targetDb;
         else
-            peakHoldSpectrumDb[index] = juce::jmax (-100.0f,
-                                                    peakHoldSpectrumDb[index] - decayPerFrame);
+            peakHoldSpectrumDb[index] =
+                juce::jmax (-100.0f, peakHoldSpectrumDb[index] - decayPerFrame);
 
         rmsPowerSpectrum[index] =
             rmsPowerSpectrum[index]
