@@ -185,6 +185,7 @@ void AnalyzerEngine::reset()
     std::fill (smoothedSpectrumDb.begin(), smoothedSpectrumDb.end(), -100.0f);
     std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
     std::fill (rmsPowerSpectrum.begin(), rmsPowerSpectrum.end(), 0.0f);
+    displayAccumulationWarmStartRequested = false;
     instantaneousNotePeaks.clear();
     trackedNotePeaks.clear();
     currentNotePeaks.clear();
@@ -294,13 +295,9 @@ void AnalyzerEngine::resetOverlapBuffer()
     overlapBufferPrimed = false;
 }
 
-void AnalyzerEngine::resetDisplayAccumulationStateForRangeChange()
+void AnalyzerEngine::requestDisplayAccumulationWarmStartForRangeChange() noexcept
 {
-    std::fill (rawSpectrumDb.begin(), rawSpectrumDb.end(), -100.0f);
-    std::fill (smoothedSpectrumDb.begin(), smoothedSpectrumDb.end(), -100.0f);
-    std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
-    std::fill (rmsPowerSpectrum.begin(), rmsPowerSpectrum.end(), 0.0f);
-
+    displayAccumulationWarmStartRequested = true;
     secondsSinceLastFramePublish = 1.0f / latestFramePublishRateHz;
 }
 
@@ -361,7 +358,7 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
     }
 
     if (displayMappingChanged)
-        resetDisplayAccumulationStateForRangeChange();
+        requestDisplayAccumulationWarmStartForRangeChange();
 
     displayBinFftRanges.assign (static_cast<size_t> (displayBinCount), {});
 
@@ -626,6 +623,11 @@ void AnalyzerEngine::processOneFftBlock()
     if (displayBinFftRanges.size() != static_cast<size_t> (displayBinCount))
         return;
 
+    const auto shouldWarmStartDisplayAccumulation =
+        displayAccumulationWarmStartRequested;
+
+    displayAccumulationWarmStartRequested = false;
+
     const auto decayPerFrame =
         currentPeakHoldDecayDbPerSecond * frameAdvanceSeconds;
 
@@ -664,6 +666,14 @@ void AnalyzerEngine::processOneFftBlock()
         const auto index = static_cast<size_t> (i);
 
         rawSpectrumDb[index] = targetDb;
+
+        if (shouldWarmStartDisplayAccumulation)
+        {
+            smoothedSpectrumDb[index] = targetDb;
+            peakHoldSpectrumDb[index] = targetDb;
+            rmsPowerSpectrum[index] = binPowerStats.meanPower;
+            continue;
+        }
 
         const auto previousDb = smoothedSpectrumDb[index];
 

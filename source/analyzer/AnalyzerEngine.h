@@ -82,7 +82,7 @@ private:
     void updateFftSizeIfNeeded();
     void configureFft (int newFftOrder);
     void resetOverlapBuffer();
-    void resetDisplayAccumulationStateForRangeChange();
+    void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
     void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();
     void handleClearPeakHoldRequest();
@@ -158,6 +158,7 @@ private:
 
     bool overlapBufferPrimed = false;
     float secondsSinceLastFramePublish = 0.0f;
+    bool displayAccumulationWarmStartRequested = false;
 
     std::vector<float> rawSpectrumDb;
     std::vector<float> smoothedSpectrumDb;
