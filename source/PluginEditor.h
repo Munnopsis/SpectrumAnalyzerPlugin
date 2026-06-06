@@ -34,6 +34,7 @@ private:
     juce::TextButton liveButton { "Live" };
     juce::TextButton rmsButton { "RMS" };
     juce::TextButton peakButton { "Peak" };
+    juce::TextButton clearPeakButton { "Clear Peak" };
 
     std::unique_ptr<ButtonAttachment> liveButtonAttachment;
     std::unique_ptr<ButtonAttachment> rmsButtonAttachment;

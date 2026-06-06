@@ -52,6 +52,11 @@ void AnalyzerEngine::reset()
     hasFrame.store (false, std::memory_order_relaxed);
 }
 
+void AnalyzerEngine::requestClearPeakHold() noexcept
+{
+    clearPeakHoldRequested.store (true, std::memory_order_relaxed);
+}
+
 void AnalyzerEngine::start()
 {
     if (! isThreadRunning())
@@ -153,6 +158,14 @@ void AnalyzerEngine::processOneFftBlock()
 
     const auto rmsAlpha =
         1.0f - std::exp (-frameDurationSeconds / rmsTimeSeconds);
+
+    if (clearPeakHoldRequested.exchange (false, std::memory_order_relaxed))
+    {
+        std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
+
+        std::lock_guard<std::mutex> lock (latestSpectrumMutex);
+        std::fill (latestPeakHoldSpectrumDb.begin(), latestPeakHoldSpectrumDb.end(), -100.0f);
+    }
 
     for (int i = 0; i < displayBinCount; ++i)
     {

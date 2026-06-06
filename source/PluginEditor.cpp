@@ -11,6 +11,12 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (liveButton);
     addAndMakeVisible (rmsButton);
     addAndMakeVisible (peakButton);
+    addAndMakeVisible (clearPeakButton);
+
+    clearPeakButton.onClick = [this]
+    {
+        processorRef.requestClearPeakHold();
+    };
 
     liveButton.setClickingTogglesState (true);
     rmsButton.setClickingTogglesState (true);
@@ -51,7 +57,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
-    setSize (400, 300);
+    setSize (1100, 650);
 
     startTimerHz (30);
 }
@@ -80,17 +86,21 @@ void PluginEditor::resized()
 
     auto topBar = bounds.reduced (12).removeFromTop (32);
 
-    inspectButton.setBounds (topBar.removeFromRight (140));
+    auto rightControls = topBar.removeFromRight (460);
 
-    topBar.removeFromRight (8);
+    liveButton.setBounds (rightControls.removeFromLeft (64));
+    rightControls.removeFromLeft (6);
 
-    peakButton.setBounds (topBar.removeFromRight (64));
-    topBar.removeFromRight (6);
+    rmsButton.setBounds (rightControls.removeFromLeft (64));
+    rightControls.removeFromLeft (6);
 
-    rmsButton.setBounds (topBar.removeFromRight (64));
-    topBar.removeFromRight (6);
+    peakButton.setBounds (rightControls.removeFromLeft (64));
+    rightControls.removeFromLeft (8);
 
-    liveButton.setBounds (topBar.removeFromRight (64));
+    clearPeakButton.setBounds (rightControls.removeFromLeft (92));
+    rightControls.removeFromLeft (8);
+
+    inspectButton.setBounds (rightControls.removeFromLeft (140));
 }
 
 void PluginEditor::timerCallback()

@@ -87,10 +87,15 @@ public:
         return parameters.getRawParameterValue (showPeakHoldCurveParamId)->load() > 0.5f;
     }
 
+    void requestClearPeakHold() noexcept
+    {
+        analyzerEngine.requestClearPeakHold();
+    }
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::AudioProcessorValueTreeState parameters;
-    
+
     std::atomic<float> inputLevelDb { -100.0f };
 
     AnalyzerFifo analyzerFifo;

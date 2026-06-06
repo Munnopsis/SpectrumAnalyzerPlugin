@@ -22,6 +22,8 @@ public:
     void start();
     void stop();
 
+    void requestClearPeakHold() noexcept;
+
     bool copyLatestSpectrumDb (std::vector<float>& destination);
     bool copyLatestPeakHoldSpectrumDb (std::vector<float>& destination);
     bool copyLatestRmsSpectrumDb (std::vector<float>& destination);
@@ -34,7 +36,7 @@ private:
     static constexpr int fftSize = 1 << fftOrder;
     static constexpr int displayBinCount = 256;
 
-    static constexpr float peakHoldDecayDbPerSecond = 18.0f;
+    static constexpr float peakHoldDecayDbPerSecond = 8.0f;
 
     AnalyzerFifo* sourceFifo = nullptr;
 
@@ -61,6 +63,7 @@ private:
 
     std::mutex latestSpectrumMutex;
     std::atomic<bool> hasFrame { false };
+    std::atomic<bool> clearPeakHoldRequested { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AnalyzerEngine)
 };
