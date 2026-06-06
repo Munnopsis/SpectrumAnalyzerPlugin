@@ -69,6 +69,12 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         processorRef.requestClearPeakHold();
     };
 
+    spectrumDisplay.onVisibleFrequencyRangeChanged =
+        [this] (float minimumHz, float maximumHz)
+        {
+            processorRef.setAnalyzerDisplayFrequencyRange (minimumHz, maximumHz);
+        };
+
     freezeButton.onClick = [this]
     {
         if (spectrumDisplay.hasFrozenReferenceSpectrum())
@@ -272,6 +278,9 @@ void PluginEditor::timerCallback()
 
     if (processorRef.copyLatestAnalyzerFrame (analyzerFrame))
     {
+        spectrumDisplay.setSpectrumDataFrequencyRange (analyzerFrame.dataMinFrequencyHz,
+                                                       analyzerFrame.dataMaxFrequencyHz);
+
         spectrumDisplay.setSpectrumDb (analyzerFrame.liveDb);
         spectrumDisplay.setPeakHoldSpectrumDb (analyzerFrame.peakHoldDb);
         spectrumDisplay.setRmsSpectrumDb (analyzerFrame.rmsDb);

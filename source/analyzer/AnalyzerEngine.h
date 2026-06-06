@@ -28,6 +28,8 @@ public:
 
     struct Frame
     {
+        float dataMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
+        float dataMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
         std::vector<float> liveDb;
         std::vector<float> peakHoldDb;
         std::vector<float> rmsDb;
@@ -165,6 +167,8 @@ private:
     std::vector<float> latestSpectrumDb;
     std::vector<float> latestPeakHoldSpectrumDb;
     std::vector<float> latestRmsSpectrumDb;
+    float latestFrameMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
+    float latestFrameMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
     std::vector<NotePeak> instantaneousNotePeaks;
     std::vector<TrackedNotePeak> trackedNotePeaks;
     std::vector<NotePeak> currentNotePeaks;

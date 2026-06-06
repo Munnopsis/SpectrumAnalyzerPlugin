@@ -2,6 +2,7 @@
 
 #include "../analyzer/AnalyzerFrequencyRange.h"
 
+#include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
 
@@ -27,9 +28,12 @@ public:
     void setMinimumDecibels (float newMinimumDecibels);
     void setSlopeDbPerOctave (float newSlopeDbPerOctave);
     void setVisibleFrequencyRange (float minimumHz, float maximumHz);
+    void setSpectrumDataFrequencyRange (float minimumHz, float maximumHz);
     void freezeCurrentSpectrumAsReference();
     void clearFrozenReferenceSpectrum();
     bool hasFrozenReferenceSpectrum() const noexcept;
+
+    std::function<void (float minimumHz, float maximumHz)> onVisibleFrequencyRangeChanged;
 
     void setCurveVisibility (bool shouldShowLive,
                          bool shouldShowRms,

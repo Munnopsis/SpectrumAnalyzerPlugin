@@ -82,6 +82,33 @@ void SpectrumDisplay::setVisibleFrequencyRange (float minimumHz, float maximumHz
     visibleMaxFrequencyHz = clampedMaximum;
 
     repaint();
+
+    if (onVisibleFrequencyRangeChanged)
+        onVisibleFrequencyRangeChanged (visibleMinFrequencyHz, visibleMaxFrequencyHz);
+}
+
+void SpectrumDisplay::setSpectrumDataFrequencyRange (float minimumHz, float maximumHz)
+{
+    const auto clampedMinimum =
+        juce::jlimit (AnalyzerFrequencyRange::minimumHz,
+                      AnalyzerFrequencyRange::maximumHz - 1.0f,
+                      minimumHz);
+
+    const auto clampedMaximum =
+        juce::jlimit (clampedMinimum + 1.0f,
+                      AnalyzerFrequencyRange::maximumHz,
+                      maximumHz);
+
+    if (std::abs (dataMinFrequencyHz - clampedMinimum) < 0.001f
+        && std::abs (dataMaxFrequencyHz - clampedMaximum) < 0.001f)
+    {
+        return;
+    }
+
+    dataMinFrequencyHz = clampedMinimum;
+    dataMaxFrequencyHz = clampedMaximum;
+
+    repaint();
 }
 
 void SpectrumDisplay::freezeCurrentSpectrumAsReference()

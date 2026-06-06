@@ -111,6 +111,11 @@ public:
         analyzerEngine.requestClearPeakHold();
     }
 
+    void setAnalyzerDisplayFrequencyRange (float minimumHz, float maximumHz) noexcept
+    {
+        analyzerEngine.setDisplayFrequencyRange (minimumHz, maximumHz);
+    }
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::AudioProcessorValueTreeState parameters;

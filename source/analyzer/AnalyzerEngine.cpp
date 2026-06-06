@@ -159,13 +159,21 @@ void AnalyzerEngine::reset()
 
     secondsSinceLastFramePublish = 0.0f;
 
-    requestedDisplayMinFrequencyHz.store (AnalyzerFrequencyRange::minimumHz,
-                                          std::memory_order_relaxed);
-    requestedDisplayMaxFrequencyHz.store (AnalyzerFrequencyRange::maximumHz,
-                                          std::memory_order_relaxed);
+    const auto requestedDisplayMinimum =
+        requestedDisplayMinFrequencyHz.load (std::memory_order_relaxed);
 
-    currentDisplayMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
-    currentDisplayMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
+    const auto requestedDisplayMaximum =
+        requestedDisplayMaxFrequencyHz.load (std::memory_order_relaxed);
+
+    currentDisplayMinFrequencyHz =
+        juce::jlimit (AnalyzerFrequencyRange::minimumHz,
+                      AnalyzerFrequencyRange::maximumHz - 1.0f,
+                      requestedDisplayMinimum);
+
+    currentDisplayMaxFrequencyHz =
+        juce::jlimit (currentDisplayMinFrequencyHz + 1.0f,
+                      AnalyzerFrequencyRange::maximumHz,
+                      requestedDisplayMaximum);
 
     displayBinRangeSampleRate = 0.0f;
     displayBinRangeFftSize = 0;
@@ -186,6 +194,8 @@ void AnalyzerEngine::reset()
         std::fill (latestSpectrumDb.begin(), latestSpectrumDb.end(), -100.0f);
         std::fill (latestPeakHoldSpectrumDb.begin(), latestPeakHoldSpectrumDb.end(), -100.0f);
         std::fill (latestRmsSpectrumDb.begin(), latestRmsSpectrumDb.end(), -100.0f);
+        latestFrameMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
+        latestFrameMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
         latestNotePeaks.clear();
     }
 
@@ -395,6 +405,8 @@ void AnalyzerEngine::publishLatestFrame()
 
         latestSpectrumDb = smoothedSpectrumDb;
         latestPeakHoldSpectrumDb = peakHoldSpectrumDb;
+        latestFrameMinFrequencyHz = currentDisplayMinFrequencyHz;
+        latestFrameMaxFrequencyHz = currentDisplayMaxFrequencyHz;
         latestNotePeaks = currentNotePeaks;
 
         for (size_t i = 0; i < latestRmsSpectrumDb.size(); ++i)
@@ -482,6 +494,8 @@ bool AnalyzerEngine::copyLatestFrame (Frame& destination)
     destination.peakHoldDb = latestPeakHoldSpectrumDb;
     destination.rmsDb = latestRmsSpectrumDb;
     destination.notePeaks = latestNotePeaks;
+    destination.dataMinFrequencyHz = latestFrameMinFrequencyHz;
+    destination.dataMaxFrequencyHz = latestFrameMaxFrequencyHz;
 
     return true;
 }
