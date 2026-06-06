@@ -23,6 +23,7 @@ private:
     // This reference is provided as a quick way for your editor to
     // access the processor object that created it.
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
     void timerCallback() override;
 
@@ -31,14 +32,17 @@ private:
     std::unique_ptr<melatonin::Inspector> inspector;
     juce::TextButton inspectButton { "Inspect the UI" };
 
+    // Buttons
     juce::TextButton liveButton { "Live" };
     juce::TextButton rmsButton { "RMS" };
     juce::TextButton peakButton { "Peak" };
     juce::TextButton clearPeakButton { "Clear Peak" };
+    juce::ComboBox inputModeBox;
 
     std::unique_ptr<ButtonAttachment> liveButtonAttachment;
     std::unique_ptr<ButtonAttachment> rmsButtonAttachment;
     std::unique_ptr<ButtonAttachment> peakButtonAttachment;
+    std::unique_ptr<ComboBoxAttachment> inputModeAttachment;
 
     SpectrumDisplay spectrumDisplay;
     std::vector<float> spectrumBuffer;

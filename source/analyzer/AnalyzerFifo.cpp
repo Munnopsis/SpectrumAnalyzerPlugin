@@ -27,7 +27,8 @@ void AnalyzerFifo::reset()
 }
 
 int AnalyzerFifo::pushMonoFromBuffer (const juce::AudioBuffer<float>& buffer,
-                                      int numInputChannels)
+                                      int numInputChannels,
+                                      AnalyzerInputMode inputMode)
 {
     const auto numSamples = buffer.getNumSamples();
 
@@ -47,10 +48,10 @@ int AnalyzerFifo::pushMonoFromBuffer (const juce::AudioBuffer<float>& buffer,
     abstractFifo.prepareToWrite (numSamples, start1, size1, start2, size2);
 
     if (size1 > 0)
-        writeMonoSection (buffer, channelsToUse, 0, start1, size1);
+        writeMonoSection (buffer, channelsToUse, 0, start1, size1, inputMode);
 
     if (size2 > 0)
-        writeMonoSection (buffer, channelsToUse, size1, start2, size2);
+        writeMonoSection (buffer, channelsToUse, size1, start2, size2, inputMode);
 
     const auto written = size1 + size2;
     abstractFifo.finishedWrite (written);
@@ -105,28 +106,21 @@ void AnalyzerFifo::writeMonoSection (const juce::AudioBuffer<float>& source,
                                      int numInputChannels,
                                      int sourceStartSample,
                                      int fifoStartSample,
-                                     int numSamples)
+                                     int numSamples,
+                                     AnalyzerInputMode inputMode)
 {
     auto* destination = fifoBuffer.getWritePointer (0, fifoStartSample);
 
-    if (numInputChannels == 1)
+    const auto* left = source.getReadPointer (0, sourceStartSample);
+    const auto* right = numInputChannels > 1
+                            ? source.getReadPointer (1, sourceStartSample)
+                            : left;
+
+    for (int sample = 0; sample < numSamples; ++sample)
     {
-        juce::FloatVectorOperations::copy (destination,
-                                           source.getReadPointer (0, sourceStartSample),
-                                           numSamples);
-        return;
+        destination[sample] = makeAnalyzerMonoSample (
+            left[sample],
+            right[sample],
+            inputMode);
     }
-
-    juce::FloatVectorOperations::clear (destination, numSamples);
-
-    for (int channel = 0; channel < numInputChannels; ++channel)
-    {
-        juce::FloatVectorOperations::add (destination,
-                                          source.getReadPointer (channel, sourceStartSample),
-                                          numSamples);
-    }
-
-    juce::FloatVectorOperations::multiply (destination,
-                                           1.0f / static_cast<float> (numInputChannels),
-                                           numSamples);
 }

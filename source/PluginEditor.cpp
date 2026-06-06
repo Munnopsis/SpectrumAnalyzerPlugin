@@ -1,18 +1,21 @@
 #include "PluginEditor.h"
+#include "analyzer/AnalyzerInputMode.h"
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p)
 {
     juce::ignoreUnused (processorRef);
 
+    // ui elements
     addAndMakeVisible (spectrumDisplay);
-
     addAndMakeVisible (inspectButton);
     addAndMakeVisible (liveButton);
     addAndMakeVisible (rmsButton);
     addAndMakeVisible (peakButton);
     addAndMakeVisible (clearPeakButton);
+    addAndMakeVisible (inputModeBox);
 
+    // button actions
     clearPeakButton.onClick = [this]
     {
         processorRef.requestClearPeakHold();
@@ -24,6 +27,17 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     auto& state = processorRef.getValueTreeState();
 
+    // combo box options
+    inputModeBox.addItemList (getAnalyzerInputModeChoices(), 1);
+    inputModeBox.setJustificationType (juce::Justification::centred);
+    inputModeBox.setTooltip ("Analyzer input mode");
+
+    inputModeAttachment = std::make_unique<ComboBoxAttachment> (
+        state,
+        PluginProcessor::inputModeParamId,
+        inputModeBox);
+
+    // link button with action
     liveButtonAttachment = std::make_unique<ButtonAttachment> (
         state,
         PluginProcessor::showLiveCurveParamId,
@@ -86,7 +100,10 @@ void PluginEditor::resized()
 
     auto topBar = bounds.reduced (12).removeFromTop (32);
 
-    auto rightControls = topBar.removeFromRight (460);
+    auto rightControls = topBar.removeFromRight (620);
+
+    inputModeBox.setBounds (rightControls.removeFromLeft (150));
+    rightControls.removeFromLeft (8);
 
     liveButton.setBounds (rightControls.removeFromLeft (64));
     rightControls.removeFromLeft (6);

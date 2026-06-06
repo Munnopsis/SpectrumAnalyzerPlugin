@@ -1,5 +1,7 @@
 #pragma once
 
+#include "AnalyzerInputMode.h"
+
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 
@@ -12,7 +14,8 @@ public:
     void reset();
 
     int pushMonoFromBuffer (const juce::AudioBuffer<float>& buffer,
-                            int numInputChannels);
+                            int numInputChannels,
+                            AnalyzerInputMode inputMode);
 
     int pop (float* destination, int numSamples);
 
@@ -25,7 +28,8 @@ private:
                            int numInputChannels,
                            int sourceStartSample,
                            int fifoStartSample,
-                           int numSamples);
+                           int numSamples,
+                           AnalyzerInputMode inputMode);
 
     juce::AudioBuffer<float> fifoBuffer;
     juce::AbstractFifo abstractFifo { 1 };

@@ -1,0 +1,1 @@
+Command to build changes and make standalone app: cmake --build Builds --config Debug --target FullSpectrum_Standalone

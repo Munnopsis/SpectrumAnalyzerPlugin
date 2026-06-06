@@ -5,6 +5,7 @@
 #include "analyzer/AnalyzerFifo.h"
 #include "analyzer/AnalyzerEngine.h"
 #include <vector>
+#include "analyzer/AnalyzerInputMode.h"
 
 
 #if (MSVC)
@@ -66,6 +67,7 @@ public:
     static inline const juce::String showLiveCurveParamId { "showLiveCurve" };
     static inline const juce::String showRmsCurveParamId { "showRmsCurve" };
     static inline const juce::String showPeakHoldCurveParamId { "showPeakHoldCurve" };
+    static inline const juce::String inputModeParamId { "inputMode" };
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept
     {
@@ -97,9 +99,11 @@ private:
     juce::AudioProcessorValueTreeState parameters;
 
     std::atomic<float> inputLevelDb { -100.0f };
+    std::atomic<float>* inputModeParameter = nullptr;
 
     AnalyzerFifo analyzerFifo;
     AnalyzerEngine analyzerEngine;
+    AnalyzerInputMode getAnalyzerInputMode() const noexcept;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

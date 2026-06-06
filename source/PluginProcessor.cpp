@@ -10,8 +10,11 @@ PluginProcessor::PluginProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       ),parameters (*this, nullptr, "Parameters", createParameterLayout())
+                       ),
+       parameters (*this, nullptr, "Parameters", createParameterLayout())
 {
+    inputModeParameter = parameters.getRawParameterValue (inputModeParamId);
+    jassert (inputModeParameter != nullptr);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
@@ -32,6 +35,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         juce::ParameterID { showPeakHoldCurveParamId, 1 },
         "Show Peak Hold Curve",
         true));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+    juce::ParameterID { inputModeParamId, 1 },
+    "Input Mode",
+    getAnalyzerInputModeChoices(),
+    0));
 
     return { params.begin(), params.end() };
 }
@@ -106,7 +115,17 @@ void PluginProcessor::changeProgramName (int index, const juce::String& newName)
     juce::ignoreUnused (index, newName);
 }
 
+AnalyzerInputMode PluginProcessor::getAnalyzerInputMode() const noexcept
+{
+    if (inputModeParameter == nullptr)
+        return AnalyzerInputMode::stereoSum;
+
+    return analyzerInputModeFromParameterValue (
+        inputModeParameter->load (std::memory_order_relaxed));
+}
+
 //==============================================================================
+
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     // Use this method as the place to do any pre-playback
@@ -192,7 +211,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const auto levelDb = juce::Decibels::gainToDecibels (maxSample, -100.0f);
     inputLevelDb.store (levelDb, std::memory_order_relaxed);
 
-    analyzerFifo.pushMonoFromBuffer (buffer, numChannelsToAnalyse);
+    analyzerFifo.pushMonoFromBuffer (
+        buffer,
+        numChannelsToAnalyse,
+        getAnalyzerInputMode());
 
 }
 
