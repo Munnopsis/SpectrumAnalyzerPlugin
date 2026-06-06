@@ -35,8 +35,10 @@ public:
     void paint (juce::Graphics& g) override;
     void resized() override;
 
+    void mouseDown (const juce::MouseEvent& event) override;
     void mouseMove (const juce::MouseEvent& event) override;
     void mouseDrag (const juce::MouseEvent& event) override;
+    void mouseUp (const juce::MouseEvent& event) override;
     void mouseExit (const juce::MouseEvent& event) override;
     void mouseWheelMove (const juce::MouseEvent& event,
                          const juce::MouseWheelDetails& wheel) override;
@@ -95,6 +97,8 @@ private:
     void updateMouseReadout (juce::Point<float> newPosition);
     void zoomVisibleFrequencyRangeAround (float centreFrequencyHz,
                                           float zoomFactor);
+    void panVisibleFrequencyRangeByPixels (float deltaPixels,
+                                           juce::Rectangle<float> area);
     void resetVisibleFrequencyRangeToDefault();
 
     static constexpr float defaultMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
@@ -120,6 +124,8 @@ private:
     bool showRmsCurve = true;
     bool showPeakHoldCurve = true;
     bool hasMouseReadout = false;
+    bool isPanningVisibleFrequencyRange = false;
+    float lastPanMouseX = 0.0f;
     juce::Point<float> mousePosition;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectrumDisplay)

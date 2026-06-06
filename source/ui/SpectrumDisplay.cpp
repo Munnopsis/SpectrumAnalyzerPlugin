@@ -136,6 +136,21 @@ void SpectrumDisplay::resized()
 {
 }
 
+void SpectrumDisplay::mouseDown (const juce::MouseEvent& event)
+{
+    const auto area = getSpectrumArea (getLocalBounds());
+
+    if (! area.contains (event.position))
+    {
+        isPanningVisibleFrequencyRange = false;
+        return;
+    }
+
+    isPanningVisibleFrequencyRange = true;
+    lastPanMouseX = event.position.x;
+    updateMouseReadout (event.position);
+}
+
 void SpectrumDisplay::mouseMove (const juce::MouseEvent& event)
 {
     updateMouseReadout (event.position);
@@ -143,12 +158,33 @@ void SpectrumDisplay::mouseMove (const juce::MouseEvent& event)
 
 void SpectrumDisplay::mouseDrag (const juce::MouseEvent& event)
 {
+    const auto area = getSpectrumArea (getLocalBounds());
+
+    if (isPanningVisibleFrequencyRange)
+    {
+        const auto deltaPixels = event.position.x - lastPanMouseX;
+        lastPanMouseX = event.position.x;
+
+        panVisibleFrequencyRangeByPixels (deltaPixels, area);
+        updateMouseReadout (event.position);
+        return;
+    }
+
     updateMouseReadout (event.position);
+}
+
+void SpectrumDisplay::mouseUp (const juce::MouseEvent& event)
+{
+    juce::ignoreUnused (event);
+
+    isPanningVisibleFrequencyRange = false;
 }
 
 void SpectrumDisplay::mouseExit (const juce::MouseEvent& event)
 {
     juce::ignoreUnused (event);
+
+    isPanningVisibleFrequencyRange = false;
 
     if (! hasMouseReadout)
         return;
@@ -355,6 +391,54 @@ void SpectrumDisplay::updateMouseReadout (juce::Point<float> newPosition)
     mousePosition = newPosition;
     hasMouseReadout = true;
     repaint();
+}
+
+void SpectrumDisplay::panVisibleFrequencyRangeByPixels (float deltaPixels,
+                                                        juce::Rectangle<float> area)
+{
+    if (std::abs (deltaPixels) < 0.001f)
+        return;
+
+    if (area.getWidth() <= 1.0f)
+        return;
+
+    if (visibleMinFrequencyHz <= 0.0f
+        || visibleMaxFrequencyHz <= visibleMinFrequencyHz)
+    {
+        resetVisibleFrequencyRangeToDefault();
+        return;
+    }
+
+    const auto defaultLogMin = std::log (defaultMinFrequencyHz);
+    const auto defaultLogMax = std::log (defaultMaxFrequencyHz);
+
+    const auto currentLogMin = std::log (visibleMinFrequencyHz);
+    const auto currentLogMax = std::log (visibleMaxFrequencyHz);
+    const auto currentLogWidth = currentLogMax - currentLogMin;
+    const auto fullLogWidth = defaultLogMax - defaultLogMin;
+
+    if (currentLogWidth >= fullLogWidth - 0.000001f)
+        return;
+
+    const auto normalisedDelta = deltaPixels / juce::jmax (1.0f, area.getWidth());
+
+    auto newLogMin = currentLogMin - normalisedDelta * currentLogWidth;
+    auto newLogMax = newLogMin + currentLogWidth;
+
+    if (newLogMin < defaultLogMin)
+    {
+        newLogMin = defaultLogMin;
+        newLogMax = newLogMin + currentLogWidth;
+    }
+
+    if (newLogMax > defaultLogMax)
+    {
+        newLogMax = defaultLogMax;
+        newLogMin = newLogMax - currentLogWidth;
+    }
+
+    setVisibleFrequencyRange (std::exp (newLogMin),
+                              std::exp (newLogMax));
 }
 
 void SpectrumDisplay::zoomVisibleFrequencyRangeAround (float centreFrequencyHz,
