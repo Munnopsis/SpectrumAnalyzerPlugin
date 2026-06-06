@@ -79,6 +79,12 @@ private:
     float decibelsToY (float decibels, juce::Rectangle<float> area) const;
     float yToDecibels (float y, juce::Rectangle<float> area) const;
     juce::String formatFrequency (float frequencyHz) const;
+    void drawFrequencyGridLine (juce::Graphics& g,
+                                juce::Rectangle<float> drawArea,
+                                float frequencyHz,
+                                float alpha,
+                                bool shouldDrawLabel);
+    juce::String formatFrequencyGridLabel (float frequencyHz) const;
     juce::String frequencyToNoteName (float frequencyHz) const;
     bool getInterpolatedCurveValueDb (const std::vector<float>& values,
                                       float frequencyHz,

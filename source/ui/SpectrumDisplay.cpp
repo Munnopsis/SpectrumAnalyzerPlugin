@@ -1,5 +1,6 @@
 #include "SpectrumDisplay.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 SpectrumDisplay::SpectrumDisplay()
@@ -243,6 +244,20 @@ juce::String SpectrumDisplay::formatFrequency (float frequencyHz) const
         return juce::String (juce::roundToInt (frequencyHz)) + " Hz";
 
     return juce::String (frequencyHz / 1000.0f, 2) + " kHz";
+}
+
+juce::String SpectrumDisplay::formatFrequencyGridLabel (float frequencyHz) const
+{
+    if (frequencyHz < 1000.0f)
+        return juce::String (juce::roundToInt (frequencyHz));
+
+    const auto kilohertz = frequencyHz / 1000.0f;
+    const auto roundedKilohertz = std::round (kilohertz);
+
+    if (std::abs (kilohertz - roundedKilohertz) < 0.001f)
+        return juce::String (static_cast<int> (roundedKilohertz)) + "k";
+
+    return juce::String (kilohertz, 1) + "k";
 }
 
 juce::String SpectrumDisplay::frequencyToNoteName (float frequencyHz) const
@@ -530,35 +545,67 @@ void SpectrumDisplay::drawFrequencyGrid (juce::Graphics& g, juce::Rectangle<int>
 {
     const auto drawArea = getSpectrumArea (bounds);
 
-    const std::array<float, 10> frequencies {
-        visibleMinFrequencyHz, 50.0f, 100.0f, 200.0f, 500.0f,
-        1000.0f, 2000.0f, 5000.0f, 10000.0f, visibleMaxFrequencyHz
-    };
+    if (visibleMinFrequencyHz <= 0.0f || visibleMaxFrequencyHz <= visibleMinFrequencyHz)
+        return;
 
     g.setFont (juce::FontOptions (11.0f));
 
-    for (const auto frequency : frequencies)
+    const auto visibleRatio = visibleMaxFrequencyHz / visibleMinFrequencyHz;
+    const auto shouldLabelSecondaryMarkers = visibleRatio <= 32.0f;
+
+    drawFrequencyGridLine (g, drawArea, visibleMinFrequencyHz, 0.12f, true);
+
+    const std::array<float, 3> multipliers { 1.0f, 2.0f, 5.0f };
+
+    const auto startPower =
+        static_cast<int> (std::floor (std::log10 (visibleMinFrequencyHz))) - 1;
+
+    const auto endPower =
+        static_cast<int> (std::ceil (std::log10 (visibleMaxFrequencyHz))) + 1;
+
+    for (auto power = startPower; power <= endPower; ++power)
     {
-        if (frequency < visibleMinFrequencyHz || frequency > visibleMaxFrequencyHz)
-            continue;
+        const auto decade = std::pow (10.0f, static_cast<float> (power));
 
-        const auto x = frequencyToX (frequency, drawArea);
+        for (const auto multiplier : multipliers)
+        {
+            const auto frequency = decade * multiplier;
 
-        g.setColour (juce::Colours::white.withAlpha (0.12f));
-        g.drawVerticalLine (juce::roundToInt (x), drawArea.getY(), drawArea.getBottom());
+            if (frequency <= visibleMinFrequencyHz || frequency >= visibleMaxFrequencyHz)
+                continue;
 
-        juce::String label;
+            const auto isMajor = std::abs (multiplier - 1.0f) < 0.001f;
+            const auto shouldDrawLabel = isMajor || shouldLabelSecondaryMarkers;
+            const auto lineAlpha = isMajor ? 0.16f : 0.10f;
 
-        if (frequency >= 1000.0f)
-            label = juce::String (frequency / 1000.0f, frequency >= 10000.0f ? 0 : 1) + "k";
-        else
-            label = juce::String (static_cast<int> (frequency));
-
-        g.setColour (juce::Colours::white.withAlpha (0.55f));
-        g.drawText (label,
-                    juce::Rectangle<float> (x - 24.0f, drawArea.getBottom() + 4.0f, 48.0f, 16.0f),
-                    juce::Justification::centred);
+            drawFrequencyGridLine (g, drawArea, frequency, lineAlpha, shouldDrawLabel);
+        }
     }
+
+    drawFrequencyGridLine (g, drawArea, visibleMaxFrequencyHz, 0.12f, true);
+}
+
+void SpectrumDisplay::drawFrequencyGridLine (juce::Graphics& g,
+                                             juce::Rectangle<float> drawArea,
+                                             float frequencyHz,
+                                             float alpha,
+                                             bool shouldDrawLabel)
+{
+    if (frequencyHz < visibleMinFrequencyHz || frequencyHz > visibleMaxFrequencyHz)
+        return;
+
+    const auto x = frequencyToX (frequencyHz, drawArea);
+
+    g.setColour (juce::Colours::white.withAlpha (alpha));
+    g.drawVerticalLine (juce::roundToInt (x), drawArea.getY(), drawArea.getBottom());
+
+    if (! shouldDrawLabel)
+        return;
+
+    g.setColour (juce::Colours::white.withAlpha (0.55f));
+    g.drawText (formatFrequencyGridLabel (frequencyHz),
+                juce::Rectangle<float> (x - 24.0f, drawArea.getBottom() + 4.0f, 48.0f, 16.0f),
+                juce::Justification::centred);
 }
 
 void SpectrumDisplay::drawDecibelGrid (juce::Graphics& g, juce::Rectangle<int> bounds)
