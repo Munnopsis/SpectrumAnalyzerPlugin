@@ -10,6 +10,7 @@
 #include "analyzer/AnalyzerPeakHoldDecay.h"
 #include "analyzer/AnalyzerRmsTime.h"
 #include "analyzer/AnalyzerDbRange.h"
+#include "analyzer/AnalyzerSlope.h"
 
 #if (MSVC)
 #include "ipps.h"
@@ -75,6 +76,7 @@ public:
     static inline const juce::String peakHoldDecayParamId { "peakHoldDecay" };
     static inline const juce::String rmsTimeParamId { "rmsTime" };
     static inline const juce::String dbRangeParamId { "dbRange" };
+    static inline const juce::String slopeParamId { "slope" };
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept
     {
@@ -97,6 +99,7 @@ public:
     }
 
     float getAnalyzerMinimumDecibels() const noexcept;
+    float getAnalyzerSlopeDbPerOctave() const noexcept;
 
     bool copyLatestAnalyzerFrame (AnalyzerEngine::Frame& destination)
     {
@@ -123,6 +126,7 @@ private:
     std::atomic<float>* peakHoldDecayParameter = nullptr;
     std::atomic<float>* rmsTimeParameter = nullptr;
     std::atomic<float>* dbRangeParameter = nullptr;
+    std::atomic<float>* slopeParameter = nullptr;
 
     AnalyzerFifo analyzerFifo;
     AnalyzerEngine analyzerEngine;

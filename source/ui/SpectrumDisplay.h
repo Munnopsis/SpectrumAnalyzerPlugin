@@ -14,6 +14,7 @@ public:
     void setPeakHoldSpectrumDb (const std::vector<float>& newPeakHoldDb);
     void setRmsSpectrumDb (const std::vector<float>& newRmsDb);
     void setMinimumDecibels (float newMinimumDecibels);
+    void setSlopeDbPerOctave (float newSlopeDbPerOctave);
 
     void setCurveVisibility (bool shouldShowLive,
                          bool shouldShowRms,
@@ -36,12 +37,15 @@ private:
 
     float frequencyToX (float frequencyHz, juce::Rectangle<float> area) const;
     float decibelsToY (float decibels, juce::Rectangle<float> area) const;
+    float applySlopeCorrection (float decibels, float frequencyHz) const;
 
     static constexpr float minFrequencyHz = 20.0f;
     static constexpr float maxFrequencyHz = 20000.0f;
     static constexpr float maxDecibels = 0.0f;
+    static constexpr float slopeReferenceFrequencyHz = 1000.0f;
 
     float minDecibels = -100.0f;
+    float slopeDbPerOctave = 0.0f;
     float inputLevelDb = -100.0f;
     std::vector<float> spectrumDb;
     std::vector<float> peakHoldDb;

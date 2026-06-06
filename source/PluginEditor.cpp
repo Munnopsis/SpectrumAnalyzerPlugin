@@ -4,6 +4,7 @@
 #include "analyzer/AnalyzerPeakHoldDecay.h"
 #include "analyzer/AnalyzerRmsTime.h"
 #include "analyzer/AnalyzerDbRange.h"
+#include "analyzer/AnalyzerSlope.h"
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p)
@@ -22,6 +23,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (peakHoldDecayBox);
     addAndMakeVisible (rmsTimeBox);
     addAndMakeVisible (dbRangeBox);
+    addAndMakeVisible (slopeBox);
 
     clearPeakButton.onClick = [this]
     {
@@ -79,6 +81,15 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         PluginProcessor::dbRangeParamId,
         dbRangeBox);
 
+    slopeBox.addItemList (getAnalyzerSlopeChoices(), 1);
+    slopeBox.setJustificationType (juce::Justification::centred);
+    slopeBox.setTooltip ("Analyzer slope compensation");
+
+    slopeAttachment = std::make_unique<ComboBoxAttachment> (
+        state,
+        PluginProcessor::slopeParamId,
+        slopeBox);
+
     liveButtonAttachment = std::make_unique<ButtonAttachment> (
         state,
         PluginProcessor::showLiveCurveParamId,
@@ -110,7 +121,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         inspector->setVisible (true);
     };
 
-    setSize (1380, 650);
+    setSize (1500, 650);
 
     startTimerHz (30);
 }
@@ -139,7 +150,7 @@ void PluginEditor::resized()
 
     auto topBar = bounds.reduced (12).removeFromTop (32);
 
-    auto rightControls = topBar.removeFromRight (1082);
+    auto rightControls = topBar.removeFromRight (1200);
 
     inputModeBox.setBounds (rightControls.removeFromLeft (150));
     rightControls.removeFromLeft (8);
@@ -154,6 +165,9 @@ void PluginEditor::resized()
     rightControls.removeFromLeft (8);
 
     dbRangeBox.setBounds (rightControls.removeFromLeft (90));
+    rightControls.removeFromLeft (8);
+
+    slopeBox.setBounds (rightControls.removeFromLeft (110));
     rightControls.removeFromLeft (8);
 
     liveButton.setBounds (rightControls.removeFromLeft (64));
@@ -175,6 +189,7 @@ void PluginEditor::timerCallback()
 {
     spectrumDisplay.setInputLevelDb (processorRef.getInputLevelDb());
     spectrumDisplay.setMinimumDecibels (processorRef.getAnalyzerMinimumDecibels());
+    spectrumDisplay.setSlopeDbPerOctave (processorRef.getAnalyzerSlopeDbPerOctave());
 
     spectrumDisplay.setCurveVisibility (
         processorRef.shouldShowLiveCurve(),

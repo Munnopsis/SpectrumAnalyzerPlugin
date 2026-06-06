@@ -41,6 +41,17 @@ void SpectrumDisplay::setMinimumDecibels (float newMinimumDecibels)
     repaint();
 }
 
+void SpectrumDisplay::setSlopeDbPerOctave (float newSlopeDbPerOctave)
+{
+    const auto clampedSlope = juce::jlimit (0.0f, 12.0f, newSlopeDbPerOctave);
+
+    if (std::abs (slopeDbPerOctave - clampedSlope) < 0.001f)
+        return;
+
+    slopeDbPerOctave = clampedSlope;
+    repaint();
+}
+
 void SpectrumDisplay::setCurveVisibility (bool shouldShowLive,
                                           bool shouldShowRms,
                                           bool shouldShowPeakHold)
@@ -104,6 +115,15 @@ float SpectrumDisplay::decibelsToY (float decibels, juce::Rectangle<float> area)
 {
     const auto clampedDb = juce::jlimit (minDecibels, maxDecibels, decibels);
     return juce::jmap (clampedDb, minDecibels, maxDecibels, area.getBottom(), area.getY());
+}
+
+float SpectrumDisplay::applySlopeCorrection (float decibels, float frequencyHz) const
+{
+    const auto safeFrequency = juce::jmax (1.0f, frequencyHz);
+    const auto correctionDb =
+        slopeDbPerOctave * std::log2 (safeFrequency / slopeReferenceFrequencyHz);
+
+    return decibels + correctionDb;
 }
 
 void SpectrumDisplay::drawBackground (juce::Graphics& g, juce::Rectangle<int> bounds)
@@ -235,7 +255,13 @@ void SpectrumDisplay::drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int>
 
     juce::Path curve;
 
-    const auto firstDb = juce::jlimit (minDecibels, maxDecibels, spectrumDb.front());
+    constexpr auto firstNormalisedX = 0.0f;
+    const auto firstFrequency =
+        minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, firstNormalisedX);
+    const auto firstDb =
+        juce::jlimit (minDecibels,
+                      maxDecibels,
+                      applySlopeCorrection (spectrumDb.front(), firstFrequency));
 
     curve.startNewSubPath (
         area.getX(),
@@ -248,8 +274,13 @@ void SpectrumDisplay::drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int>
             static_cast<float> (i) / static_cast<float> (spectrumDb.size() - 1);
 
         const auto x = area.getX() + normalisedX * area.getWidth();
+        const auto frequency =
+            minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, normalisedX);
 
-        const auto db = juce::jlimit (minDecibels, maxDecibels, spectrumDb[i]);
+        const auto db =
+            juce::jlimit (minDecibels,
+                          maxDecibels,
+                          applySlopeCorrection (spectrumDb[i], frequency));
         const auto y = decibelsToY (db, area);
 
         curve.lineTo (x, y);
@@ -271,7 +302,13 @@ void SpectrumDisplay::drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int>
 
     juce::Path curve;
 
-    const auto firstDb = juce::jlimit (minDecibels, maxDecibels, peakHoldDb.front());
+    constexpr auto firstNormalisedX = 0.0f;
+    const auto firstFrequency =
+        minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, firstNormalisedX);
+    const auto firstDb =
+        juce::jlimit (minDecibels,
+                      maxDecibels,
+                      applySlopeCorrection (peakHoldDb.front(), firstFrequency));
 
     curve.startNewSubPath (
         area.getX(),
@@ -284,8 +321,13 @@ void SpectrumDisplay::drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int>
             static_cast<float> (i) / static_cast<float> (peakHoldDb.size() - 1);
 
         const auto x = area.getX() + normalisedX * area.getWidth();
+        const auto frequency =
+            minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, normalisedX);
 
-        const auto db = juce::jlimit (minDecibels, maxDecibels, peakHoldDb[i]);
+        const auto db =
+            juce::jlimit (minDecibels,
+                          maxDecibels,
+                          applySlopeCorrection (peakHoldDb[i], frequency));
         const auto y = decibelsToY (db, area);
 
         curve.lineTo (x, y);
@@ -307,7 +349,13 @@ void SpectrumDisplay::drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> boun
 
     juce::Path curve;
 
-    const auto firstDb = juce::jlimit (minDecibels, maxDecibels, rmsDb.front());
+    constexpr auto firstNormalisedX = 0.0f;
+    const auto firstFrequency =
+        minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, firstNormalisedX);
+    const auto firstDb =
+        juce::jlimit (minDecibels,
+                      maxDecibels,
+                      applySlopeCorrection (rmsDb.front(), firstFrequency));
 
     curve.startNewSubPath (
         area.getX(),
@@ -320,8 +368,13 @@ void SpectrumDisplay::drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> boun
             static_cast<float> (i) / static_cast<float> (rmsDb.size() - 1);
 
         const auto x = area.getX() + normalisedX * area.getWidth();
+        const auto frequency =
+            minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, normalisedX);
 
-        const auto db = juce::jlimit (minDecibels, maxDecibels, rmsDb[i]);
+        const auto db =
+            juce::jlimit (minDecibels,
+                          maxDecibels,
+                          applySlopeCorrection (rmsDb[i], frequency));
         const auto y = decibelsToY (db, area);
 
         curve.lineTo (x, y);

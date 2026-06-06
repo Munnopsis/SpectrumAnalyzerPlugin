@@ -18,12 +18,14 @@ PluginProcessor::PluginProcessor()
     peakHoldDecayParameter = parameters.getRawParameterValue (peakHoldDecayParamId);
     rmsTimeParameter = parameters.getRawParameterValue (rmsTimeParamId);
     dbRangeParameter = parameters.getRawParameterValue (dbRangeParamId);
+    slopeParameter = parameters.getRawParameterValue (slopeParamId);
 
     jassert (inputModeParameter != nullptr);
     jassert (fftSizeParameter != nullptr);
     jassert (peakHoldDecayParameter != nullptr);
     jassert (rmsTimeParameter != nullptr);
     jassert (dbRangeParameter != nullptr);
+    jassert (slopeParameter != nullptr);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
@@ -74,6 +76,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         "dB Range",
         getAnalyzerDbRangeChoices(),
         2));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID { slopeParamId, 1 },
+        "Slope",
+        getAnalyzerSlopeChoices(),
+        0));
 
     return { params.begin(), params.end() };
 }
@@ -182,6 +190,15 @@ float PluginProcessor::getAnalyzerMinimumDecibels() const noexcept
 
     return analyzerDbRangeMinimumDecibelsFromParameterValue (
         dbRangeParameter->load (std::memory_order_relaxed));
+}
+
+float PluginProcessor::getAnalyzerSlopeDbPerOctave() const noexcept
+{
+    if (slopeParameter == nullptr)
+        return 0.0f;
+
+    return analyzerSlopeDbPerOctaveFromParameterValue (
+        slopeParameter->load (std::memory_order_relaxed));
 }
 
 //==============================================================================
