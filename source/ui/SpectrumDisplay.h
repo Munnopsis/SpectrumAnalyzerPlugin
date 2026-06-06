@@ -58,6 +58,11 @@ private:
     void drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawCurveFromData (juce::Graphics& g,
+                            juce::Rectangle<int> bounds,
+                            const std::vector<float>& values,
+                            juce::Colour colour,
+                            float strokeWidth);
     void drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawMouseReadout (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPeakNoteLabels (juce::Graphics& g, juce::Rectangle<int> bounds);
@@ -88,6 +93,8 @@ private:
     float minDecibels = -100.0f;
     float slopeDbPerOctave = 0.0f;
     float inputLevelDb = -100.0f;
+    float dataMinFrequencyHz = defaultMinFrequencyHz;
+    float dataMaxFrequencyHz = defaultMaxFrequencyHz;
     float visibleMinFrequencyHz = defaultMinFrequencyHz;
     float visibleMaxFrequencyHz = defaultMaxFrequencyHz;
     std::vector<float> spectrumDb;
