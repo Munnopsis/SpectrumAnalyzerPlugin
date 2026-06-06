@@ -6,6 +6,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     juce::ignoreUnused (processorRef);
 
     addAndMakeVisible (inspectButton);
+    addAndMakeVisible (spectrumDisplay);
 
     // this chunk of code instantiates and opens the melatonin inspector
     inspectButton.onClick = [&] {
@@ -44,5 +45,7 @@ void PluginEditor::resized()
     // layout the positions of your child components here
     auto area = getLocalBounds();
     area.removeFromBottom(50);
-    inspectButton.setBounds (getLocalBounds().withSizeKeepingCentre(100, 50));
+    //inspectButton.setBounds (getLocalBounds().withSizeKeepingCentre(100, 50));
+    spectrumDisplay.setBounds (getLocalBounds());
+    inspectButton.setBounds (getLocalBounds().reduced (12).removeFromTop (32).removeFromRight (140));
 }
