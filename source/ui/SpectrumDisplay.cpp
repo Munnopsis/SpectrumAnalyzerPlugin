@@ -59,6 +59,30 @@ void SpectrumDisplay::setSlopeDbPerOctave (float newSlopeDbPerOctave)
     repaint();
 }
 
+void SpectrumDisplay::setVisibleFrequencyRange (float minimumHz, float maximumHz)
+{
+    const auto clampedMinimum =
+        juce::jlimit (AnalyzerFrequencyRange::minimumHz,
+                      AnalyzerFrequencyRange::maximumHz - 1.0f,
+                      minimumHz);
+
+    const auto clampedMaximum =
+        juce::jlimit (clampedMinimum + 1.0f,
+                      AnalyzerFrequencyRange::maximumHz,
+                      maximumHz);
+
+    if (std::abs (visibleMinFrequencyHz - clampedMinimum) < 0.001f
+        && std::abs (visibleMaxFrequencyHz - clampedMaximum) < 0.001f)
+    {
+        return;
+    }
+
+    visibleMinFrequencyHz = clampedMinimum;
+    visibleMaxFrequencyHz = clampedMaximum;
+
+    repaint();
+}
+
 void SpectrumDisplay::setCurveVisibility (bool shouldShowLive,
                                           bool shouldShowRms,
                                           bool shouldShowPeakHold)
@@ -142,11 +166,12 @@ juce::Rectangle<float> SpectrumDisplay::getSpectrumArea (juce::Rectangle<int> bo
 
 float SpectrumDisplay::frequencyToX (float frequencyHz, juce::Rectangle<float> area) const
 {
-    const auto clampedFrequency = juce::jlimit (minFrequencyHz, maxFrequencyHz, frequencyHz);
+    const auto clampedFrequency =
+        juce::jlimit (visibleMinFrequencyHz, visibleMaxFrequencyHz, frequencyHz);
 
     const auto normalised =
-        std::log (clampedFrequency / minFrequencyHz)
-        / std::log (maxFrequencyHz / minFrequencyHz);
+        std::log (clampedFrequency / visibleMinFrequencyHz)
+        / std::log (visibleMaxFrequencyHz / visibleMinFrequencyHz);
 
     return area.getX() + normalised * area.getWidth();
 }
@@ -156,7 +181,8 @@ float SpectrumDisplay::xToFrequency (float x, juce::Rectangle<float> area) const
     const auto normalised = (x - area.getX()) / juce::jmax (1.0f, area.getWidth());
     const auto clamped = juce::jlimit (0.0f, 1.0f, normalised);
 
-    return minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, clamped);
+    return visibleMinFrequencyHz
+           * std::pow (visibleMaxFrequencyHz / visibleMinFrequencyHz, clamped);
 }
 
 float SpectrumDisplay::decibelsToY (float decibels, juce::Rectangle<float> area) const
@@ -205,8 +231,8 @@ bool SpectrumDisplay::getInterpolatedCurveValueDb (const std::vector<float>& val
         return false;
 
     const auto normalisedX =
-        std::log (frequencyHz / minFrequencyHz)
-        / std::log (maxFrequencyHz / minFrequencyHz);
+        std::log (frequencyHz / visibleMinFrequencyHz)
+        / std::log (visibleMaxFrequencyHz / visibleMinFrequencyHz);
 
     const auto clampedX = juce::jlimit (0.0f, 1.0f, normalisedX);
     const auto maxIndex = values.size() - 1;
@@ -301,8 +327,8 @@ std::vector<SpectrumDisplay::PeakNoteLabel> SpectrumDisplay::buildPeakNoteLabels
 
     for (const auto& notePeak : notePeaks)
     {
-        if (notePeak.frequencyHz < minFrequencyHz
-            || notePeak.frequencyHz > maxFrequencyHz
+        if (notePeak.frequencyHz < visibleMinFrequencyHz
+            || notePeak.frequencyHz > visibleMaxFrequencyHz
             || notePeak.midiNote < 0)
         {
             continue;
@@ -397,8 +423,8 @@ void SpectrumDisplay::drawFrequencyGrid (juce::Graphics& g, juce::Rectangle<int>
     const auto drawArea = getSpectrumArea (bounds);
 
     const std::array<float, 10> frequencies {
-        minFrequencyHz, 50.0f, 100.0f, 200.0f, 500.0f,
-        1000.0f, 2000.0f, 5000.0f, 10000.0f, maxFrequencyHz
+        visibleMinFrequencyHz, 50.0f, 100.0f, 200.0f, 500.0f,
+        1000.0f, 2000.0f, 5000.0f, 10000.0f, visibleMaxFrequencyHz
     };
 
     g.setFont (juce::FontOptions (11.0f));
@@ -507,7 +533,8 @@ void SpectrumDisplay::drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int>
 
     constexpr auto firstNormalisedX = 0.0f;
     const auto firstFrequency =
-        minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, firstNormalisedX);
+        visibleMinFrequencyHz
+        * std::pow (visibleMaxFrequencyHz / visibleMinFrequencyHz, firstNormalisedX);
     const auto firstDb =
         juce::jlimit (minDecibels,
                       maxDecibels,
@@ -525,7 +552,8 @@ void SpectrumDisplay::drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int>
 
         const auto x = area.getX() + normalisedX * area.getWidth();
         const auto frequency =
-            minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, normalisedX);
+            visibleMinFrequencyHz
+            * std::pow (visibleMaxFrequencyHz / visibleMinFrequencyHz, normalisedX);
 
         const auto db =
             juce::jlimit (minDecibels,
@@ -551,7 +579,8 @@ void SpectrumDisplay::drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int>
 
     constexpr auto firstNormalisedX = 0.0f;
     const auto firstFrequency =
-        minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, firstNormalisedX);
+        visibleMinFrequencyHz
+        * std::pow (visibleMaxFrequencyHz / visibleMinFrequencyHz, firstNormalisedX);
     const auto firstDb =
         juce::jlimit (minDecibels,
                       maxDecibels,
@@ -569,7 +598,8 @@ void SpectrumDisplay::drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int>
 
         const auto x = area.getX() + normalisedX * area.getWidth();
         const auto frequency =
-            minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, normalisedX);
+            visibleMinFrequencyHz
+            * std::pow (visibleMaxFrequencyHz / visibleMinFrequencyHz, normalisedX);
 
         const auto db =
             juce::jlimit (minDecibels,
@@ -595,7 +625,8 @@ void SpectrumDisplay::drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> boun
 
     constexpr auto firstNormalisedX = 0.0f;
     const auto firstFrequency =
-        minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, firstNormalisedX);
+        visibleMinFrequencyHz
+        * std::pow (visibleMaxFrequencyHz / visibleMinFrequencyHz, firstNormalisedX);
     const auto firstDb =
         juce::jlimit (minDecibels,
                       maxDecibels,
@@ -613,7 +644,8 @@ void SpectrumDisplay::drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> boun
 
         const auto x = area.getX() + normalisedX * area.getWidth();
         const auto frequency =
-            minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, normalisedX);
+            visibleMinFrequencyHz
+            * std::pow (visibleMaxFrequencyHz / visibleMinFrequencyHz, normalisedX);
 
         const auto db =
             juce::jlimit (minDecibels,

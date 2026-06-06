@@ -26,6 +26,7 @@ public:
     void setNotePeaks (const std::vector<DisplayNotePeak>& newNotePeaks);
     void setMinimumDecibels (float newMinimumDecibels);
     void setSlopeDbPerOctave (float newSlopeDbPerOctave);
+    void setVisibleFrequencyRange (float minimumHz, float maximumHz);
 
     void setCurveVisibility (bool shouldShowLive,
                          bool shouldShowRms,
@@ -79,14 +80,16 @@ private:
     float applySlopeCorrection (float decibels, float frequencyHz) const;
     void updateMouseReadout (juce::Point<float> newPosition);
 
-    static constexpr float minFrequencyHz = AnalyzerFrequencyRange::minimumHz;
-    static constexpr float maxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
+    static constexpr float defaultMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
+    static constexpr float defaultMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
     static constexpr float maxDecibels = 0.0f;
     static constexpr float slopeReferenceFrequencyHz = 1000.0f;
 
     float minDecibels = -100.0f;
     float slopeDbPerOctave = 0.0f;
     float inputLevelDb = -100.0f;
+    float visibleMinFrequencyHz = defaultMinFrequencyHz;
+    float visibleMaxFrequencyHz = defaultMaxFrequencyHz;
     std::vector<float> spectrumDb;
     std::vector<float> peakHoldDb;
     std::vector<float> rmsDb;
