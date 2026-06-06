@@ -57,6 +57,18 @@ void AnalyzerEngine::reset()
 void AnalyzerEngine::requestClearPeakHold() noexcept
 {
     clearPeakHoldRequested.store (true, std::memory_order_relaxed);
+    notify();
+}
+
+void AnalyzerEngine::handleClearPeakHoldRequest()
+{
+    if (! clearPeakHoldRequested.exchange (false, std::memory_order_relaxed))
+        return;
+
+    std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
+
+    std::lock_guard<std::mutex> lock (latestSpectrumMutex);
+    std::fill (latestPeakHoldSpectrumDb.begin(), latestPeakHoldSpectrumDb.end(), -100.0f);
 }
 
 void AnalyzerEngine::setPeakHoldDecayDbPerSecond (float newDecayDbPerSecond) noexcept
@@ -156,16 +168,32 @@ bool AnalyzerEngine::copyLatestRmsSpectrumDb (std::vector<float>& destination)
     return true;
 }
 
+bool AnalyzerEngine::copyLatestFrame (Frame& destination)
+{
+    if (! hasFrame.load (std::memory_order_relaxed))
+        return false;
+
+    std::lock_guard<std::mutex> lock (latestSpectrumMutex);
+
+    destination.liveDb = latestSpectrumDb;
+    destination.peakHoldDb = latestPeakHoldSpectrumDb;
+    destination.rmsDb = latestRmsSpectrumDb;
+
+    return true;
+}
+
 void AnalyzerEngine::run()
 {
     while (! threadShouldExit())
     {
         if (sourceFifo == nullptr)
         {
+            handleClearPeakHoldRequest();
             wait (20);
             continue;
         }
 
+        handleClearPeakHoldRequest();
         updateFftSizeIfNeeded();
 
         if (sourceFifo->getNumAvailableForReading() >= currentFftSize)
@@ -223,14 +251,6 @@ void AnalyzerEngine::processOneFftBlock()
 
     const auto rmsAlpha =
         1.0f - std::exp (-frameDurationSeconds / currentRmsTimeSeconds);
-
-    if (clearPeakHoldRequested.exchange (false, std::memory_order_relaxed))
-    {
-        std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
-
-        std::lock_guard<std::mutex> lock (latestSpectrumMutex);
-        std::fill (latestPeakHoldSpectrumDb.begin(), latestPeakHoldSpectrumDb.end(), -100.0f);
-    }
 
     for (int i = 0; i < displayBinCount; ++i)
     {

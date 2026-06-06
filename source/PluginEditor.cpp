@@ -166,12 +166,10 @@ void PluginEditor::timerCallback()
         processorRef.shouldShowRmsCurve(),
         processorRef.shouldShowPeakHoldCurve());
 
-    if (processorRef.copyLatestSpectrumDb (spectrumBuffer))
-        spectrumDisplay.setSpectrumDb (spectrumBuffer);
-
-    if (processorRef.copyLatestPeakHoldSpectrumDb (peakHoldBuffer))
-        spectrumDisplay.setPeakHoldSpectrumDb (peakHoldBuffer);
-
-    if (processorRef.copyLatestRmsSpectrumDb (rmsBuffer))
-        spectrumDisplay.setRmsSpectrumDb (rmsBuffer);
+    if (processorRef.copyLatestAnalyzerFrame (analyzerFrame))
+    {
+        spectrumDisplay.setSpectrumDb (analyzerFrame.liveDb);
+        spectrumDisplay.setPeakHoldSpectrumDb (analyzerFrame.peakHoldDb);
+        spectrumDisplay.setRmsSpectrumDb (analyzerFrame.rmsDb);
+    }
 }

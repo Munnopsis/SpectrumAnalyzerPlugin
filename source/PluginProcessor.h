@@ -94,6 +94,11 @@ public:
         return parameters.getRawParameterValue (showPeakHoldCurveParamId)->load() > 0.5f;
     }
 
+    bool copyLatestAnalyzerFrame (AnalyzerEngine::Frame& destination)
+    {
+        return analyzerEngine.copyLatestFrame (destination);
+    }
+
     void requestClearPeakHold() noexcept
     {
         analyzerEngine.requestClearPeakHold();

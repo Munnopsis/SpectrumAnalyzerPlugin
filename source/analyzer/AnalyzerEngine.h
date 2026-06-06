@@ -18,6 +18,13 @@ public:
     AnalyzerEngine();
     ~AnalyzerEngine() override;
 
+    struct Frame
+    {
+        std::vector<float> liveDb;
+        std::vector<float> peakHoldDb;
+        std::vector<float> rmsDb;
+    };
+
     void prepare (double sampleRate, AnalyzerFifo& fifoToReadFrom);
     void reset();
 
@@ -33,12 +40,14 @@ public:
     bool copyLatestSpectrumDb (std::vector<float>& destination);
     bool copyLatestPeakHoldSpectrumDb (std::vector<float>& destination);
     bool copyLatestRmsSpectrumDb (std::vector<float>& destination);
+    bool copyLatestFrame (Frame& destination);
 
 private:
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
     void configureFft (int newFftOrder);
+    void handleClearPeakHoldRequest();
 
     static constexpr int minFftOrder = 10;
     static constexpr int defaultFftOrder = 11;

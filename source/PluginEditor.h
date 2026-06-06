@@ -52,9 +52,7 @@ private:
     std::unique_ptr<ComboBoxAttachment> rmsTimeAttachment;
 
     SpectrumDisplay spectrumDisplay;
-    std::vector<float> spectrumBuffer;
-    std::vector<float> peakHoldBuffer;
-    std::vector<float> rmsBuffer;
+    AnalyzerEngine::Frame analyzerFrame;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };
