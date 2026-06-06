@@ -23,6 +23,9 @@ public:
     void paint (juce::Graphics& g) override;
     void resized() override;
 
+    void mouseMove (const juce::MouseEvent& event) override;
+    void mouseDrag (const juce::MouseEvent& event) override;
+    void mouseExit (const juce::MouseEvent& event) override;
 
 private:
     void drawBackground (juce::Graphics& g, juce::Rectangle<int> bounds);
@@ -34,10 +37,17 @@ private:
     void drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawMouseReadout (juce::Graphics& g, juce::Rectangle<int> bounds);
 
+    juce::Rectangle<float> getSpectrumArea (juce::Rectangle<int> bounds) const;
     float frequencyToX (float frequencyHz, juce::Rectangle<float> area) const;
+    float xToFrequency (float x, juce::Rectangle<float> area) const;
     float decibelsToY (float decibels, juce::Rectangle<float> area) const;
+    float yToDecibels (float y, juce::Rectangle<float> area) const;
+    juce::String formatFrequency (float frequencyHz) const;
+    juce::String frequencyToNoteName (float frequencyHz) const;
     float applySlopeCorrection (float decibels, float frequencyHz) const;
+    void updateMouseReadout (juce::Point<float> newPosition);
 
     static constexpr float minFrequencyHz = 20.0f;
     static constexpr float maxFrequencyHz = 20000.0f;
@@ -54,6 +64,8 @@ private:
     bool showLiveCurve = true;
     bool showRmsCurve = true;
     bool showPeakHoldCurve = true;
+    bool hasMouseReadout = false;
+    juce::Point<float> mousePosition;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectrumDisplay)
 };

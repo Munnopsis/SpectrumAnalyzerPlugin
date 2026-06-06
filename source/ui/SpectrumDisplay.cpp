@@ -94,10 +94,41 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     g.setColour (juce::Colours::white.withAlpha (0.85f));
     g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
     g.drawText ("FullSpectrum", bounds.reduced (16), juce::Justification::topLeft);
+
+    drawMouseReadout (g, bounds);
 }
 
 void SpectrumDisplay::resized()
 {
+}
+
+void SpectrumDisplay::mouseMove (const juce::MouseEvent& event)
+{
+    updateMouseReadout (event.position);
+}
+
+void SpectrumDisplay::mouseDrag (const juce::MouseEvent& event)
+{
+    updateMouseReadout (event.position);
+}
+
+void SpectrumDisplay::mouseExit (const juce::MouseEvent& event)
+{
+    juce::ignoreUnused (event);
+
+    if (! hasMouseReadout)
+        return;
+
+    hasMouseReadout = false;
+    repaint();
+}
+
+juce::Rectangle<float> SpectrumDisplay::getSpectrumArea (juce::Rectangle<int> bounds) const
+{
+    auto area = bounds.reduced (40, 50);
+    area.removeFromBottom (34);
+
+    return area.toFloat();
 }
 
 float SpectrumDisplay::frequencyToX (float frequencyHz, juce::Rectangle<float> area) const
@@ -111,10 +142,53 @@ float SpectrumDisplay::frequencyToX (float frequencyHz, juce::Rectangle<float> a
     return area.getX() + normalised * area.getWidth();
 }
 
+float SpectrumDisplay::xToFrequency (float x, juce::Rectangle<float> area) const
+{
+    const auto normalised = (x - area.getX()) / juce::jmax (1.0f, area.getWidth());
+    const auto clamped = juce::jlimit (0.0f, 1.0f, normalised);
+
+    return minFrequencyHz * std::pow (maxFrequencyHz / minFrequencyHz, clamped);
+}
+
 float SpectrumDisplay::decibelsToY (float decibels, juce::Rectangle<float> area) const
 {
     const auto clampedDb = juce::jlimit (minDecibels, maxDecibels, decibels);
     return juce::jmap (clampedDb, minDecibels, maxDecibels, area.getBottom(), area.getY());
+}
+
+float SpectrumDisplay::yToDecibels (float y, juce::Rectangle<float> area) const
+{
+    const auto normalised = (area.getBottom() - y) / juce::jmax (1.0f, area.getHeight());
+    const auto clamped = juce::jlimit (0.0f, 1.0f, normalised);
+
+    return juce::jmap (clamped, 0.0f, 1.0f, minDecibels, maxDecibels);
+}
+
+juce::String SpectrumDisplay::formatFrequency (float frequencyHz) const
+{
+    if (frequencyHz < 1000.0f)
+        return juce::String (juce::roundToInt (frequencyHz)) + " Hz";
+
+    return juce::String (frequencyHz / 1000.0f, 2) + " kHz";
+}
+
+juce::String SpectrumDisplay::frequencyToNoteName (float frequencyHz) const
+{
+    if (frequencyHz <= 0.0f)
+        return "-";
+
+    static constexpr std::array<const char*, 12> noteNames {
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+    };
+
+    const auto midiNote = juce::jlimit (
+        0,
+        127,
+        juce::roundToInt (69.0f + 12.0f * std::log2 (frequencyHz / 440.0f)));
+
+    const auto octave = midiNote / 12 - 1;
+    return juce::String (noteNames[static_cast<size_t> (midiNote % 12)])
+           + juce::String (octave);
 }
 
 float SpectrumDisplay::applySlopeCorrection (float decibels, float frequencyHz) const
@@ -126,6 +200,26 @@ float SpectrumDisplay::applySlopeCorrection (float decibels, float frequencyHz) 
     return decibels + correctionDb;
 }
 
+void SpectrumDisplay::updateMouseReadout (juce::Point<float> newPosition)
+{
+    const auto area = getSpectrumArea (getLocalBounds());
+
+    if (! area.contains (newPosition))
+    {
+        if (hasMouseReadout)
+        {
+            hasMouseReadout = false;
+            repaint();
+        }
+
+        return;
+    }
+
+    mousePosition = newPosition;
+    hasMouseReadout = true;
+    repaint();
+}
+
 void SpectrumDisplay::drawBackground (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
     juce::ignoreUnused (bounds);
@@ -135,10 +229,7 @@ void SpectrumDisplay::drawBackground (juce::Graphics& g, juce::Rectangle<int> bo
 
 void SpectrumDisplay::drawFrequencyGrid (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
-    auto area = bounds.reduced (40, 50);
-    area.removeFromBottom (34);
-
-    const auto drawArea = area.toFloat();
+    const auto drawArea = getSpectrumArea (bounds);
 
     const std::array<float, 10> frequencies {
         20.0f, 50.0f, 100.0f, 200.0f, 500.0f,
@@ -170,10 +261,7 @@ void SpectrumDisplay::drawFrequencyGrid (juce::Graphics& g, juce::Rectangle<int>
 
 void SpectrumDisplay::drawDecibelGrid (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
-    auto area = bounds.reduced (40, 50);
-    area.removeFromBottom (34);
-
-    const auto drawArea = area.toFloat();
+    const auto drawArea = getSpectrumArea (bounds);
 
     g.setFont (juce::FontOptions (11.0f));
 
@@ -199,7 +287,7 @@ void SpectrumDisplay::drawPlaceholderCurve (juce::Graphics& g, juce::Rectangle<i
 {
     juce::Path curve;
 
-    const auto area = bounds.reduced (40, 50).toFloat();
+    const auto area = getSpectrumArea (bounds);
 
     curve.startNewSubPath (area.getX(), area.getCentreY());
 
@@ -248,10 +336,7 @@ void SpectrumDisplay::drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int>
     if (spectrumDb.size() < 2)
         return;
 
-    auto spectrumBounds = bounds.reduced (40, 50);
-    spectrumBounds.removeFromBottom (34);
-
-    const auto area = spectrumBounds.toFloat();
+    const auto area = getSpectrumArea (bounds);
 
     juce::Path curve;
 
@@ -295,10 +380,7 @@ void SpectrumDisplay::drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int>
     if (peakHoldDb.size() < 2)
         return;
 
-    auto spectrumBounds = bounds.reduced (40, 50);
-    spectrumBounds.removeFromBottom (34);
-
-    const auto area = spectrumBounds.toFloat();
+    const auto area = getSpectrumArea (bounds);
 
     juce::Path curve;
 
@@ -342,10 +424,7 @@ void SpectrumDisplay::drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> boun
     if (rmsDb.size() < 2)
         return;
 
-    auto spectrumBounds = bounds.reduced (40, 50);
-    spectrumBounds.removeFromBottom (34);
-
-    const auto area = spectrumBounds.toFloat();
+    const auto area = getSpectrumArea (bounds);
 
     juce::Path curve;
 
@@ -422,4 +501,62 @@ void SpectrumDisplay::drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds
 
         x += itemWidth + 10.0f;
     }
+}
+
+void SpectrumDisplay::drawMouseReadout (juce::Graphics& g, juce::Rectangle<int> bounds)
+{
+    if (! hasMouseReadout)
+        return;
+
+    const auto area = getSpectrumArea (bounds);
+
+    if (! area.contains (mousePosition) || area.getWidth() <= 96.0f || area.getHeight() <= 40.0f)
+        return;
+
+    const auto frequency = xToFrequency (mousePosition.x, area);
+    const auto db = yToDecibels (mousePosition.y, area);
+    const auto text =
+        formatFrequency (frequency)
+        + "  "
+        + frequencyToNoteName (frequency)
+        + "  "
+        + juce::String (db, 1)
+        + " dB";
+
+    g.setColour (juce::Colours::white.withAlpha (0.18f));
+    g.drawLine (mousePosition.x, area.getY(), mousePosition.x, area.getBottom(), 1.0f);
+    g.drawLine (area.getX(), mousePosition.y, area.getRight(), mousePosition.y, 1.0f);
+
+    g.setFont (juce::FontOptions (12.0f));
+
+    const auto readoutHeight = 24.0f;
+    const auto maxReadoutWidth = area.getWidth() - 12.0f;
+    const auto readoutWidth =
+        juce::jmin (maxReadoutWidth,
+                    juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 18.0f);
+
+    const auto readoutX =
+        juce::jlimit (area.getX() + 6.0f,
+                      area.getRight() - readoutWidth - 6.0f,
+                      mousePosition.x + 12.0f);
+
+    const auto readoutY =
+        juce::jlimit (area.getY() + 6.0f,
+                      area.getBottom() - readoutHeight - 6.0f,
+                      mousePosition.y - 34.0f);
+
+    const auto readoutBounds =
+        juce::Rectangle<float> (readoutX, readoutY, readoutWidth, readoutHeight);
+
+    g.setColour (juce::Colours::black.withAlpha (0.72f));
+    g.fillRoundedRectangle (readoutBounds, 4.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.18f));
+    g.drawRoundedRectangle (readoutBounds, 4.0f, 1.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.88f));
+    g.drawText (text,
+                readoutBounds.toNearestInt().reduced (8, 0),
+                juce::Justification::centredLeft,
+                true);
 }
