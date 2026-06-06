@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "analyzer/AnalyzerInputMode.h"
+#include "analyzer/AnalyzerFftSize.h"
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p)
@@ -14,6 +15,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (peakButton);
     addAndMakeVisible (clearPeakButton);
     addAndMakeVisible (inputModeBox);
+    addAndMakeVisible (fftSizeBox);
 
     // button actions
     clearPeakButton.onClick = [this]
@@ -36,6 +38,15 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         state,
         PluginProcessor::inputModeParamId,
         inputModeBox);
+
+    fftSizeBox.addItemList (getAnalyzerFftSizeChoices(), 1);
+    fftSizeBox.setJustificationType (juce::Justification::centred);
+    fftSizeBox.setTooltip ("FFT size");
+
+    fftSizeAttachment = std::make_unique<ComboBoxAttachment> (
+        state,
+        PluginProcessor::fftSizeParamId,
+        fftSizeBox);
 
     // link button with action
     liveButtonAttachment = std::make_unique<ButtonAttachment> (
@@ -100,9 +111,12 @@ void PluginEditor::resized()
 
     auto topBar = bounds.reduced (12).removeFromTop (32);
 
-    auto rightControls = topBar.removeFromRight (620);
+    auto rightControls = topBar.removeFromRight (740);
 
     inputModeBox.setBounds (rightControls.removeFromLeft (150));
+    rightControls.removeFromLeft (8);
+
+    fftSizeBox.setBounds (rightControls.removeFromLeft (110));
     rightControls.removeFromLeft (8);
 
     liveButton.setBounds (rightControls.removeFromLeft (64));

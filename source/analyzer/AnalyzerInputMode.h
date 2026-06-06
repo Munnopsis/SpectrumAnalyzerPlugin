@@ -32,6 +32,9 @@ inline float makeAnalyzerMonoSample (float left, float right, AnalyzerInputMode 
 {
     switch (mode)
     {
+        case AnalyzerInputMode::stereoSum:
+            return (left + right) * 0.5f;
+
         case AnalyzerInputMode::left:
             return left;
 
@@ -44,8 +47,9 @@ inline float makeAnalyzerMonoSample (float left, float right, AnalyzerInputMode 
         case AnalyzerInputMode::side:
             return (left - right) * 0.5f;
 
-        case AnalyzerInputMode::stereoSum:
-        default:
-            return (left + right) * 0.5f;
+        case AnalyzerInputMode::count:
+            break;
     }
+
+    return (left + right) * 0.5f;
 }

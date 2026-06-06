@@ -15,6 +15,8 @@ PluginProcessor::PluginProcessor()
 {
     inputModeParameter = parameters.getRawParameterValue (inputModeParamId);
     jassert (inputModeParameter != nullptr);
+    fftSizeParameter = parameters.getRawParameterValue (fftSizeParamId);
+    jassert (fftSizeParameter != nullptr);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
@@ -41,6 +43,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     "Input Mode",
     getAnalyzerInputModeChoices(),
     0));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+    juce::ParameterID { fftSizeParamId, 1 },
+    "FFT Size",
+    getAnalyzerFftSizeChoices(),
+    1));
 
     return { params.begin(), params.end() };
 }
@@ -136,6 +144,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     analyzerFifo.prepare (sampleRate, samplesPerBlock);
 
+    analyzerEngine.setRequestedFftOrder (getAnalyzerFftOrder());
     analyzerEngine.prepare (sampleRate, analyzerFifo);
     analyzerEngine.start();
 }
@@ -211,6 +220,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const auto levelDb = juce::Decibels::gainToDecibels (maxSample, -100.0f);
     inputLevelDb.store (levelDb, std::memory_order_relaxed);
 
+    analyzerEngine.setRequestedFftOrder (getAnalyzerFftOrder());
+    
     analyzerFifo.pushMonoFromBuffer (
         buffer,
         numChannelsToAnalyse,
@@ -254,6 +265,15 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
         if (xmlState->hasTagName (parameters.state.getType()))
             parameters.replaceState (juce::ValueTree::fromXml (*xmlState));
     }
+}
+
+int PluginProcessor::getAnalyzerFftOrder() const noexcept
+{
+    if (fftSizeParameter == nullptr)
+        return 11;
+
+    return analyzerFftOrderFromParameterValue (
+        fftSizeParameter->load (std::memory_order_relaxed));
 }
 
 //==============================================================================

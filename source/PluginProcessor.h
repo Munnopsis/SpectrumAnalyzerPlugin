@@ -6,7 +6,7 @@
 #include "analyzer/AnalyzerEngine.h"
 #include <vector>
 #include "analyzer/AnalyzerInputMode.h"
-
+#include "analyzer/AnalyzerFftSize.h"
 
 #if (MSVC)
 #include "ipps.h"
@@ -68,6 +68,7 @@ public:
     static inline const juce::String showRmsCurveParamId { "showRmsCurve" };
     static inline const juce::String showPeakHoldCurveParamId { "showPeakHoldCurve" };
     static inline const juce::String inputModeParamId { "inputMode" };
+    static inline const juce::String fftSizeParamId { "fftSize" };
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept
     {
@@ -98,12 +99,16 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::AudioProcessorValueTreeState parameters;
 
+    int getAnalyzerFftOrder() const noexcept;
+
     std::atomic<float> inputLevelDb { -100.0f };
     std::atomic<float>* inputModeParameter = nullptr;
+    std::atomic<float>* fftSizeParameter = nullptr;
 
     AnalyzerFifo analyzerFifo;
     AnalyzerEngine analyzerEngine;
     AnalyzerInputMode getAnalyzerInputMode() const noexcept;
+
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

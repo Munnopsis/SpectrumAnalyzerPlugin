@@ -9,6 +9,8 @@
 #include <atomic>
 #include <mutex>
 #include <vector>
+#include "AnalyzerFftSize.h"
+#include <memory>
 
 class AnalyzerEngine : private juce::Thread
 {
@@ -24,6 +26,8 @@ public:
 
     void requestClearPeakHold() noexcept;
 
+    void setRequestedFftOrder (int newFftOrder) noexcept;
+
     bool copyLatestSpectrumDb (std::vector<float>& destination);
     bool copyLatestPeakHoldSpectrumDb (std::vector<float>& destination);
     bool copyLatestRmsSpectrumDb (std::vector<float>& destination);
@@ -32,8 +36,13 @@ private:
     void run() override;
     void processOneFftBlock();
 
-    static constexpr int fftOrder = 11;
-    static constexpr int fftSize = 1 << fftOrder;
+    void updateFftSizeIfNeeded();
+    void configureFft (int newFftOrder);
+
+    static constexpr int minFftOrder = 10;
+    static constexpr int defaultFftOrder = 11;
+    static constexpr int maxFftOrder = 13;
+
     static constexpr int displayBinCount = 256;
 
     static constexpr float peakHoldDecayDbPerSecond = 8.0f;
@@ -42,11 +51,16 @@ private:
 
     double currentSampleRate = 44100.0;
 
-    juce::dsp::FFT forwardFFT;
-    juce::dsp::WindowingFunction<float> window;
+    int currentFftOrder = defaultFftOrder;
+    int currentFftSize = analyzerFftSizeFromOrder (defaultFftOrder);
 
-    std::array<float, fftSize> timeDomainBlock {};
-    std::array<float, fftSize * 2> fftData {};
+    std::atomic<int> requestedFftOrder { defaultFftOrder };
+
+    std::unique_ptr<juce::dsp::FFT> forwardFFT;
+    std::unique_ptr<juce::dsp::WindowingFunction<float>> window;
+
+    std::vector<float> timeDomainBlock;
+    std::vector<float> fftData;
 
     std::vector<float> rawSpectrumDb;
     std::vector<float> smoothedSpectrumDb;

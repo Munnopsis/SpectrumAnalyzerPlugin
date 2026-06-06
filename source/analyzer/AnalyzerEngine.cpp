@@ -4,9 +4,7 @@
 #include <cmath>
 
 AnalyzerEngine::AnalyzerEngine()
-    : juce::Thread ("FullSpectrum Analyzer Engine"),
-      forwardFFT (fftOrder),
-      window (fftSize, juce::dsp::WindowingFunction<float>::hann, false)
+    : juce::Thread ("FullSpectrum Analyzer Engine")
 {
     rawSpectrumDb.resize (displayBinCount, -100.0f);
     smoothedSpectrumDb.resize (displayBinCount, -100.0f);
@@ -16,6 +14,9 @@ AnalyzerEngine::AnalyzerEngine()
     latestSpectrumDb.resize (displayBinCount, -100.0f);
     latestPeakHoldSpectrumDb.resize (displayBinCount, -100.0f);
     latestRmsSpectrumDb.resize (displayBinCount, -100.0f);
+
+    configureFft (defaultFftOrder);
+    reset();
 }
 
 AnalyzerEngine::~AnalyzerEngine()
@@ -30,6 +31,7 @@ void AnalyzerEngine::prepare (double sampleRate, AnalyzerFifo& fifoToReadFrom)
     currentSampleRate = sampleRate;
     sourceFifo = &fifoToReadFrom;
 
+    configureFft (requestedFftOrder.load (std::memory_order_relaxed));
     reset();
 }
 
@@ -55,6 +57,40 @@ void AnalyzerEngine::reset()
 void AnalyzerEngine::requestClearPeakHold() noexcept
 {
     clearPeakHoldRequested.store (true, std::memory_order_relaxed);
+}
+
+void AnalyzerEngine::setRequestedFftOrder (int newFftOrder) noexcept
+{
+    requestedFftOrder.store (
+        juce::jlimit (minFftOrder, maxFftOrder, newFftOrder),
+        std::memory_order_relaxed);
+}
+
+void AnalyzerEngine::configureFft (int newFftOrder)
+{
+    currentFftOrder = juce::jlimit (minFftOrder, maxFftOrder, newFftOrder);
+    currentFftSize = analyzerFftSizeFromOrder (currentFftOrder);
+
+    forwardFFT = std::make_unique<juce::dsp::FFT> (currentFftOrder);
+
+    window = std::make_unique<juce::dsp::WindowingFunction<float>> (
+        static_cast<size_t> (currentFftSize),
+        juce::dsp::WindowingFunction<float>::hann,
+        false);
+
+    timeDomainBlock.assign (static_cast<size_t> (currentFftSize), 0.0f);
+    fftData.assign (static_cast<size_t> (currentFftSize * 2), 0.0f);
+}
+
+void AnalyzerEngine::updateFftSizeIfNeeded()
+{
+    const auto requestedOrder = requestedFftOrder.load (std::memory_order_relaxed);
+
+    if (requestedOrder == currentFftOrder)
+        return;
+
+    configureFft (requestedOrder);
+    reset();
 }
 
 void AnalyzerEngine::start()
@@ -116,7 +152,9 @@ void AnalyzerEngine::run()
             continue;
         }
 
-        if (sourceFifo->getNumAvailableForReading() >= fftSize)
+        updateFftSizeIfNeeded();
+
+        if (sourceFifo->getNumAvailableForReading() >= currentFftSize)
         {
             processOneFftBlock();
             continue;
@@ -128,20 +166,25 @@ void AnalyzerEngine::run()
 
 void AnalyzerEngine::processOneFftBlock()
 {
-    if (sourceFifo == nullptr)
+    if (sourceFifo == nullptr || forwardFFT == nullptr || window == nullptr)
         return;
 
-    const auto numRead = sourceFifo->pop (timeDomainBlock.data(), fftSize);
+    const auto fftSizeForBlock = currentFftSize;
 
-    if (numRead != fftSize)
+    if (fftSizeForBlock <= 0)
+        return;
+
+    const auto numRead = sourceFifo->pop (timeDomainBlock.data(), fftSizeForBlock);
+
+    if (numRead != fftSizeForBlock)
         return;
 
     std::fill (fftData.begin(), fftData.end(), 0.0f);
     std::copy (timeDomainBlock.begin(), timeDomainBlock.end(), fftData.begin());
 
-    window.multiplyWithWindowingTable (fftData.data(), fftSize);
+    window->multiplyWithWindowingTable (fftData.data(), fftSizeForBlock);
 
-    forwardFFT.performFrequencyOnlyForwardTransform (fftData.data());
+    forwardFFT->performFrequencyOnlyForwardTransform (fftData.data());
 
     const auto minFrequency = 20.0f;
     const auto maxFrequency = juce::jmax (
@@ -150,11 +193,11 @@ void AnalyzerEngine::processOneFftBlock()
     );
 
     const auto decayPerFrame =
-        peakHoldDecayDbPerSecond * static_cast<float> (fftSize)
+        peakHoldDecayDbPerSecond * static_cast<float> (fftSizeForBlock)
         / static_cast<float> (currentSampleRate);
 
     const auto frameDurationSeconds =
-        static_cast<float> (fftSize) / static_cast<float> (currentSampleRate);
+        static_cast<float> (fftSizeForBlock) / static_cast<float> (currentSampleRate);
 
     const auto rmsAlpha =
         1.0f - std::exp (-frameDurationSeconds / rmsTimeSeconds);
@@ -177,12 +220,12 @@ void AnalyzerEngine::processOneFftBlock()
 
         const auto fftBin =
             juce::jlimit (1,
-                          (fftSize / 2) - 1,
-                          juce::roundToInt (frequency * static_cast<float> (fftSize)
+                          (fftSizeForBlock / 2) - 1,
+                          juce::roundToInt (frequency * static_cast<float> (fftSizeForBlock)
                                             / static_cast<float> (currentSampleRate)));
 
         const auto magnitude =
-            (fftData[static_cast<size_t> (fftBin)] / static_cast<float> (fftSize)) * 2.0f;
+            (fftData[static_cast<size_t> (fftBin)] / static_cast<float> (fftSizeForBlock)) * 2.0f;
 
         const auto db =
             juce::Decibels::gainToDecibels (magnitude, -100.0f);
@@ -200,7 +243,8 @@ void AnalyzerEngine::processOneFftBlock()
         if (targetDb > peakHoldSpectrumDb[index])
             peakHoldSpectrumDb[index] = targetDb;
         else
-            peakHoldSpectrumDb[index] = juce::jmax (-100.0f, peakHoldSpectrumDb[index] - decayPerFrame);
+            peakHoldSpectrumDb[index] = juce::jmax (-100.0f,
+                                                    peakHoldSpectrumDb[index] - decayPerFrame);
 
         const auto power = magnitude * magnitude;
 
@@ -217,6 +261,7 @@ void AnalyzerEngine::processOneFftBlock()
         for (size_t i = 0; i < latestRmsSpectrumDb.size(); ++i)
         {
             const auto rmsMagnitude = std::sqrt (rmsPowerSpectrum[i]);
+
             latestRmsSpectrumDb[i] =
                 juce::jlimit (-100.0f,
                               0.0f,
