@@ -63,7 +63,34 @@ public:
         return analyzerEngine.copyLatestRmsSpectrumDb (destination);
     }
 
+    static inline const juce::String showLiveCurveParamId { "showLiveCurve" };
+    static inline const juce::String showRmsCurveParamId { "showRmsCurve" };
+    static inline const juce::String showPeakHoldCurveParamId { "showPeakHoldCurve" };
+
+    juce::AudioProcessorValueTreeState& getValueTreeState() noexcept
+    {
+        return parameters;
+    }
+
+    bool shouldShowLiveCurve() const noexcept
+    {
+        return parameters.getRawParameterValue (showLiveCurveParamId)->load() > 0.5f;
+    }
+
+    bool shouldShowRmsCurve() const noexcept
+    {
+        return parameters.getRawParameterValue (showRmsCurveParamId)->load() > 0.5f;
+    }
+
+    bool shouldShowPeakHoldCurve() const noexcept
+    {
+        return parameters.getRawParameterValue (showPeakHoldCurveParamId)->load() > 0.5f;
+    }
+
 private:
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    juce::AudioProcessorValueTreeState parameters;
+    
     std::atomic<float> inputLevelDb { -100.0f };
 
     AnalyzerFifo analyzerFifo;

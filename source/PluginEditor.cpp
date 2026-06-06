@@ -6,6 +6,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     juce::ignoreUnused (processorRef);
 
     addAndMakeVisible (spectrumDisplay);
+
     addAndMakeVisible (inspectButton);
     addAndMakeVisible (liveButton);
     addAndMakeVisible (rmsButton);
@@ -15,29 +16,27 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     rmsButton.setClickingTogglesState (true);
     peakButton.setClickingTogglesState (true);
 
-    liveButton.setToggleState (true, juce::dontSendNotification);
-    rmsButton.setToggleState (true, juce::dontSendNotification);
-    peakButton.setToggleState (true, juce::dontSendNotification);
+    auto& state = processorRef.getValueTreeState();
 
-    liveButton.onClick = [this]
-    {
-        showLiveCurve = liveButton.getToggleState();
-        spectrumDisplay.setCurveVisibility (showLiveCurve, showRmsCurve, showPeakHoldCurve);
-    };
+    liveButtonAttachment = std::make_unique<ButtonAttachment> (
+        state,
+        PluginProcessor::showLiveCurveParamId,
+        liveButton);
 
-    rmsButton.onClick = [this]
-    {
-        showRmsCurve = rmsButton.getToggleState();
-        spectrumDisplay.setCurveVisibility (showLiveCurve, showRmsCurve, showPeakHoldCurve);
-    };
+    rmsButtonAttachment = std::make_unique<ButtonAttachment> (
+        state,
+        PluginProcessor::showRmsCurveParamId,
+        rmsButton);
 
-    peakButton.onClick = [this]
-    {
-        showPeakHoldCurve = peakButton.getToggleState();
-        spectrumDisplay.setCurveVisibility (showLiveCurve, showRmsCurve, showPeakHoldCurve);
-    };
+    peakButtonAttachment = std::make_unique<ButtonAttachment> (
+        state,
+        PluginProcessor::showPeakHoldCurveParamId,
+        peakButton);
 
-    spectrumDisplay.setCurveVisibility (showLiveCurve, showRmsCurve, showPeakHoldCurve);
+    spectrumDisplay.setCurveVisibility (
+        processorRef.shouldShowLiveCurve(),
+        processorRef.shouldShowRmsCurve(),
+        processorRef.shouldShowPeakHoldCurve());
 
     // this chunk of code instantiates and opens the melatonin inspector
     inspectButton.onClick = [&] {
@@ -97,6 +96,11 @@ void PluginEditor::resized()
 void PluginEditor::timerCallback()
 {
     spectrumDisplay.setInputLevelDb (processorRef.getInputLevelDb());
+
+    spectrumDisplay.setCurveVisibility (
+        processorRef.shouldShowLiveCurve(),
+        processorRef.shouldShowRmsCurve(),
+        processorRef.shouldShowPeakHoldCurve());
 
     if (processorRef.copyLatestSpectrumDb (spectrumBuffer))
         spectrumDisplay.setSpectrumDb (spectrumBuffer);

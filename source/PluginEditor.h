@@ -22,24 +22,27 @@ public:
 private:
     // This reference is provided as a quick way for your editor to
     // access the processor object that created it.
-    PluginProcessor& processorRef;
-    std::unique_ptr<melatonin::Inspector> inspector;
+    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
+    void timerCallback() override;
+
+    PluginProcessor& processorRef;
+
+    std::unique_ptr<melatonin::Inspector> inspector;
     juce::TextButton inspectButton { "Inspect the UI" };
+
     juce::TextButton liveButton { "Live" };
     juce::TextButton rmsButton { "RMS" };
     juce::TextButton peakButton { "Peak" };
 
-    void timerCallback() override;
+    std::unique_ptr<ButtonAttachment> liveButtonAttachment;
+    std::unique_ptr<ButtonAttachment> rmsButtonAttachment;
+    std::unique_ptr<ButtonAttachment> peakButtonAttachment;
 
     SpectrumDisplay spectrumDisplay;
     std::vector<float> spectrumBuffer;
     std::vector<float> peakHoldBuffer;
     std::vector<float> rmsBuffer;
-
-    bool showLiveCurve = true;
-    bool showRmsCurve = true;
-    bool showPeakHoldCurve = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };
