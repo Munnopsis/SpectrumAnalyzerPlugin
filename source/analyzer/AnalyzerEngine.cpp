@@ -11,9 +11,11 @@ AnalyzerEngine::AnalyzerEngine()
     rawSpectrumDb.resize (displayBinCount, -100.0f);
     smoothedSpectrumDb.resize (displayBinCount, -100.0f);
     peakHoldSpectrumDb.resize (displayBinCount, -100.0f);
+    rmsPowerSpectrum.resize (displayBinCount, 0.0f);
 
     latestSpectrumDb.resize (displayBinCount, -100.0f);
     latestPeakHoldSpectrumDb.resize (displayBinCount, -100.0f);
+    latestRmsSpectrumDb.resize (displayBinCount, -100.0f);
 }
 
 AnalyzerEngine::~AnalyzerEngine()
@@ -38,11 +40,13 @@ void AnalyzerEngine::reset()
     std::fill (rawSpectrumDb.begin(), rawSpectrumDb.end(), -100.0f);
     std::fill (smoothedSpectrumDb.begin(), smoothedSpectrumDb.end(), -100.0f);
     std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
+    std::fill (rmsPowerSpectrum.begin(), rmsPowerSpectrum.end(), 0.0f);
 
     {
         std::lock_guard<std::mutex> lock (latestSpectrumMutex);
         std::fill (latestSpectrumDb.begin(), latestSpectrumDb.end(), -100.0f);
         std::fill (latestPeakHoldSpectrumDb.begin(), latestPeakHoldSpectrumDb.end(), -100.0f);
+        std::fill (latestRmsSpectrumDb.begin(), latestRmsSpectrumDb.end(), -100.0f);
     }
 
     hasFrame.store (false, std::memory_order_relaxed);
@@ -82,6 +86,17 @@ bool AnalyzerEngine::copyLatestPeakHoldSpectrumDb (std::vector<float>& destinati
 
     std::lock_guard<std::mutex> lock (latestSpectrumMutex);
     destination = latestPeakHoldSpectrumDb;
+
+    return true;
+}
+
+bool AnalyzerEngine::copyLatestRmsSpectrumDb (std::vector<float>& destination)
+{
+    if (! hasFrame.load (std::memory_order_relaxed))
+        return false;
+
+    std::lock_guard<std::mutex> lock (latestSpectrumMutex);
+    destination = latestRmsSpectrumDb;
 
     return true;
 }
@@ -133,6 +148,12 @@ void AnalyzerEngine::processOneFftBlock()
         peakHoldDecayDbPerSecond * static_cast<float> (fftSize)
         / static_cast<float> (currentSampleRate);
 
+    const auto frameDurationSeconds =
+        static_cast<float> (fftSize) / static_cast<float> (currentSampleRate);
+
+    const auto rmsAlpha =
+        1.0f - std::exp (-frameDurationSeconds / rmsTimeSeconds);
+
     for (int i = 0; i < displayBinCount; ++i)
     {
         const auto normalisedX =
@@ -148,10 +169,10 @@ void AnalyzerEngine::processOneFftBlock()
                                             / static_cast<float> (currentSampleRate)));
 
         const auto magnitude =
-            fftData[static_cast<size_t> (fftBin)] / static_cast<float> (fftSize);
+            (fftData[static_cast<size_t> (fftBin)] / static_cast<float> (fftSize)) * 2.0f;
 
         const auto db =
-            juce::Decibels::gainToDecibels (magnitude * 2.0f, -100.0f);
+            juce::Decibels::gainToDecibels (magnitude, -100.0f);
 
         const auto targetDb = juce::jlimit (-100.0f, 0.0f, db);
         const auto index = static_cast<size_t> (i);
@@ -167,12 +188,27 @@ void AnalyzerEngine::processOneFftBlock()
             peakHoldSpectrumDb[index] = targetDb;
         else
             peakHoldSpectrumDb[index] = juce::jmax (-100.0f, peakHoldSpectrumDb[index] - decayPerFrame);
+
+        const auto power = magnitude * magnitude;
+
+        rmsPowerSpectrum[index] =
+            rmsPowerSpectrum[index] + rmsAlpha * (power - rmsPowerSpectrum[index]);
     }
 
     {
         std::lock_guard<std::mutex> lock (latestSpectrumMutex);
+
         latestSpectrumDb = smoothedSpectrumDb;
         latestPeakHoldSpectrumDb = peakHoldSpectrumDb;
+
+        for (size_t i = 0; i < latestRmsSpectrumDb.size(); ++i)
+        {
+            const auto rmsMagnitude = std::sqrt (rmsPowerSpectrum[i]);
+            latestRmsSpectrumDb[i] =
+                juce::jlimit (-100.0f,
+                              0.0f,
+                              juce::Decibels::gainToDecibels (rmsMagnitude, -100.0f));
+        }
     }
 
     hasFrame.store (true, std::memory_order_relaxed);

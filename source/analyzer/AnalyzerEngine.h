@@ -24,6 +24,7 @@ public:
 
     bool copyLatestSpectrumDb (std::vector<float>& destination);
     bool copyLatestPeakHoldSpectrumDb (std::vector<float>& destination);
+    bool copyLatestRmsSpectrumDb (std::vector<float>& destination);
 
 private:
     void run() override;
@@ -32,7 +33,7 @@ private:
     static constexpr int fftOrder = 11;
     static constexpr int fftSize = 1 << fftOrder;
     static constexpr int displayBinCount = 256;
-    
+
     static constexpr float peakHoldDecayDbPerSecond = 18.0f;
 
     AnalyzerFifo* sourceFifo = nullptr;
@@ -48,12 +49,15 @@ private:
     std::vector<float> rawSpectrumDb;
     std::vector<float> smoothedSpectrumDb;
     std::vector<float> peakHoldSpectrumDb;
+    std::vector<float> rmsPowerSpectrum;
 
     std::vector<float> latestSpectrumDb;
     std::vector<float> latestPeakHoldSpectrumDb;
+    std::vector<float> latestRmsSpectrumDb;
 
     static constexpr float attackSmoothing = 0.35f;
     static constexpr float releaseSmoothing = 0.08f;
+    static constexpr float rmsTimeSeconds = 0.300f;
 
     std::mutex latestSpectrumMutex;
     std::atomic<bool> hasFrame { false };

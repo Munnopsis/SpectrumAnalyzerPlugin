@@ -24,6 +24,12 @@ void SpectrumDisplay::setPeakHoldSpectrumDb (const std::vector<float>& newPeakHo
     repaint();
 }
 
+void SpectrumDisplay::setRmsSpectrumDb (const std::vector<float>& newRmsDb)
+{
+    rmsDb = newRmsDb;
+    repaint();
+}
+
 void SpectrumDisplay::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
@@ -38,6 +44,9 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     }
     else
     {
+        if (! rmsDb.empty())
+            drawRmsCurve (g, bounds);
+
         drawSpectrumCurve (g, bounds);
 
         if (! peakHoldDb.empty())
@@ -259,4 +268,40 @@ void SpectrumDisplay::drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int>
 
     g.setColour (juce::Colour::fromRGB (255, 190, 80).withAlpha (0.9f));
     g.strokePath (curve, juce::PathStrokeType (1.5f));
+}
+
+void SpectrumDisplay::drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> bounds)
+{
+    if (rmsDb.size() < 2)
+        return;
+
+    auto spectrumBounds = bounds.reduced (40, 50);
+    spectrumBounds.removeFromBottom (34);
+
+    const auto area = spectrumBounds.toFloat();
+
+    juce::Path curve;
+
+    const auto firstDb = juce::jlimit (minDecibels, maxDecibels, rmsDb.front());
+
+    curve.startNewSubPath (
+        area.getX(),
+        decibelsToY (firstDb, area)
+    );
+
+    for (size_t i = 1; i < rmsDb.size(); ++i)
+    {
+        const auto normalisedX =
+            static_cast<float> (i) / static_cast<float> (rmsDb.size() - 1);
+
+        const auto x = area.getX() + normalisedX * area.getWidth();
+
+        const auto db = juce::jlimit (minDecibels, maxDecibels, rmsDb[i]);
+        const auto y = decibelsToY (db, area);
+
+        curve.lineTo (x, y);
+    }
+
+    g.setColour (juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f));
+    g.strokePath (curve, juce::PathStrokeType (2.0f));
 }

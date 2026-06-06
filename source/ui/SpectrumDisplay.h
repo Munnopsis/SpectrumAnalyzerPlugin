@@ -12,6 +12,7 @@ public:
     void setInputLevelDb (float newLevelDb);
     void setSpectrumDb (const std::vector<float>& newSpectrumDb);
     void setPeakHoldSpectrumDb (const std::vector<float>& newPeakHoldDb);
+    void setRmsSpectrumDb (const std::vector<float>& newRmsDb);
 
     void paint (juce::Graphics& g) override;
     void resized() override;
@@ -24,6 +25,7 @@ private:
     void drawInputLevelMeter (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
 
     float frequencyToX (float frequencyHz, juce::Rectangle<float> area) const;
     float decibelsToY (float decibels, juce::Rectangle<float> area) const;
@@ -36,6 +38,7 @@ private:
     float inputLevelDb = -100.0f;
     std::vector<float> spectrumDb;
     std::vector<float> peakHoldDb;
+    std::vector<float> rmsDb;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectrumDisplay)
 };
