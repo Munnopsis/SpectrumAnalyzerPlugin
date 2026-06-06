@@ -184,6 +184,8 @@ void AnalyzerEngine::reset()
 {
     resetOverlapBuffer();
 
+    secondsSinceLastFramePublish = 0.0f;
+
     std::fill (fftData.begin(), fftData.end(), 0.0f);
     std::fill (rawSpectrumDb.begin(), rawSpectrumDb.end(), -100.0f);
     std::fill (smoothedSpectrumDb.begin(), smoothedSpectrumDb.end(), -100.0f);
@@ -277,6 +279,29 @@ void AnalyzerEngine::resetOverlapBuffer()
 int AnalyzerEngine::getFftHopSize() const noexcept
 {
     return juce::jmax (1, currentFftSize / fftOverlapFactor);
+}
+
+void AnalyzerEngine::publishLatestFrame()
+{
+    {
+        std::lock_guard<std::mutex> lock (latestSpectrumMutex);
+
+        latestSpectrumDb = smoothedSpectrumDb;
+        latestPeakHoldSpectrumDb = peakHoldSpectrumDb;
+        latestNotePeaks = currentNotePeaks;
+
+        for (size_t i = 0; i < latestRmsSpectrumDb.size(); ++i)
+        {
+            const auto rmsMagnitude = std::sqrt (rmsPowerSpectrum[i]);
+
+            latestRmsSpectrumDb[i] =
+                juce::jlimit (-100.0f,
+                              0.0f,
+                              juce::Decibels::gainToDecibels (rmsMagnitude, -100.0f));
+        }
+    }
+
+    hasFrame.store (true, std::memory_order_relaxed);
 }
 
 void AnalyzerEngine::updateFftSizeIfNeeded()
@@ -512,25 +537,20 @@ void AnalyzerEngine::processOneFftBlock()
             + rmsAlpha * (binPowerStats.meanPower - rmsPowerSpectrum[index]);
     }
 
+    secondsSinceLastFramePublish += frameAdvanceSeconds;
+
+    const auto publishIntervalSeconds =
+        1.0f / latestFramePublishRateHz;
+
+    const auto shouldPublishFrame =
+        ! hasFrame.load (std::memory_order_relaxed)
+        || secondsSinceLastFramePublish >= publishIntervalSeconds;
+
+    if (shouldPublishFrame)
     {
-        std::lock_guard<std::mutex> lock (latestSpectrumMutex);
-
-        latestSpectrumDb = smoothedSpectrumDb;
-        latestPeakHoldSpectrumDb = peakHoldSpectrumDb;
-        latestNotePeaks = currentNotePeaks;
-
-        for (size_t i = 0; i < latestRmsSpectrumDb.size(); ++i)
-        {
-            const auto rmsMagnitude = std::sqrt (rmsPowerSpectrum[i]);
-
-            latestRmsSpectrumDb[i] =
-                juce::jlimit (-100.0f,
-                              0.0f,
-                              juce::Decibels::gainToDecibels (rmsMagnitude, -100.0f));
-        }
+        publishLatestFrame();
+        secondsSinceLastFramePublish = 0.0f;
     }
-
-    hasFrame.store (true, std::memory_order_relaxed);
 }
 
 int AnalyzerEngine::frequencyToMidiNote (float frequencyHz) const noexcept

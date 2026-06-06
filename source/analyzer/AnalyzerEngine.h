@@ -72,6 +72,7 @@ private:
     void updateFftSizeIfNeeded();
     void configureFft (int newFftOrder);
     void resetOverlapBuffer();
+    void publishLatestFrame();
     void handleClearPeakHoldRequest();
     int getFftHopSize() const noexcept;
     int frequencyToMidiNote (float frequencyHz) const noexcept;
@@ -129,6 +130,7 @@ private:
     std::vector<float> fftData;
 
     bool overlapBufferPrimed = false;
+    float secondsSinceLastFramePublish = 0.0f;
 
     std::vector<float> rawSpectrumDb;
     std::vector<float> smoothedSpectrumDb;
@@ -146,6 +148,7 @@ private:
 
     static constexpr float liveAttackTimeSeconds = 0.100f;
     static constexpr float liveReleaseTimeSeconds = 0.500f;
+    static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
 
     std::mutex latestSpectrumMutex;
