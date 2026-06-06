@@ -69,6 +69,8 @@ private:
                             juce::Colour colour,
                             float strokeWidth);
     void drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawVisibleFrequencyRangeIndicator (juce::Graphics& g,
+                                             juce::Rectangle<int> bounds);
     void drawMouseReadout (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPeakNoteLabels (juce::Graphics& g, juce::Rectangle<int> bounds);
 
@@ -87,6 +89,8 @@ private:
                                 float alpha,
                                 bool shouldDrawLabel);
     juce::String formatFrequencyGridLabel (float frequencyHz) const;
+    bool isVisibleFrequencyRangeDefault() const noexcept;
+    juce::String formatFrequencyRangeValue (float frequencyHz) const;
     juce::String frequencyToNoteName (float frequencyHz) const;
     bool getInterpolatedCurveValueDb (const std::vector<float>& values,
                                       float frequencyHz,

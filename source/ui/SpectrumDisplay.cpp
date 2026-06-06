@@ -122,6 +122,7 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     drawPeakNoteLabels (g, bounds);
 
     drawLegend (g, bounds);
+    drawVisibleFrequencyRangeIndicator (g, bounds);
 
     drawInputLevelMeter (g, bounds);
 
@@ -294,6 +295,26 @@ juce::String SpectrumDisplay::formatFrequencyGridLabel (float frequencyHz) const
         return juce::String (static_cast<int> (roundedKilohertz)) + "k";
 
     return juce::String (kilohertz, 1) + "k";
+}
+
+bool SpectrumDisplay::isVisibleFrequencyRangeDefault() const noexcept
+{
+    return std::abs (visibleMinFrequencyHz - defaultMinFrequencyHz) < 0.01f
+           && std::abs (visibleMaxFrequencyHz - defaultMaxFrequencyHz) < 0.01f;
+}
+
+juce::String SpectrumDisplay::formatFrequencyRangeValue (float frequencyHz) const
+{
+    if (frequencyHz < 1000.0f)
+        return juce::String (juce::roundToInt (frequencyHz)) + " Hz";
+
+    const auto kilohertz = frequencyHz / 1000.0f;
+    const auto roundedKilohertz = std::round (kilohertz);
+
+    if (std::abs (kilohertz - roundedKilohertz) < 0.01f)
+        return juce::String (static_cast<int> (roundedKilohertz)) + " kHz";
+
+    return juce::String (kilohertz, 1) + " kHz";
 }
 
 juce::String SpectrumDisplay::frequencyToNoteName (float frequencyHz) const
@@ -885,6 +906,55 @@ void SpectrumDisplay::drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds
 
         x += itemWidth + 10.0f;
     }
+}
+
+void SpectrumDisplay::drawVisibleFrequencyRangeIndicator (juce::Graphics& g,
+                                                          juce::Rectangle<int> bounds)
+{
+    if (isVisibleFrequencyRangeDefault())
+        return;
+
+    const auto rangeSeparator =
+        juce::String (juce::CharPointer_UTF8 (" \xe2\x80\x93 "));
+
+    const auto text =
+        juce::String ("Zoom: ")
+        + formatFrequencyRangeValue (visibleMinFrequencyHz)
+        + rangeSeparator
+        + formatFrequencyRangeValue (visibleMaxFrequencyHz);
+
+    g.setFont (juce::FontOptions (12.0f));
+
+    const auto textWidth =
+        juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text);
+
+    const auto indicatorWidth =
+        juce::jmin (static_cast<float> (bounds.getWidth()) - 32.0f,
+                    textWidth + 18.0f);
+
+    if (indicatorWidth <= 40.0f)
+        return;
+
+    const auto indicatorHeight = 22.0f;
+
+    auto indicatorBounds =
+        juce::Rectangle<float> (0.0f, 0.0f, indicatorWidth, indicatorHeight);
+
+    indicatorBounds.setX (
+        static_cast<float> (bounds.getRight()) - indicatorWidth - 16.0f);
+    indicatorBounds.setY (static_cast<float> (bounds.getY()) + 36.0f);
+
+    g.setColour (juce::Colours::black.withAlpha (0.58f));
+    g.fillRoundedRectangle (indicatorBounds, 5.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.16f));
+    g.drawRoundedRectangle (indicatorBounds, 5.0f, 1.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.78f));
+    g.drawText (text,
+                indicatorBounds.toNearestInt().reduced (8, 0),
+                juce::Justification::centred,
+                true);
 }
 
 void SpectrumDisplay::drawPeakNoteLabels (juce::Graphics& g, juce::Rectangle<int> bounds)
