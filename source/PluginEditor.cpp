@@ -80,22 +80,17 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     freezeButton.onClick = [this]
     {
         if (spectrumDisplay.hasFrozenReferenceSpectrum())
-        {
             spectrumDisplay.clearFrozenReferenceSpectrum();
-            freezeButton.setButtonText ("Freeze");
-        }
         else
-        {
             spectrumDisplay.freezeCurrentSpectrumAsReference();
 
-            if (spectrumDisplay.hasFrozenReferenceSpectrum())
-                freezeButton.setButtonText ("Clear Freeze");
-        }
+        updateFreezeButtonState();
     };
 
     liveButton.setClickingTogglesState (true);
     rmsButton.setClickingTogglesState (true);
     peakButton.setClickingTogglesState (true);
+    freezeButton.setClickingTogglesState (false);
     tooltipButton.setClickingTogglesState (true);
     tooltipButton.setToggleState (true, juce::dontSendNotification);
 
@@ -186,6 +181,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         processorRef.shouldShowRmsCurve(),
         processorRef.shouldShowPeakHoldCurve());
 
+    updateFreezeButtonState();
+
     inspectButton.onClick = [&]
     {
         if (! inspector)
@@ -197,7 +194,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         inspector->setVisible (true);
     };
 
-    setSize (1562, 650);
+    setSize (1180, 650);
 
     startTimerHz (30);
 }
@@ -224,47 +221,58 @@ void PluginEditor::resized()
 
     spectrumDisplay.setBounds (bounds);
 
-    auto topBar = bounds.reduced (12).removeFromTop (32);
+    auto controlsArea = bounds.reduced (12).removeFromTop (68);
 
-    auto rightControls = topBar.removeFromRight (1374);
+    auto firstRow = controlsArea.removeFromTop (30);
+    controlsArea.removeFromTop (6);
+    auto secondRow = controlsArea.removeFromTop (30);
 
-    inputModeBox.setBounds (rightControls.removeFromLeft (150));
-    rightControls.removeFromLeft (8);
+    constexpr auto titleReserveWidth = 164;
 
-    fftSizeBox.setBounds (rightControls.removeFromLeft (100));
-    rightControls.removeFromLeft (8);
+    firstRow.removeFromLeft (titleReserveWidth);
+    secondRow.removeFromLeft (titleReserveWidth);
 
-    peakHoldDecayBox.setBounds (rightControls.removeFromLeft (130));
-    rightControls.removeFromLeft (8);
+    auto addGap = [] (juce::Rectangle<int>& area, int pixels)
+    {
+        area.removeFromLeft (pixels);
+    };
 
-    rmsTimeBox.setBounds (rightControls.removeFromLeft (120));
-    rightControls.removeFromLeft (8);
+    inputModeBox.setBounds (firstRow.removeFromLeft (132));
+    addGap (firstRow, 8);
 
-    dbRangeBox.setBounds (rightControls.removeFromLeft (90));
-    rightControls.removeFromLeft (8);
+    fftSizeBox.setBounds (firstRow.removeFromLeft (86));
+    addGap (firstRow, 8);
 
-    slopeBox.setBounds (rightControls.removeFromLeft (110));
-    rightControls.removeFromLeft (8);
+    peakHoldDecayBox.setBounds (firstRow.removeFromLeft (116));
+    addGap (firstRow, 8);
 
-    liveButton.setBounds (rightControls.removeFromLeft (64));
-    rightControls.removeFromLeft (6);
+    rmsTimeBox.setBounds (firstRow.removeFromLeft (106));
+    addGap (firstRow, 8);
 
-    rmsButton.setBounds (rightControls.removeFromLeft (64));
-    rightControls.removeFromLeft (6);
+    dbRangeBox.setBounds (firstRow.removeFromLeft (80));
+    addGap (firstRow, 8);
 
-    peakButton.setBounds (rightControls.removeFromLeft (64));
-    rightControls.removeFromLeft (8);
+    slopeBox.setBounds (firstRow.removeFromLeft (100));
 
-    clearPeakButton.setBounds (rightControls.removeFromLeft (92));
-    rightControls.removeFromLeft (8);
+    liveButton.setBounds (secondRow.removeFromLeft (64));
+    addGap (secondRow, 6);
 
-    freezeButton.setBounds (rightControls.removeFromLeft (104));
-    rightControls.removeFromLeft (8);
+    rmsButton.setBounds (secondRow.removeFromLeft (64));
+    addGap (secondRow, 6);
 
-    inspectButton.setBounds (rightControls.removeFromLeft (140));
-    rightControls.removeFromLeft (8);
+    peakButton.setBounds (secondRow.removeFromLeft (64));
+    addGap (secondRow, 8);
 
-    tooltipButton.setBounds (rightControls.removeFromLeft (54));
+    clearPeakButton.setBounds (secondRow.removeFromLeft (92));
+    addGap (secondRow, 8);
+
+    freezeButton.setBounds (secondRow.removeFromLeft (104));
+    addGap (secondRow, 8);
+
+    inspectButton.setBounds (secondRow.removeFromLeft (128));
+    addGap (secondRow, 8);
+
+    tooltipButton.setBounds (secondRow.removeFromLeft (54));
 }
 
 void PluginEditor::timerCallback()
@@ -317,6 +325,15 @@ void PluginEditor::flushPendingAnalyzerDisplayRange()
     hasPendingAnalyzerDisplayRange = false;
 
     processorRef.setAnalyzerDisplayFrequencyRange (minimumHz, maximumHz);
+}
+
+void PluginEditor::updateFreezeButtonState()
+{
+    const auto hasFrozenReference =
+        spectrumDisplay.hasFrozenReferenceSpectrum();
+
+    freezeButton.setButtonText (hasFrozenReference ? "Clear Freeze" : "Freeze");
+    freezeButton.setToggleState (hasFrozenReference, juce::dontSendNotification);
 }
 
 void PluginEditor::setTooltipsEnabled (bool shouldBeEnabled)

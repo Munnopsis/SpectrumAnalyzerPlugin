@@ -294,10 +294,18 @@ void SpectrumDisplay::mouseDoubleClick (const juce::MouseEvent& event)
 
 juce::Rectangle<float> SpectrumDisplay::getSpectrumArea (juce::Rectangle<int> bounds) const
 {
-    auto area = bounds.reduced (40, 50);
-    area.removeFromBottom (34);
+    auto area = bounds.toFloat();
 
-    return area.toFloat();
+    constexpr auto horizontalInset = 40.0f;
+    constexpr auto topInset = 96.0f;
+    constexpr auto bottomInset = 84.0f;
+
+    area.removeFromLeft (horizontalInset);
+    area.removeFromRight (horizontalInset);
+    area.removeFromTop (topInset);
+    area.removeFromBottom (bottomInset);
+
+    return area;
 }
 
 float SpectrumDisplay::frequencyToX (float frequencyHz, juce::Rectangle<float> area) const

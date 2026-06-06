@@ -28,6 +28,7 @@ private:
     void timerCallback() override;
     void setTooltipsEnabled (bool shouldBeEnabled);
     void flushPendingAnalyzerDisplayRange();
+    void updateFreezeButtonState();
 
     PluginProcessor& processorRef;
 
