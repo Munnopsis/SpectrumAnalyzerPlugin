@@ -294,6 +294,16 @@ void AnalyzerEngine::resetOverlapBuffer()
     overlapBufferPrimed = false;
 }
 
+void AnalyzerEngine::resetDisplayAccumulationStateForRangeChange()
+{
+    std::fill (rawSpectrumDb.begin(), rawSpectrumDb.end(), -100.0f);
+    std::fill (smoothedSpectrumDb.begin(), smoothedSpectrumDb.end(), -100.0f);
+    std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
+    std::fill (rmsPowerSpectrum.begin(), rmsPowerSpectrum.end(), 0.0f);
+
+    secondsSinceLastFramePublish = 1.0f / latestFramePublishRateHz;
+}
+
 void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
 {
     const auto fftSizeForRanges = currentFftSize;
@@ -327,6 +337,20 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
     currentDisplayMinFrequencyHz = clampedMinimum;
     currentDisplayMaxFrequencyHz = clampedMaximum;
 
+    const auto hadValidDisplayRangeCache =
+        displayBinFftRanges.size() == static_cast<size_t> (displayBinCount)
+        && displayBinRangeFftSize > 0
+        && displayBinRangeSampleRate > 0.0f
+        && displayBinRangeMinFrequencyHz > 0.0f
+        && displayBinRangeMaxFrequencyHz > displayBinRangeMinFrequencyHz;
+
+    const auto displayMappingChanged =
+        hadValidDisplayRangeCache
+        && (displayBinRangeFftSize != fftSizeForRanges
+            || std::abs (displayBinRangeSampleRate - sampleRateForRanges) >= 0.001f
+            || std::abs (displayBinRangeMinFrequencyHz - currentDisplayMinFrequencyHz) >= 0.001f
+            || std::abs (displayBinRangeMaxFrequencyHz - currentDisplayMaxFrequencyHz) >= 0.001f);
+
     if (displayBinFftRanges.size() == static_cast<size_t> (displayBinCount)
         && displayBinRangeFftSize == fftSizeForRanges
         && std::abs (displayBinRangeSampleRate - sampleRateForRanges) < 0.001f
@@ -335,6 +359,9 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
     {
         return;
     }
+
+    if (displayMappingChanged)
+        resetDisplayAccumulationStateForRangeChange();
 
     displayBinFftRanges.assign (static_cast<size_t> (displayBinCount), {});
 

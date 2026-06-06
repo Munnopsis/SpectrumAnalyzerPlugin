@@ -76,6 +76,13 @@ private:
                             const std::vector<float>& values,
                             juce::Colour colour,
                             float strokeWidth);
+    void drawCurveFromDataRange (juce::Graphics& g,
+                                 juce::Rectangle<int> bounds,
+                                 const std::vector<float>& values,
+                                 float sourceMinFrequencyHz,
+                                 float sourceMaxFrequencyHz,
+                                 juce::Colour colour,
+                                 float strokeWidth);
     void drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawVisibleFrequencyRangeIndicator (juce::Graphics& g,
                                              juce::Rectangle<int> bounds);
@@ -103,6 +110,11 @@ private:
     bool getInterpolatedCurveValueDb (const std::vector<float>& values,
                                       float frequencyHz,
                                       float& resultDb) const;
+    bool getInterpolatedCurveValueDbForDataRange (const std::vector<float>& values,
+                                                  float frequencyHz,
+                                                  float sourceMinFrequencyHz,
+                                                  float sourceMaxFrequencyHz,
+                                                  float& resultDb) const;
     juce::String formatCurveValue (const juce::String& label, float valueDb) const;
     juce::String buildCurveReadoutText (float frequencyHz) const;
     float applySlopeCorrection (float decibels, float frequencyHz) const;
@@ -131,6 +143,8 @@ private:
     std::vector<float> peakHoldDb;
     std::vector<float> rmsDb;
     std::vector<float> frozenReferenceDb;
+    float frozenReferenceDataMinFrequencyHz = defaultMinFrequencyHz;
+    float frozenReferenceDataMaxFrequencyHz = defaultMaxFrequencyHz;
     std::vector<DisplayNotePeak> notePeaks;
     bool hasFrozenReferenceDb = false;
 

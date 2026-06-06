@@ -82,6 +82,7 @@ private:
     void updateFftSizeIfNeeded();
     void configureFft (int newFftOrder);
     void resetOverlapBuffer();
+    void resetDisplayAccumulationStateForRangeChange();
     void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();
     void handleClearPeakHoldRequest();

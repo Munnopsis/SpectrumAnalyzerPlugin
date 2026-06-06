@@ -117,6 +117,8 @@ void SpectrumDisplay::freezeCurrentSpectrumAsReference()
         return;
 
     frozenReferenceDb = spectrumDb;
+    frozenReferenceDataMinFrequencyHz = dataMinFrequencyHz;
+    frozenReferenceDataMaxFrequencyHz = dataMaxFrequencyHz;
     hasFrozenReferenceDb = true;
 
     repaint();
@@ -128,6 +130,8 @@ void SpectrumDisplay::clearFrozenReferenceSpectrum()
         return;
 
     frozenReferenceDb.clear();
+    frozenReferenceDataMinFrequencyHz = defaultMinFrequencyHz;
+    frozenReferenceDataMaxFrequencyHz = defaultMaxFrequencyHz;
     hasFrozenReferenceDb = false;
 
     repaint();
@@ -393,18 +397,32 @@ bool SpectrumDisplay::getInterpolatedCurveValueDb (const std::vector<float>& val
                                                    float frequencyHz,
                                                    float& resultDb) const
 {
+    return getInterpolatedCurveValueDbForDataRange (values,
+                                                    frequencyHz,
+                                                    dataMinFrequencyHz,
+                                                    dataMaxFrequencyHz,
+                                                    resultDb);
+}
+
+bool SpectrumDisplay::getInterpolatedCurveValueDbForDataRange (
+    const std::vector<float>& values,
+    float frequencyHz,
+    float sourceMinFrequencyHz,
+    float sourceMaxFrequencyHz,
+    float& resultDb) const
+{
     if (values.size() < 2 || frequencyHz <= 0.0f)
         return false;
 
-    if (dataMinFrequencyHz <= 0.0f || dataMaxFrequencyHz <= dataMinFrequencyHz)
+    if (sourceMinFrequencyHz <= 0.0f || sourceMaxFrequencyHz <= sourceMinFrequencyHz)
         return false;
 
     const auto clampedFrequency =
-        juce::jlimit (dataMinFrequencyHz, dataMaxFrequencyHz, frequencyHz);
+        juce::jlimit (sourceMinFrequencyHz, sourceMaxFrequencyHz, frequencyHz);
 
     const auto normalisedX =
-        std::log (clampedFrequency / dataMinFrequencyHz)
-        / std::log (dataMaxFrequencyHz / dataMinFrequencyHz);
+        std::log (clampedFrequency / sourceMinFrequencyHz)
+        / std::log (sourceMaxFrequencyHz / sourceMinFrequencyHz);
 
     const auto clampedX = juce::jlimit (0.0f, 1.0f, normalisedX);
     const auto maxIndex = values.size() - 1;
@@ -856,11 +874,13 @@ void SpectrumDisplay::drawFrozenReferenceCurve (juce::Graphics& g,
     if (! hasFrozenReferenceSpectrum())
         return;
 
-    drawCurveFromData (g,
-                       bounds,
-                       frozenReferenceDb,
-                       juce::Colours::white.withAlpha (0.34f),
-                       1.25f);
+    drawCurveFromDataRange (g,
+                            bounds,
+                            frozenReferenceDb,
+                            frozenReferenceDataMinFrequencyHz,
+                            frozenReferenceDataMaxFrequencyHz,
+                            juce::Colours::white.withAlpha (0.34f),
+                            1.25f);
 }
 
 void SpectrumDisplay::drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int> bounds)
@@ -887,6 +907,23 @@ void SpectrumDisplay::drawCurveFromData (juce::Graphics& g,
                                          juce::Colour colour,
                                          float strokeWidth)
 {
+    drawCurveFromDataRange (g,
+                            bounds,
+                            values,
+                            dataMinFrequencyHz,
+                            dataMaxFrequencyHz,
+                            colour,
+                            strokeWidth);
+}
+
+void SpectrumDisplay::drawCurveFromDataRange (juce::Graphics& g,
+                                              juce::Rectangle<int> bounds,
+                                              const std::vector<float>& values,
+                                              float sourceMinFrequencyHz,
+                                              float sourceMaxFrequencyHz,
+                                              juce::Colour colour,
+                                              float strokeWidth)
+{
     if (values.size() < 2)
         return;
 
@@ -909,7 +946,11 @@ void SpectrumDisplay::drawCurveFromData (juce::Graphics& g,
 
         float valueDb = 0.0f;
 
-        if (! getInterpolatedCurveValueDb (values, frequency, valueDb))
+        if (! getInterpolatedCurveValueDbForDataRange (values,
+                                                       frequency,
+                                                       sourceMinFrequencyHz,
+                                                       sourceMaxFrequencyHz,
+                                                       valueDb))
             continue;
 
         const auto x = area.getX() + normalisedX * area.getWidth();
