@@ -42,18 +42,15 @@ namespace
         return juce::jmax (0.0f, singleSidedAmplitude / hannCoherentGain);
     }
 
-    DisplayBinPowerStats getLogAveragedFftBinPowerStats (
+    DisplayBinPowerStats getFftBinPowerStatsForRange (
         const std::vector<float>& frequencyOnlyFftData,
         int fftSize,
-        float sampleRate,
-        float minFrequency,
-        float maxFrequency,
-        int displayBinIndex,
-        int numDisplayBins) noexcept
+        int firstBin,
+        int lastBin) noexcept
     {
         DisplayBinPowerStats result;
 
-        if (fftSize <= 0 || sampleRate <= 0.0f || numDisplayBins <= 1)
+        if (fftSize <= 0)
             return result;
 
         const auto maxAvailableBin = (fftSize / 2) - 1;
@@ -61,42 +58,17 @@ namespace
         if (maxAvailableBin < 1)
             return result;
 
-        const auto displayDenominator = static_cast<float> (numDisplayBins - 1);
+        const auto clampedFirstBin = juce::jlimit (1, maxAvailableBin, firstBin);
+        const auto clampedLastBin = juce::jlimit (1, maxAvailableBin, lastBin);
 
-        const auto leftNormalised =
-            (static_cast<float> (displayBinIndex) - 0.5f) / displayDenominator;
-
-        const auto rightNormalised =
-            (static_cast<float> (displayBinIndex) + 0.5f) / displayDenominator;
-
-        const auto leftFrequency =
-            logFrequencyAtNormalisedPosition (leftNormalised, minFrequency, maxFrequency);
-
-        const auto rightFrequency =
-            logFrequencyAtNormalisedPosition (rightNormalised, minFrequency, maxFrequency);
-
-        const auto firstBin =
-            juce::jlimit (1,
-                          maxAvailableBin,
-                          static_cast<int> (std::floor (leftFrequency
-                                                        * static_cast<float> (fftSize)
-                                                        / sampleRate)));
-
-        const auto lastBin =
-            juce::jlimit (1,
-                          maxAvailableBin,
-                          static_cast<int> (std::ceil (rightFrequency
-                                                       * static_cast<float> (fftSize)
-                                                       / sampleRate)));
-
-        if (lastBin < firstBin)
+        if (clampedLastBin < clampedFirstBin)
             return result;
 
         auto powerSum = 0.0f;
         auto peakPower = 0.0f;
         auto numBinsUsed = 0;
 
-        for (auto bin = firstBin; bin <= lastBin; ++bin)
+        for (auto bin = clampedFirstBin; bin <= clampedLastBin; ++bin)
         {
             const auto amplitude =
                 getCalibratedFftBinAmplitude (frequencyOnlyFftData, bin, fftSize);
@@ -265,6 +237,10 @@ void AnalyzerEngine::configureFft (int newFftOrder)
     fftData.assign (static_cast<size_t> (currentFftSize * 2), 0.0f);
     notePeakBinDecibels.assign (static_cast<size_t> (currentFftSize / 2), notePeakMinAbsoluteDb);
 
+    displayBinFftRanges.assign (static_cast<size_t> (displayBinCount), {});
+    displayBinRangeSampleRate = 0.0f;
+    displayBinRangeFftSize = 0;
+
     overlapBufferPrimed = false;
 }
 
@@ -274,6 +250,77 @@ void AnalyzerEngine::resetOverlapBuffer()
     std::fill (hopBuffer.begin(), hopBuffer.end(), 0.0f);
 
     overlapBufferPrimed = false;
+}
+
+void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
+{
+    const auto fftSizeForRanges = currentFftSize;
+    const auto sampleRateForRanges = static_cast<float> (currentSampleRate);
+
+    if (fftSizeForRanges <= 0 || sampleRateForRanges <= 0.0f)
+        return;
+
+    if (displayBinFftRanges.size() == static_cast<size_t> (displayBinCount)
+        && displayBinRangeFftSize == fftSizeForRanges
+        && std::abs (displayBinRangeSampleRate - sampleRateForRanges) < 0.001f)
+    {
+        return;
+    }
+
+    displayBinFftRanges.assign (static_cast<size_t> (displayBinCount), {});
+
+    const auto minFrequency = 20.0f;
+    const auto maxFrequency = juce::jmax (
+        minFrequency + 1.0f,
+        juce::jmin (20000.0f, sampleRateForRanges * 0.5f)
+    );
+
+    const auto maxAvailableBin = (fftSizeForRanges / 2) - 1;
+
+    if (maxAvailableBin < 1)
+    {
+        displayBinRangeSampleRate = sampleRateForRanges;
+        displayBinRangeFftSize = fftSizeForRanges;
+        return;
+    }
+
+    const auto displayDenominator = static_cast<float> (displayBinCount - 1);
+
+    for (int i = 0; i < displayBinCount; ++i)
+    {
+        const auto leftNormalised =
+            (static_cast<float> (i) - 0.5f) / displayDenominator;
+
+        const auto rightNormalised =
+            (static_cast<float> (i) + 0.5f) / displayDenominator;
+
+        const auto leftFrequency =
+            logFrequencyAtNormalisedPosition (leftNormalised, minFrequency, maxFrequency);
+
+        const auto rightFrequency =
+            logFrequencyAtNormalisedPosition (rightNormalised, minFrequency, maxFrequency);
+
+        const auto firstBin =
+            juce::jlimit (1,
+                          maxAvailableBin,
+                          static_cast<int> (std::floor (leftFrequency
+                                                        * static_cast<float> (fftSizeForRanges)
+                                                        / sampleRateForRanges)));
+
+        const auto lastBin =
+            juce::jlimit (1,
+                          maxAvailableBin,
+                          static_cast<int> (std::ceil (rightFrequency
+                                                       * static_cast<float> (fftSizeForRanges)
+                                                       / sampleRateForRanges)));
+
+        auto& range = displayBinFftRanges[static_cast<size_t> (i)];
+        range.firstBin = firstBin;
+        range.lastBin = juce::jmax (firstBin, lastBin);
+    }
+
+    displayBinRangeSampleRate = sampleRateForRanges;
+    displayBinRangeFftSize = fftSizeForRanges;
 }
 
 int AnalyzerEngine::getFftHopSize() const noexcept
@@ -473,11 +520,10 @@ void AnalyzerEngine::processOneFftBlock()
     updateTrackedNotePeaks (frameAdvanceSeconds, currentPeakHoldDecayDbPerSecond);
     publishStableNotePeaks();
 
-    const auto minFrequency = 20.0f;
-    const auto maxFrequency = juce::jmax (
-        minFrequency + 1.0f,
-        juce::jmin (20000.0f, sampleRate * 0.5f)
-    );
+    updateDisplayBinFftRangesIfNeeded();
+
+    if (displayBinFftRanges.size() != static_cast<size_t> (displayBinCount))
+        return;
 
     const auto decayPerFrame =
         currentPeakHoldDecayDbPerSecond * frameAdvanceSeconds;
@@ -496,14 +542,14 @@ void AnalyzerEngine::processOneFftBlock()
 
     for (int i = 0; i < displayBinCount; ++i)
     {
+        const auto& displayBinRange =
+            displayBinFftRanges[static_cast<size_t> (i)];
+
         const auto binPowerStats =
-            getLogAveragedFftBinPowerStats (fftData,
-                                            fftSizeForBlock,
-                                            sampleRate,
-                                            minFrequency,
-                                            maxFrequency,
-                                            i,
-                                            displayBinCount);
+            getFftBinPowerStatsForRange (fftData,
+                                         fftSizeForBlock,
+                                         displayBinRange.firstBin,
+                                         displayBinRange.lastBin);
 
         const auto displayPower =
             getPeakPreservingDisplayPower (binPowerStats);

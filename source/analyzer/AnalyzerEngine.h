@@ -67,11 +67,18 @@ private:
         bool hasBecomeStable = false;
     };
 
+    struct DisplayBinFftRange
+    {
+        int firstBin = 1;
+        int lastBin = 1;
+    };
+
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
     void configureFft (int newFftOrder);
     void resetOverlapBuffer();
+    void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();
     void handleClearPeakHoldRequest();
     int getFftHopSize() const noexcept;
@@ -91,6 +98,11 @@ private:
     static constexpr int displayBinCount = 256;
     static constexpr int fftOverlapFactor = 4; // 4 = 75% overlap, hop size = fftSize / 4
     static constexpr float defaultPeakHoldDecayDbPerSecond = 8.0f;
+
+    static constexpr float liveAttackTimeSeconds = 0.100f;
+    static constexpr float liveReleaseTimeSeconds = 0.500f;
+    static constexpr float latestFramePublishRateHz = 60.0f;
+    static constexpr float defaultRmsTimeSeconds = 0.300f;
 
     static constexpr int maxInstantaneousNotePeaks = 60;
     static constexpr int maxPublishedNotePeaks = 16;
@@ -129,6 +141,10 @@ private:
     std::vector<float> hopBuffer;
     std::vector<float> fftData;
 
+    std::vector<DisplayBinFftRange> displayBinFftRanges;
+    float displayBinRangeSampleRate = 0.0f;
+    int displayBinRangeFftSize = 0;
+
     bool overlapBufferPrimed = false;
     float secondsSinceLastFramePublish = 0.0f;
 
@@ -145,11 +161,6 @@ private:
     std::vector<TrackedNotePeak> trackedNotePeaks;
     std::vector<NotePeak> currentNotePeaks;
     std::vector<NotePeak> latestNotePeaks;
-
-    static constexpr float liveAttackTimeSeconds = 0.100f;
-    static constexpr float liveReleaseTimeSeconds = 0.500f;
-    static constexpr float latestFramePublishRateHz = 60.0f;
-    static constexpr float defaultRmsTimeSeconds = 0.300f;
 
     std::mutex latestSpectrumMutex;
     std::atomic<bool> hasFrame { false };
