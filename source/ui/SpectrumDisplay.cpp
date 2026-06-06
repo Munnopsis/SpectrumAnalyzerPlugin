@@ -30,6 +30,17 @@ void SpectrumDisplay::setRmsSpectrumDb (const std::vector<float>& newRmsDb)
     repaint();
 }
 
+void SpectrumDisplay::setCurveVisibility (bool shouldShowLive,
+                                          bool shouldShowRms,
+                                          bool shouldShowPeakHold)
+{
+    showLiveCurve = shouldShowLive;
+    showRmsCurve = shouldShowRms;
+    showPeakHoldCurve = shouldShowPeakHold;
+
+    repaint();
+}
+
 void SpectrumDisplay::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
@@ -44,14 +55,17 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     }
     else
     {
-        if (! rmsDb.empty())
+        if (showRmsCurve && ! rmsDb.empty())
             drawRmsCurve (g, bounds);
 
-        drawSpectrumCurve (g, bounds);
+        if (showLiveCurve)
+            drawSpectrumCurve (g, bounds);
 
-        if (! peakHoldDb.empty())
+        if (showPeakHoldCurve && ! peakHoldDb.empty())
             drawPeakHoldCurve (g, bounds);
     }
+
+    drawLegend (g, bounds);
 
     drawInputLevelMeter (g, bounds);
 
@@ -304,4 +318,44 @@ void SpectrumDisplay::drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> boun
 
     g.setColour (juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f));
     g.strokePath (curve, juce::PathStrokeType (2.0f));
+}
+
+void SpectrumDisplay::drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds)
+{
+    auto legendBounds = bounds.reduced (16).removeFromTop (26).toFloat();
+    legendBounds.removeFromLeft (140.0f);
+
+    struct LegendItem
+    {
+        juce::String label;
+        juce::Colour colour;
+        bool visible;
+    };
+
+    const std::array<LegendItem, 3> items {{
+        { "Live", juce::Colour::fromRGB (90, 220, 255), showLiveCurve },
+        { "RMS", juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f), showRmsCurve },
+        { "Peak", juce::Colour::fromRGB (255, 190, 80).withAlpha (0.9f), showPeakHoldCurve }
+    }};
+
+    g.setFont (juce::FontOptions (12.0f));
+
+    auto x = legendBounds.getX();
+
+    for (const auto& item : items)
+    {
+        const auto itemWidth = 64.0f;
+        auto itemArea = juce::Rectangle<float> (x, legendBounds.getY(), itemWidth, legendBounds.getHeight());
+
+        g.setColour (item.colour.withAlpha (item.visible ? 1.0f : 0.25f));
+        g.fillRoundedRectangle (itemArea.getX(), itemArea.getCentreY() - 3.0f, 18.0f, 6.0f, 3.0f);
+
+        g.setColour (juce::Colours::white.withAlpha (item.visible ? 0.75f : 0.28f));
+        g.drawText (item.label,
+                    itemArea.withTrimmedLeft (24.0f),
+                    juce::Justification::centredLeft,
+                    false);
+
+        x += itemWidth + 10.0f;
+    }
 }

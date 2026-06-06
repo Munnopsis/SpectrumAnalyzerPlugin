@@ -7,6 +7,37 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     addAndMakeVisible (spectrumDisplay);
     addAndMakeVisible (inspectButton);
+    addAndMakeVisible (liveButton);
+    addAndMakeVisible (rmsButton);
+    addAndMakeVisible (peakButton);
+
+    liveButton.setClickingTogglesState (true);
+    rmsButton.setClickingTogglesState (true);
+    peakButton.setClickingTogglesState (true);
+
+    liveButton.setToggleState (true, juce::dontSendNotification);
+    rmsButton.setToggleState (true, juce::dontSendNotification);
+    peakButton.setToggleState (true, juce::dontSendNotification);
+
+    liveButton.onClick = [this]
+    {
+        showLiveCurve = liveButton.getToggleState();
+        spectrumDisplay.setCurveVisibility (showLiveCurve, showRmsCurve, showPeakHoldCurve);
+    };
+
+    rmsButton.onClick = [this]
+    {
+        showRmsCurve = rmsButton.getToggleState();
+        spectrumDisplay.setCurveVisibility (showLiveCurve, showRmsCurve, showPeakHoldCurve);
+    };
+
+    peakButton.onClick = [this]
+    {
+        showPeakHoldCurve = peakButton.getToggleState();
+        spectrumDisplay.setCurveVisibility (showLiveCurve, showRmsCurve, showPeakHoldCurve);
+    };
+
+    spectrumDisplay.setCurveVisibility (showLiveCurve, showRmsCurve, showPeakHoldCurve);
 
     // this chunk of code instantiates and opens the melatonin inspector
     inspectButton.onClick = [&] {
@@ -44,14 +75,23 @@ void PluginEditor::paint (juce::Graphics& g)
 
 void PluginEditor::resized()
 {
-    // layout the positions of your child components here
-    auto area = getLocalBounds();
-    area.removeFromBottom(50);
+    auto bounds = getLocalBounds();
 
-    spectrumDisplay.setBounds (getLocalBounds());
+    spectrumDisplay.setBounds (bounds);
 
-    //inspectButton.setBounds (getLocalBounds().withSizeKeepingCentre(100, 50));
-    inspectButton.setBounds (getLocalBounds().reduced (12).removeFromTop (32).removeFromRight (140));
+    auto topBar = bounds.reduced (12).removeFromTop (32);
+
+    inspectButton.setBounds (topBar.removeFromRight (140));
+
+    topBar.removeFromRight (8);
+
+    peakButton.setBounds (topBar.removeFromRight (64));
+    topBar.removeFromRight (6);
+
+    rmsButton.setBounds (topBar.removeFromRight (64));
+    topBar.removeFromRight (6);
+
+    liveButton.setBounds (topBar.removeFromRight (64));
 }
 
 void PluginEditor::timerCallback()
