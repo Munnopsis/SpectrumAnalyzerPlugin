@@ -33,6 +33,7 @@ public:
         std::vector<float> liveDb;
         std::vector<float> peakHoldDb;
         std::vector<float> rmsDb;
+        std::vector<float> energyDb;
         std::vector<NotePeak> notePeaks;
     };
 
@@ -111,6 +112,7 @@ private:
     static constexpr float liveReleaseTimeSeconds = 0.500f;
     static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
+    static constexpr float energyTimeSeconds = 8.0f;
 
     static constexpr int maxInstantaneousNotePeaks = 60;
     static constexpr int maxPublishedNotePeaks = 16;
@@ -167,11 +169,13 @@ private:
     std::vector<float> smoothedSpectrumDb;
     std::vector<float> peakHoldSpectrumDb;
     std::vector<float> rmsPowerSpectrum;
+    std::vector<float> energyPowerSpectrum;
     std::vector<float> notePeakBinDecibels;
 
     std::vector<float> latestSpectrumDb;
     std::vector<float> latestPeakHoldSpectrumDb;
     std::vector<float> latestRmsSpectrumDb;
+    std::vector<float> latestEnergySpectrumDb;
     float latestFrameMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
     float latestFrameMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
     std::vector<NotePeak> instantaneousNotePeaks;

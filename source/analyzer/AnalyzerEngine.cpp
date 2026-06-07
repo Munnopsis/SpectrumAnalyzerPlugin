@@ -151,6 +151,7 @@ AnalyzerEngine::AnalyzerEngine()
     smoothedSpectrumDb.resize (displayBinCount, -100.0f);
     peakHoldSpectrumDb.resize (displayBinCount, -100.0f);
     rmsPowerSpectrum.resize (displayBinCount, 0.0f);
+    energyPowerSpectrum.resize (displayBinCount, 0.0f);
     instantaneousNotePeaks.reserve (maxInstantaneousNotePeaks);
     trackedNotePeaks.reserve (maxInstantaneousNotePeaks);
     currentNotePeaks.reserve (maxPublishedNotePeaks);
@@ -159,6 +160,7 @@ AnalyzerEngine::AnalyzerEngine()
     latestSpectrumDb.resize (displayBinCount, -100.0f);
     latestPeakHoldSpectrumDb.resize (displayBinCount, -100.0f);
     latestRmsSpectrumDb.resize (displayBinCount, -100.0f);
+    latestEnergySpectrumDb.resize (displayBinCount, -100.0f);
 
     configureFft (defaultFftOrder);
     reset();
@@ -212,6 +214,7 @@ void AnalyzerEngine::reset()
     std::fill (smoothedSpectrumDb.begin(), smoothedSpectrumDb.end(), -100.0f);
     std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
     std::fill (rmsPowerSpectrum.begin(), rmsPowerSpectrum.end(), 0.0f);
+    std::fill (energyPowerSpectrum.begin(), energyPowerSpectrum.end(), 0.0f);
     displayAccumulationWarmStartRequested = false;
     instantaneousNotePeaks.clear();
     trackedNotePeaks.clear();
@@ -222,6 +225,7 @@ void AnalyzerEngine::reset()
         std::fill (latestSpectrumDb.begin(), latestSpectrumDb.end(), -100.0f);
         std::fill (latestPeakHoldSpectrumDb.begin(), latestPeakHoldSpectrumDb.end(), -100.0f);
         std::fill (latestRmsSpectrumDb.begin(), latestRmsSpectrumDb.end(), -100.0f);
+        std::fill (latestEnergySpectrumDb.begin(), latestEnergySpectrumDb.end(), -100.0f);
         latestFrameMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
         latestFrameMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
         latestNotePeaks.clear();
@@ -242,12 +246,16 @@ void AnalyzerEngine::handleClearPeakHoldRequest()
         return;
 
     std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
+    // Until there is a dedicated Clear Energy action, Clear Peak also resets
+    // the long-term Energy measurement.
+    std::fill (energyPowerSpectrum.begin(), energyPowerSpectrum.end(), 0.0f);
     instantaneousNotePeaks.clear();
     trackedNotePeaks.clear();
     currentNotePeaks.clear();
 
     std::lock_guard<std::mutex> lock (latestSpectrumMutex);
     std::fill (latestPeakHoldSpectrumDb.begin(), latestPeakHoldSpectrumDb.end(), -100.0f);
+    std::fill (latestEnergySpectrumDb.begin(), latestEnergySpectrumDb.end(), -100.0f);
     latestNotePeaks.clear();
 }
 
@@ -475,11 +483,17 @@ void AnalyzerEngine::publishLatestFrame()
         for (size_t i = 0; i < latestRmsSpectrumDb.size(); ++i)
         {
             const auto rmsMagnitude = std::sqrt (rmsPowerSpectrum[i]);
+            const auto energyMagnitude = std::sqrt (energyPowerSpectrum[i]);
 
             latestRmsSpectrumDb[i] =
                 juce::jlimit (-100.0f,
                               0.0f,
                               juce::Decibels::gainToDecibels (rmsMagnitude, -100.0f));
+
+            latestEnergySpectrumDb[i] =
+                juce::jlimit (-100.0f,
+                              0.0f,
+                              juce::Decibels::gainToDecibels (energyMagnitude, -100.0f));
         }
     }
 
@@ -556,6 +570,7 @@ bool AnalyzerEngine::copyLatestFrame (Frame& destination)
     destination.liveDb = latestSpectrumDb;
     destination.peakHoldDb = latestPeakHoldSpectrumDb;
     destination.rmsDb = latestRmsSpectrumDb;
+    destination.energyDb = latestEnergySpectrumDb;
     destination.notePeaks = latestNotePeaks;
     destination.dataMinFrequencyHz = latestFrameMinFrequencyHz;
     destination.dataMaxFrequencyHz = latestFrameMaxFrequencyHz;
@@ -676,6 +691,9 @@ void AnalyzerEngine::processOneFftBlock()
     const auto rmsAlpha =
         smoothingCoefficientForTimeConstant (frameAdvanceSeconds, currentRmsTimeSeconds);
 
+    const auto energyAlpha =
+        smoothingCoefficientForTimeConstant (frameAdvanceSeconds, energyTimeSeconds);
+
     const auto liveAttackSmoothing =
         smoothingCoefficientForTimeConstant (frameAdvanceSeconds, liveAttackTimeSeconds);
 
@@ -713,6 +731,7 @@ void AnalyzerEngine::processOneFftBlock()
             smoothedSpectrumDb[index] = targetDb;
             peakHoldSpectrumDb[index] = targetDb;
             rmsPowerSpectrum[index] = binPowerStats.meanPower;
+            energyPowerSpectrum[index] = binPowerStats.meanPower;
             continue;
         }
 
@@ -733,6 +752,10 @@ void AnalyzerEngine::processOneFftBlock()
         rmsPowerSpectrum[index] =
             rmsPowerSpectrum[index]
             + rmsAlpha * (binPowerStats.meanPower - rmsPowerSpectrum[index]);
+
+        energyPowerSpectrum[index] =
+            energyPowerSpectrum[index]
+            + energyAlpha * (binPowerStats.meanPower - energyPowerSpectrum[index]);
     }
 
     secondsSinceLastFramePublish += frameAdvanceSeconds;

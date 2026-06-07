@@ -294,6 +294,7 @@ void PluginEditor::timerCallback()
                                               analyzerFrame.liveDb,
                                               analyzerFrame.peakHoldDb,
                                               analyzerFrame.rmsDb,
+                                              analyzerFrame.energyDb,
                                               displayNotePeaks);
     }
 }

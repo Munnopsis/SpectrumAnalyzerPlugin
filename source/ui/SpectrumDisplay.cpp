@@ -44,6 +44,7 @@ void SpectrumDisplay::setAnalyzerFrameData (
     const std::vector<float>& newLiveDb,
     const std::vector<float>& newPeakHoldDb,
     const std::vector<float>& newRmsDb,
+    const std::vector<float>& newEnergyDb,
     const std::vector<DisplayNotePeak>& newNotePeaks)
 {
     const auto clampedMinimum =
@@ -62,6 +63,7 @@ void SpectrumDisplay::setAnalyzerFrameData (
     spectrumDb = newLiveDb;
     peakHoldDb = newPeakHoldDb;
     rmsDb = newRmsDb;
+    energyDb = newEnergyDb;
     notePeaks = newNotePeaks;
 
     repaint();
@@ -190,7 +192,7 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     drawFrequencyGrid (g, bounds);
     drawDecibelGrid (g, bounds);
 
-    if (spectrumDb.empty())
+    if (spectrumDb.empty() && energyDb.empty())
     {
         drawPlaceholderCurve (g, bounds);
     }
@@ -198,10 +200,13 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     {
         drawFrozenReferenceCurve (g, bounds);
 
+        if (! energyDb.empty())
+            drawEnergyCurve (g, bounds);
+
         if (showRmsCurve && ! rmsDb.empty())
             drawRmsCurve (g, bounds);
 
-        if (showLiveCurve)
+        if (showLiveCurve && ! spectrumDb.empty())
             drawSpectrumCurve (g, bounds);
 
         if (showPeakHoldCurve && ! peakHoldDb.empty())
@@ -489,6 +494,9 @@ juce::String SpectrumDisplay::buildCurveReadoutText (float frequencyHz) const
 
     if (showRmsCurve && getInterpolatedCurveValueDb (rmsDb, frequencyHz, valueDb))
         values.add (formatCurveValue ("RMS", valueDb));
+
+    if (getInterpolatedCurveValueDb (energyDb, frequencyHz, valueDb))
+        values.add (formatCurveValue ("Energy", valueDb));
 
     if (showPeakHoldCurve && getInterpolatedCurveValueDb (peakHoldDb, frequencyHz, valueDb))
         values.add (formatCurveValue ("Peak", valueDb));
@@ -920,6 +928,15 @@ void SpectrumDisplay::drawFrozenReferenceCurve (juce::Graphics& g,
                             1.25f);
 }
 
+void SpectrumDisplay::drawEnergyCurve (juce::Graphics& g, juce::Rectangle<int> bounds)
+{
+    drawCurveFromData (g,
+                       bounds,
+                       energyDb,
+                       juce::Colour::fromRGB (120, 255, 160).withAlpha (0.78f),
+                       1.75f);
+}
+
 void SpectrumDisplay::drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
     drawCurveFromData (g,
@@ -1027,8 +1044,9 @@ void SpectrumDisplay::drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds
         bool visible;
     };
 
-    const std::array<LegendItem, 4> items {{
+    const std::array<LegendItem, 5> items {{
         { "Live", juce::Colour::fromRGB (90, 220, 255), showLiveCurve },
+        { "Energy", juce::Colour::fromRGB (120, 255, 160).withAlpha (0.78f), ! energyDb.empty() },
         { "RMS", juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f), showRmsCurve },
         { "Peak", juce::Colour::fromRGB (255, 190, 80).withAlpha (0.9f), showPeakHoldCurve },
         { "Ref", juce::Colours::white.withAlpha (0.34f), hasFrozenReferenceSpectrum() }

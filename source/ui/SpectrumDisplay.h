@@ -30,6 +30,7 @@ public:
                                const std::vector<float>& liveDb,
                                const std::vector<float>& peakHoldDb,
                                const std::vector<float>& rmsDb,
+                               const std::vector<float>& energyDb,
                                const std::vector<DisplayNotePeak>& newNotePeaks);
     void setMinimumDecibels (float newMinimumDecibels);
     void setSlopeDbPerOctave (float newSlopeDbPerOctave);
@@ -75,6 +76,7 @@ private:
     void drawInputLevelMeter (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawFrozenReferenceCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawEnergyCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawCurveFromData (juce::Graphics& g,
@@ -148,6 +150,7 @@ private:
     std::vector<float> spectrumDb;
     std::vector<float> peakHoldDb;
     std::vector<float> rmsDb;
+    std::vector<float> energyDb;
     std::vector<float> frozenReferenceDb;
     float frozenReferenceDataMinFrequencyHz = defaultMinFrequencyHz;
     float frozenReferenceDataMaxFrequencyHz = defaultMaxFrequencyHz;
