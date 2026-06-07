@@ -1451,6 +1451,11 @@ void AnalyzerEngine::processOneFftBlock()
     const auto liveReleaseSmoothing =
         smoothingCoefficientForTimeConstant (frameAdvanceSeconds, liveReleaseTimeSeconds);
 
+    const auto lowBassTailReleaseSmoothing =
+        smoothingCoefficientForTimeConstant (
+            frameAdvanceSeconds,
+            frequencyDependentLowBassTailReleaseTimeSeconds);
+
     const auto transientAssistReleaseSmoothing =
         smoothingCoefficientForTimeConstant (
             frameAdvanceSeconds,
@@ -1502,6 +1507,7 @@ void AnalyzerEngine::processOneFftBlock()
         auto liveVisualBinPowerStats = binPowerStats;
         const auto peakHoldVisualBinPowerStats = binPowerStats;
         auto assistAmount = 0.0f;
+        auto lowBassTailSuppressionActive = false;
 
         if (currentFrequencyDependentResolutionEnabled)
         {
@@ -1533,6 +1539,8 @@ void AnalyzerEngine::processOneFftBlock()
                         >= frequencyDependentTransientTailSuppressMinExcessDb)
                 {
                     desiredAssistAmount = frequencyDependentTransientTailSuppressBlend;
+                    lowBassTailSuppressionActive =
+                        centerFrequency <= frequencyDependentBassOnlyMaxHz;
                 }
 
                 desiredAssistAmount =
@@ -1595,8 +1603,13 @@ void AnalyzerEngine::processOneFftBlock()
 
         const auto previousDb = smoothedSpectrumDb[index];
 
+        const auto releaseSmoothing =
+            lowBassTailSuppressionActive
+                ? lowBassTailReleaseSmoothing
+                : liveReleaseSmoothing;
+
         const auto smoothing =
-            liveTargetDb > previousDb ? liveAttackSmoothing : liveReleaseSmoothing;
+            liveTargetDb > previousDb ? liveAttackSmoothing : releaseSmoothing;
 
         smoothedSpectrumDb[index] =
             previousDb + smoothing * (liveTargetDb - previousDb);
