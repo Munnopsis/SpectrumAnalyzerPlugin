@@ -44,6 +44,7 @@ public:
     void stop();
 
     void requestClearPeakHold() noexcept;
+    void requestClearEnergy() noexcept;
     void setRmsTimeSeconds (float newRmsTimeSeconds) noexcept;
 
     void setRequestedFftOrder (int newFftOrder) noexcept;
@@ -89,6 +90,7 @@ private:
     void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();
     void handleClearPeakHoldRequest();
+    void handleClearEnergyRequest();
     int getFftHopSize() const noexcept;
     int frequencyToMidiNote (float frequencyHz) const noexcept;
     int midiNoteToPitchClass (int midiNote) const noexcept;
@@ -186,6 +188,7 @@ private:
     std::mutex latestSpectrumMutex;
     std::atomic<bool> hasFrame { false };
     std::atomic<bool> clearPeakHoldRequested { false };
+    std::atomic<bool> clearEnergyRequested { false };
     std::atomic<float> peakHoldDecayDbPerSecond { defaultPeakHoldDecayDbPerSecond };
     std::atomic<float> rmsTimeSeconds { defaultRmsTimeSeconds };
 

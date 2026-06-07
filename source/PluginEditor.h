@@ -76,6 +76,7 @@ private:
     juce::TextButton liveButton { "Live" };
     juce::TextButton rmsButton { "RMS" };
     juce::TextButton energyButton { "Energy" };
+    juce::TextButton clearEnergyButton { "Clear Energy" };
     juce::TextButton peakButton { "Peak" };
     juce::TextButton clearPeakButton { "Clear Peak" };
     juce::TextButton freezeButton { "Freeze" };

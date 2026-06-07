@@ -117,6 +117,11 @@ public:
         analyzerEngine.requestClearPeakHold();
     }
 
+    void requestClearEnergy() noexcept
+    {
+        analyzerEngine.requestClearEnergy();
+    }
+
     void setAnalyzerDisplayFrequencyRange (float minimumHz, float maximumHz) noexcept
     {
         analyzerEngine.setDisplayFrequencyRange (minimumHz, maximumHz);

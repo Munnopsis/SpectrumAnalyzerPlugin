@@ -240,23 +240,36 @@ void AnalyzerEngine::requestClearPeakHold() noexcept
     notify();
 }
 
+void AnalyzerEngine::requestClearEnergy() noexcept
+{
+    clearEnergyRequested.store (true, std::memory_order_relaxed);
+    notify();
+}
+
 void AnalyzerEngine::handleClearPeakHoldRequest()
 {
     if (! clearPeakHoldRequested.exchange (false, std::memory_order_relaxed))
         return;
 
     std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
-    // Until there is a dedicated Clear Energy action, Clear Peak also resets
-    // the long-term Energy measurement.
-    std::fill (energyPowerSpectrum.begin(), energyPowerSpectrum.end(), 0.0f);
     instantaneousNotePeaks.clear();
     trackedNotePeaks.clear();
     currentNotePeaks.clear();
 
     std::lock_guard<std::mutex> lock (latestSpectrumMutex);
     std::fill (latestPeakHoldSpectrumDb.begin(), latestPeakHoldSpectrumDb.end(), -100.0f);
-    std::fill (latestEnergySpectrumDb.begin(), latestEnergySpectrumDb.end(), -100.0f);
     latestNotePeaks.clear();
+}
+
+void AnalyzerEngine::handleClearEnergyRequest()
+{
+    if (! clearEnergyRequested.exchange (false, std::memory_order_relaxed))
+        return;
+
+    std::fill (energyPowerSpectrum.begin(), energyPowerSpectrum.end(), 0.0f);
+
+    std::lock_guard<std::mutex> lock (latestSpectrumMutex);
+    std::fill (latestEnergySpectrumDb.begin(), latestEnergySpectrumDb.end(), -100.0f);
 }
 
 void AnalyzerEngine::setPeakHoldDecayDbPerSecond (float newDecayDbPerSecond) noexcept
@@ -585,11 +598,13 @@ void AnalyzerEngine::run()
         if (sourceFifo == nullptr)
         {
             handleClearPeakHoldRequest();
+            handleClearEnergyRequest();
             wait (20);
             continue;
         }
 
         handleClearPeakHoldRequest();
+        handleClearEnergyRequest();
         updateFftSizeIfNeeded();
 
         const auto requiredSamples =

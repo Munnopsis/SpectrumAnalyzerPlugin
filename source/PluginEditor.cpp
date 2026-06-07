@@ -21,6 +21,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (liveButton);
     addAndMakeVisible (rmsButton);
     addAndMakeVisible (energyButton);
+    addAndMakeVisible (clearEnergyButton);
     addAndMakeVisible (peakButton);
     addAndMakeVisible (clearPeakButton);
     addAndMakeVisible (freezeButton);
@@ -36,6 +37,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     liveButton.setName ("LiveButton");
     rmsButton.setName ("RmsButton");
     energyButton.setName ("EnergyButton");
+    clearEnergyButton.setName ("ClearEnergyButton");
     peakButton.setName ("PeakButton");
     clearPeakButton.setName ("ClearPeakButton");
     freezeButton.setName ("FreezeButton");
@@ -51,6 +53,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     liveButton.setWantsKeyboardFocus (true);
     rmsButton.setWantsKeyboardFocus (true);
     energyButton.setWantsKeyboardFocus (true);
+    clearEnergyButton.setWantsKeyboardFocus (true);
     peakButton.setWantsKeyboardFocus (true);
     clearPeakButton.setWantsKeyboardFocus (true);
     freezeButton.setWantsKeyboardFocus (true);
@@ -66,6 +69,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     liveButton.setTooltip ("Show or hide the live spectrum curve");
     rmsButton.setTooltip ("Show or hide the RMS spectrum curve");
     energyButton.setTooltip ("Show or hide the Energy spectrum curve");
+    clearEnergyButton.setTooltip ("Clear the long-term Energy curve");
     peakButton.setTooltip ("Show or hide the peak hold curve");
     clearPeakButton.setTooltip ("Clear the peak hold curve");
     freezeButton.setTooltip ("Freeze the current live spectrum as a reference curve");
@@ -74,6 +78,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     clearPeakButton.onClick = [this]
     {
         processorRef.requestClearPeakHold();
+    };
+
+    clearEnergyButton.onClick = [this]
+    {
+        processorRef.requestClearEnergy();
     };
 
     freezeButton.onClick = [this]
@@ -261,6 +270,9 @@ void PluginEditor::resized()
 
     energyButton.setBounds (secondRow.removeFromLeft (76));
     addGap (secondRow, 6);
+
+    clearEnergyButton.setBounds (secondRow.removeFromLeft (112));
+    addGap (secondRow, 8);
 
     peakButton.setBounds (secondRow.removeFromLeft (64));
     addGap (secondRow, 8);
