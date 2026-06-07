@@ -975,8 +975,8 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
     }
 
     if (canUseFrequencyDependentBassPath
-    && result.hasCenterFrequency
-    && frequencyDependentBassPath.displayBinFftRanges.size() > index)
+        && result.hasCenterFrequency
+        && frequencyDependentBassPath.displayBinFftRanges.size() > index)
     {
         const auto bassBinPowerStats =
             getFrequencyDependentSourceStatsForDisplayBin (
@@ -1439,7 +1439,7 @@ void AnalyzerEngine::processOneFftBlock()
 
     auto energyFramePeakPower = 0.0f;
     const auto canUseFrequencyDependentBassPath =
-    currentFrequencyDependentResolutionEnabled
+        currentFrequencyDependentResolutionEnabled
         && canUseFrequencyDependentSource (frequencyDependentBassPath,
                                            frequencyDependentBassFftSize);
 
