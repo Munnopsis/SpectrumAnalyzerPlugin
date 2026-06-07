@@ -332,6 +332,7 @@ void AnalyzerEngine::reset()
     std::fill (frequencyDependentBinPolicySnapshots.begin(),
                frequencyDependentBinPolicySnapshots.end(),
                FrequencyDependentBinPolicySnapshot {});
+    resetFrequencyDependentPolicyFrameSummary();
     energyAccumulatedActiveSeconds = 0.0f;
     displayAccumulationWarmStartRequested = false;
     instantaneousNotePeaks.clear();
@@ -1453,7 +1454,146 @@ AnalyzerEngine::getFrequencyDependentBinPolicySnapshot (
     result.usedFrequencyDependentSourceComposite =
         binStats.usedFrequencyDependentSourceComposite;
 
+    result.usesLowBassFastRelease =
+        result.liveReleaseBlendWeights.lowBassTailReleaseBlend > 0.0f;
+
+    result.usesVeryHighFastRelease =
+        result.liveReleaseBlendWeights.veryHighReleaseBlend > 0.0f;
+
+    result.policyBand = getFrequencyDependentPolicyBandForSnapshot (result);
+
+    result.isTransitionBand =
+        result.policyBand == FrequencyDependentPolicyBand::bassToMidBass
+        || result.policyBand == FrequencyDependentPolicyBand::midBassToMain
+        || result.policyBand == FrequencyDependentPolicyBand::mainToHigh
+        || result.policyBand == FrequencyDependentPolicyBand::highToVeryHigh;
+
     return result;
+}
+
+AnalyzerEngine::FrequencyDependentPolicyBand
+AnalyzerEngine::getFrequencyDependentPolicyBandForSnapshot (
+    const FrequencyDependentBinPolicySnapshot& snapshot) const noexcept
+{
+    if (! snapshot.hasCenterFrequency)
+        return FrequencyDependentPolicyBand::none;
+
+    const auto hasBlendWeights = snapshot.hasBlendWeights;
+    const auto highBlend =
+        hasBlendWeights && std::isfinite (snapshot.blendWeights.highBlend)
+            ? snapshot.blendWeights.highBlend
+            : 0.0f;
+
+    const auto veryHighBlend =
+        hasBlendWeights && std::isfinite (snapshot.blendWeights.veryHighBlend)
+            ? snapshot.blendWeights.veryHighBlend
+            : 0.0f;
+
+    const auto mainBlend =
+        hasBlendWeights && std::isfinite (snapshot.blendWeights.mainBlend)
+            ? snapshot.blendWeights.mainBlend
+            : 0.0f;
+
+    const auto midBassBlend =
+        hasBlendWeights && std::isfinite (snapshot.blendWeights.midBassBlend)
+            ? snapshot.blendWeights.midBassBlend
+            : 0.0f;
+
+    constexpr auto fullBlendThreshold = 0.999f;
+
+    if (snapshot.usedVeryHighComposite)
+        return veryHighBlend >= fullBlendThreshold
+            ? FrequencyDependentPolicyBand::veryHigh
+            : FrequencyDependentPolicyBand::highToVeryHigh;
+
+    if (snapshot.usedHighComposite)
+        return highBlend >= fullBlendThreshold
+            ? FrequencyDependentPolicyBand::mainToHigh
+            : FrequencyDependentPolicyBand::mainToHigh;
+
+    if (snapshot.usedMidBassComposite
+        && snapshot.usedMainComposite
+        && mainBlend > 0.0f)
+    {
+        return FrequencyDependentPolicyBand::midBassToMain;
+    }
+
+    if (snapshot.usedBassComposite
+        && snapshot.usedMidBassComposite
+        && midBassBlend > 0.0f)
+    {
+        return FrequencyDependentPolicyBand::bassToMidBass;
+    }
+
+    if (snapshot.usedMidBassComposite)
+        return FrequencyDependentPolicyBand::bassToMidBass;
+
+    if (snapshot.usedBassComposite)
+        return FrequencyDependentPolicyBand::bass;
+
+    if (snapshot.usedMainComposite)
+        return FrequencyDependentPolicyBand::main;
+
+    return FrequencyDependentPolicyBand::none;
+}
+
+void AnalyzerEngine::resetFrequencyDependentPolicyFrameSummary() noexcept
+{
+    frequencyDependentPolicyFrameSummary = {};
+}
+
+void AnalyzerEngine::accumulateFrequencyDependentPolicyFrameSummary (
+    const FrequencyDependentBinPolicySnapshot& snapshot) noexcept
+{
+    ++frequencyDependentPolicyFrameSummary.totalBins;
+
+    switch (snapshot.policyBand)
+    {
+        case FrequencyDependentPolicyBand::bass:
+            ++frequencyDependentPolicyFrameSummary.bassBins;
+            break;
+
+        case FrequencyDependentPolicyBand::bassToMidBass:
+            ++frequencyDependentPolicyFrameSummary.bassToMidBassBins;
+            break;
+
+        case FrequencyDependentPolicyBand::midBassToMain:
+            ++frequencyDependentPolicyFrameSummary.midBassToMainBins;
+            break;
+
+        case FrequencyDependentPolicyBand::main:
+            ++frequencyDependentPolicyFrameSummary.mainBins;
+            break;
+
+        case FrequencyDependentPolicyBand::mainToHigh:
+            ++frequencyDependentPolicyFrameSummary.mainToHighBins;
+            break;
+
+        case FrequencyDependentPolicyBand::highToVeryHigh:
+            ++frequencyDependentPolicyFrameSummary.highToVeryHighBins;
+            break;
+
+        case FrequencyDependentPolicyBand::veryHigh:
+            ++frequencyDependentPolicyFrameSummary.veryHighBins;
+            break;
+
+        case FrequencyDependentPolicyBand::none:
+        default:
+            ++frequencyDependentPolicyFrameSummary.noneBins;
+            break;
+    }
+
+    if (snapshot.usedFrequencyDependentSourceComposite)
+        ++frequencyDependentPolicyFrameSummary.binsUsingFrequencyDependentSources;
+
+    if (snapshot.usesLowBassFastRelease)
+        ++frequencyDependentPolicyFrameSummary.binsUsingLowBassFastRelease;
+
+    if (snapshot.usesVeryHighFastRelease)
+        ++frequencyDependentPolicyFrameSummary.binsUsingVeryHighFastRelease;
+
+    if (snapshot.isTransitionBand)
+        ++frequencyDependentPolicyFrameSummary.transitionBins;
 }
 
 int AnalyzerEngine::getFftHopSize() const noexcept
@@ -1787,6 +1927,8 @@ void AnalyzerEngine::processOneFftBlock()
             frameAdvanceSeconds,
             frequencyDependentTransientAssistReleaseSeconds);
 
+    resetFrequencyDependentPolicyFrameSummary();
+
     auto energyFramePeakPower = 0.0f;
     const auto frequencyDependentSourceAvailability =
         getFrequencyDependentSourceAvailability();
@@ -1832,10 +1974,13 @@ void AnalyzerEngine::processOneFftBlock()
                     assistResult);
         }
 
-        frequencyDependentBinPolicySnapshots[index] =
+        auto policySnapshot =
             getFrequencyDependentBinPolicySnapshot (
                 binStats,
                 liveReleaseBlendWeights);
+
+        frequencyDependentBinPolicySnapshots[index] = policySnapshot;
+        accumulateFrequencyDependentPolicyFrameSummary (policySnapshot);
 
         const auto liveTargetDb = displayBinPowerStatsToDb (liveVisualBinPowerStats);
         const auto peakHoldTargetDb =

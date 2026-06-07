@@ -165,6 +165,18 @@ private:
         float veryHighReleaseBlend = 0.0f;
     };
 
+    enum class FrequencyDependentPolicyBand
+    {
+        none,
+        bass,
+        bassToMidBass,
+        midBassToMain,
+        main,
+        mainToHigh,
+        highToVeryHigh,
+        veryHigh
+    };
+
     struct FrequencyDependentBinPolicySnapshot
     {
         float centerFrequencyHz = 0.0f;
@@ -175,12 +187,36 @@ private:
         bool hasCenterFrequency = false;
         bool hasBlendWeights = false;
 
+        FrequencyDependentPolicyBand policyBand = FrequencyDependentPolicyBand::none;
+        bool usesLowBassFastRelease = false;
+        bool usesVeryHighFastRelease = false;
+        bool isTransitionBand = false;
+
         bool usedBassComposite = false;
         bool usedMidBassComposite = false;
         bool usedMainComposite = false;
         bool usedHighComposite = false;
         bool usedVeryHighComposite = false;
         bool usedFrequencyDependentSourceComposite = false;
+    };
+
+    struct FrequencyDependentPolicyFrameSummary
+    {
+        int totalBins = 0;
+
+        int noneBins = 0;
+        int bassBins = 0;
+        int bassToMidBassBins = 0;
+        int midBassToMainBins = 0;
+        int mainBins = 0;
+        int mainToHighBins = 0;
+        int highToVeryHighBins = 0;
+        int veryHighBins = 0;
+
+        int binsUsingFrequencyDependentSources = 0;
+        int binsUsingLowBassFastRelease = 0;
+        int binsUsingVeryHighFastRelease = 0;
+        int transitionBins = 0;
     };
 
     enum class FrequencyDependentSourceRole
@@ -284,6 +320,11 @@ private:
     FrequencyDependentBinPolicySnapshot getFrequencyDependentBinPolicySnapshot (
         const FrequencyDependentBinStats& binStats,
         const FrequencyDependentLiveReleaseBlendWeights& liveReleaseBlendWeights) const noexcept;
+    FrequencyDependentPolicyBand getFrequencyDependentPolicyBandForSnapshot (
+        const FrequencyDependentBinPolicySnapshot& snapshot) const noexcept;
+    void resetFrequencyDependentPolicyFrameSummary() noexcept;
+    void accumulateFrequencyDependentPolicyFrameSummary (
+        const FrequencyDependentBinPolicySnapshot& snapshot) noexcept;
     void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
     void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();
@@ -400,6 +441,7 @@ private:
     float energyAccumulatedActiveSeconds = 0.0f;
     std::vector<float> frequencyDependentTransientAssistAmounts;
     std::vector<FrequencyDependentBinPolicySnapshot> frequencyDependentBinPolicySnapshots;
+    FrequencyDependentPolicyFrameSummary frequencyDependentPolicyFrameSummary;
 
     std::vector<float> rawSpectrumDb;
     std::vector<float> smoothedSpectrumDb;
