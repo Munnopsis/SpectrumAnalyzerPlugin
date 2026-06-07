@@ -224,6 +224,8 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     analyzerFifo.prepare (sampleRate, samplesPerBlock);
 
     analyzerEngine.setRequestedFftOrder (getAnalyzerFftOrder());
+    analyzerEngine.setFrequencyDependentResolutionEnabled (
+        isFrequencyDependentAnalyzerResolution());
     analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
     analyzerEngine.setRmsTimeSeconds (getRmsTimeSeconds());
 
@@ -290,6 +292,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     inputLevelDb.store (levelDb, std::memory_order_relaxed);
 
     analyzerEngine.setRequestedFftOrder (getAnalyzerFftOrder());
+    analyzerEngine.setFrequencyDependentResolutionEnabled (
+        isFrequencyDependentAnalyzerResolution());
     analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
     analyzerEngine.setRmsTimeSeconds (getRmsTimeSeconds());
 

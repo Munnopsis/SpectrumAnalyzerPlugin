@@ -178,6 +178,8 @@ void AnalyzerEngine::prepare (double sampleRate, AnalyzerFifo& fifoToReadFrom)
 
     currentSampleRate = sampleRate;
     sourceFifo = &fifoToReadFrom;
+    currentFrequencyDependentResolutionEnabled =
+        requestedFrequencyDependentResolutionEnabled.load (std::memory_order_relaxed);
 
     configureFft (requestedFftOrder.load (std::memory_order_relaxed));
     reset();
@@ -295,6 +297,14 @@ void AnalyzerEngine::setRequestedFftOrder (int newFftOrder) noexcept
 {
     requestedFftOrder.store (
         juce::jlimit (minFftOrder, maxFftOrder, newFftOrder),
+        std::memory_order_relaxed);
+}
+
+void AnalyzerEngine::setFrequencyDependentResolutionEnabled (
+    bool shouldUseFrequencyDependentResolution) noexcept
+{
+    requestedFrequencyDependentResolutionEnabled.store (
+        shouldUseFrequencyDependentResolution,
         std::memory_order_relaxed);
 }
 
@@ -521,10 +531,16 @@ void AnalyzerEngine::publishLatestFrame()
 void AnalyzerEngine::updateFftSizeIfNeeded()
 {
     const auto requestedOrder = requestedFftOrder.load (std::memory_order_relaxed);
+    const auto requestedFrequencyDependentResolution =
+        requestedFrequencyDependentResolutionEnabled.load (std::memory_order_relaxed);
 
-    if (requestedOrder == currentFftOrder)
+    if (requestedOrder == currentFftOrder
+        && requestedFrequencyDependentResolution == currentFrequencyDependentResolutionEnabled)
+    {
         return;
+    }
 
+    currentFrequencyDependentResolutionEnabled = requestedFrequencyDependentResolution;
     configureFft (requestedOrder);
     reset();
 }

@@ -48,6 +48,8 @@ public:
     void setRmsTimeSeconds (float newRmsTimeSeconds) noexcept;
 
     void setRequestedFftOrder (int newFftOrder) noexcept;
+    void setFrequencyDependentResolutionEnabled (
+        bool shouldUseFrequencyDependentResolution) noexcept;
     void setPeakHoldDecayDbPerSecond (float newDecayDbPerSecond) noexcept;
     void setDisplayFrequencyRange (float minimumHz, float maximumHz) noexcept;
 
@@ -146,8 +148,10 @@ private:
 
     int currentFftOrder = defaultFftOrder;
     int currentFftSize = analyzerFftSizeFromOrder (defaultFftOrder);
+    bool currentFrequencyDependentResolutionEnabled = false;
 
     std::atomic<int> requestedFftOrder { defaultFftOrder };
+    std::atomic<bool> requestedFrequencyDependentResolutionEnabled { false };
     std::atomic<float> requestedDisplayMinFrequencyHz { AnalyzerFrequencyRange::minimumHz };
     std::atomic<float> requestedDisplayMaxFrequencyHz { AnalyzerFrequencyRange::maximumHz };
 
