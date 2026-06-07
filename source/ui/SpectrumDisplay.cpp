@@ -1048,11 +1048,11 @@ void SpectrumDisplay::drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds
     };
 
     const std::array<LegendItem, 5> items {{
-        { "Live", juce::Colour::fromRGB (90, 220, 255), showLiveCurve, true },
+        { "Live", juce::Colour::fromRGB (90, 220, 255), true, showLiveCurve && ! spectrumDb.empty() },
         { "Energy", juce::Colour::fromRGB (120, 255, 160).withAlpha (0.78f), true, showEnergyCurve && ! energyDb.empty() },
-        { "RMS", juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f), showRmsCurve, true },
-        { "Peak", juce::Colour::fromRGB (255, 190, 80).withAlpha (0.9f), showPeakHoldCurve, true },
-        { "Ref", juce::Colours::white.withAlpha (0.34f), hasFrozenReferenceSpectrum(), true }
+        { "RMS", juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f), true, showRmsCurve && ! rmsDb.empty() },
+        { "Peak", juce::Colour::fromRGB (255, 190, 80).withAlpha (0.9f), true, showPeakHoldCurve && ! peakHoldDb.empty() },
+        { "Ref", juce::Colours::white.withAlpha (0.34f), true, hasFrozenReferenceSpectrum() }
     }};
 
     g.setFont (juce::FontOptions (12.0f));
