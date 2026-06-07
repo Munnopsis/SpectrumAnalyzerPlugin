@@ -382,7 +382,7 @@ void AnalyzerEngine::setDisplayFrequencyRange (float minimumHz, float maximumHz)
     requestedDisplayMaxFrequencyHz.store (clampedMaximum, std::memory_order_relaxed);
 }
 
-std::array<AnalyzerEngine::FrequencyDependentSourceDescriptor, 3>
+std::array<AnalyzerEngine::FrequencyDependentSourceDescriptor, 4>
 AnalyzerEngine::getFrequencyDependentSourceDescriptors() noexcept
 {
     return {{
@@ -403,6 +403,12 @@ AnalyzerEngine::getFrequencyDependentSourceDescriptors() noexcept
             &frequencyDependentHighPath,
             frequencyDependentHighFftOrder,
             frequencyDependentHighFftSize
+        },
+        {
+            FrequencyDependentSourceRole::veryHigh,
+            &frequencyDependentVeryHighPath,
+            frequencyDependentVeryHighFftOrder,
+            frequencyDependentVeryHighFftSize
         }
     }};
 }
@@ -949,6 +955,14 @@ float AnalyzerEngine::getFrequencyDependentHighBlendForFrequency (
                                     frequencyDependentHighOnlyMinHz);
 }
 
+float AnalyzerEngine::getFrequencyDependentVeryHighBlendForFrequency (
+    float frequencyHz) const noexcept
+{
+    return smoothLogFrequencyBlend (frequencyHz,
+                                    frequencyDependentHighOnlyMinHz,
+                                    frequencyDependentVeryHighOnlyMinHz);
+}
+
 AnalyzerEngine::FrequencyDependentLowCompositeResult
 AnalyzerEngine::getFrequencyDependentLowCompositeForDisplayBin (
     size_t displayBinIndex,
@@ -1022,30 +1036,57 @@ AnalyzerEngine::applyFrequencyDependentHighBlendForDisplayBin (
     size_t displayBinIndex,
     float centerFrequencyHz,
     const DisplayBinPowerStats& baseStats,
-    bool canUseFrequencyDependentHighPath) const
+    bool canUseFrequencyDependentHighPath,
+    bool canUseFrequencyDependentVeryHighPath) const
 {
-    if (! canUseFrequencyDependentHighPath
-        || centerFrequencyHz <= 0.0f
-        || frequencyDependentHighPath.displayBinFftRanges.size() <= displayBinIndex)
-    {
+    if (centerFrequencyHz <= 0.0f)
         return baseStats;
+
+    auto highCompositeStats = baseStats;
+
+    if (canUseFrequencyDependentHighPath
+        && frequencyDependentHighPath.displayBinFftRanges.size() > displayBinIndex)
+    {
+        const auto highBlend =
+            getFrequencyDependentHighBlendForFrequency (centerFrequencyHz);
+
+        if (highBlend > 0.0f)
+        {
+            const auto highBinPowerStats =
+                getFrequencyDependentSourceStatsForDisplayBin (
+                    frequencyDependentHighPath,
+                    frequencyDependentHighFftSize,
+                    displayBinIndex);
+
+            highCompositeStats =
+                blendDisplayBinPowerStats (highCompositeStats,
+                                           highBinPowerStats,
+                                           highBlend);
+        }
     }
 
-    const auto highBlend =
-        getFrequencyDependentHighBlendForFrequency (centerFrequencyHz);
+    if (canUseFrequencyDependentVeryHighPath
+        && frequencyDependentVeryHighPath.displayBinFftRanges.size() > displayBinIndex)
+    {
+        const auto veryHighBlend =
+            getFrequencyDependentVeryHighBlendForFrequency (centerFrequencyHz);
 
-    if (highBlend <= 0.0f)
-        return baseStats;
+        if (veryHighBlend > 0.0f)
+        {
+            const auto veryHighBinPowerStats =
+                getFrequencyDependentSourceStatsForDisplayBin (
+                    frequencyDependentVeryHighPath,
+                    frequencyDependentVeryHighFftSize,
+                    displayBinIndex);
 
-    const auto highBinPowerStats =
-        getFrequencyDependentSourceStatsForDisplayBin (
-            frequencyDependentHighPath,
-            frequencyDependentHighFftSize,
-            displayBinIndex);
+            highCompositeStats =
+                blendDisplayBinPowerStats (highCompositeStats,
+                                           veryHighBinPowerStats,
+                                           veryHighBlend);
+        }
+    }
 
-    return blendDisplayBinPowerStats (baseStats,
-                                      highBinPowerStats,
-                                      highBlend);
+    return highCompositeStats;
 }
 
 AnalyzerEngine::FrequencyDependentBinStats
@@ -1054,7 +1095,8 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
     int fftSizeForBlock,
     bool canUseFrequencyDependentBassPath,
     bool canUseFrequencyDependentMidBassPath,
-    bool canUseFrequencyDependentHighPath) const
+    bool canUseFrequencyDependentHighPath,
+    bool canUseFrequencyDependentVeryHighPath) const
 {
     FrequencyDependentBinStats result;
 
@@ -1120,7 +1162,8 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
                 index,
                 result.centerFrequencyHz,
                 result.compositeStats,
-                canUseFrequencyDependentHighPath);
+                canUseFrequencyDependentHighPath,
+                canUseFrequencyDependentVeryHighPath);
     }
 
     return result;
@@ -1640,6 +1683,11 @@ void AnalyzerEngine::processOneFftBlock()
         && canUseFrequencyDependentSource (frequencyDependentHighPath,
                                            frequencyDependentHighFftSize);
 
+    const auto canUseFrequencyDependentVeryHighPath =
+        currentFrequencyDependentResolutionEnabled
+        && canUseFrequencyDependentSource (frequencyDependentVeryHighPath,
+                                           frequencyDependentVeryHighFftSize);
+
     for (int i = 0; i < displayBinCount; ++i)
     {
         const auto index = static_cast<size_t> (i);
@@ -1648,7 +1696,8 @@ void AnalyzerEngine::processOneFftBlock()
             fftSizeForBlock,
             canUseFrequencyDependentBassPath,
             canUseFrequencyDependentMidBassPath,
-            canUseFrequencyDependentHighPath);
+            canUseFrequencyDependentHighPath,
+            canUseFrequencyDependentVeryHighPath);
 
         const auto& transientReferenceBinPowerStats =
             binStats.hasTransientReferenceStats

@@ -137,7 +137,8 @@ private:
     {
         bass,
         midBass,
-        high
+        high,
+        veryHigh
     };
 
     struct FrequencyDependentSourceDescriptor
@@ -151,7 +152,7 @@ private:
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
-    std::array<FrequencyDependentSourceDescriptor, 3>
+    std::array<FrequencyDependentSourceDescriptor, 4>
         getFrequencyDependentSourceDescriptors() noexcept;
     bool canUseFrequencyDependentSource (const FrequencyDependentFftSource& source,
         int fftSize) const noexcept;
@@ -189,6 +190,8 @@ private:
     void processFrequencyDependentHighPathIfReady();
     void updateFrequencyDependentHighBinFftRangesIfNeeded();
     float getFrequencyDependentHighBlendForFrequency (float frequencyHz) const noexcept;
+    float getFrequencyDependentVeryHighBlendForFrequency (
+        float frequencyHz) const noexcept;
     FrequencyDependentLowCompositeResult getFrequencyDependentLowCompositeForDisplayBin (
         size_t displayBinIndex,
         float centerFrequencyHz,
@@ -199,13 +202,15 @@ private:
         size_t displayBinIndex,
         float centerFrequencyHz,
         const DisplayBinPowerStats& baseStats,
-        bool canUseFrequencyDependentHighPath) const;
+        bool canUseFrequencyDependentHighPath,
+        bool canUseFrequencyDependentVeryHighPath) const;
     FrequencyDependentBinStats getFrequencyDependentBinStatsForDisplayBin (
         int displayBinIndex,
         int fftSizeForBlock,
         bool canUseFrequencyDependentBassPath,
         bool canUseFrequencyDependentMidBassPath,
-        bool canUseFrequencyDependentHighPath) const;
+        bool canUseFrequencyDependentHighPath,
+        bool canUseFrequencyDependentVeryHighPath) const;
     DisplayBinPowerStats blendDisplayBinPowerStats (const DisplayBinPowerStats& bassStats,
                                                     const DisplayBinPowerStats& mainStats,
                                                     float mainBlend) const noexcept;
@@ -252,6 +257,8 @@ private:
     static constexpr int frequencyDependentMidBassFftSize = 1 << frequencyDependentMidBassFftOrder;
     static constexpr int frequencyDependentHighFftOrder = 12;
     static constexpr int frequencyDependentHighFftSize = 1 << frequencyDependentHighFftOrder;
+    static constexpr int frequencyDependentVeryHighFftOrder = 11;
+    static constexpr int frequencyDependentVeryHighFftSize = 1 << frequencyDependentVeryHighFftOrder;
     static constexpr float defaultPeakHoldDecayDbPerSecond = 8.0f;
     static constexpr float frequencyDependentDeepBassOnlyMaxHz = 60.0f;
     static constexpr float frequencyDependentMidBassOnlyMinHz = 140.0f;
@@ -259,6 +266,7 @@ private:
     static constexpr float frequencyDependentMainOnlyMinHz = 320.0f;
     static constexpr float frequencyDependentMainOnlyMaxHz = 3000.0f;
     static constexpr float frequencyDependentHighOnlyMinHz = 6000.0f;
+    static constexpr float frequencyDependentVeryHighOnlyMinHz = 12000.0f;
     static constexpr float frequencyDependentTransientAssistMaxHz = 320.0f;
     static constexpr float frequencyDependentTransientAssistMinRiseDb = 4.0f;
     static constexpr float frequencyDependentTransientAttackBlend = 0.55f;
@@ -326,6 +334,7 @@ private:
     FrequencyDependentFftSource frequencyDependentBassPath;
     FrequencyDependentFftSource frequencyDependentMidBassPath;
     FrequencyDependentFftSource frequencyDependentHighPath;
+    FrequencyDependentFftSource frequencyDependentVeryHighPath;
 
     bool overlapBufferPrimed = false;
     float secondsSinceLastFramePublish = 0.0f;
