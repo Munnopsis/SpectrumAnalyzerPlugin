@@ -186,20 +186,40 @@ namespace
         float veryHighReleaseSmoothing,
         float veryHighReleaseBlend) noexcept
     {
+        const auto sanitizeSmoothing = [] (float value, float fallback) noexcept
+        {
+            return std::isfinite (value) ? value : fallback;
+        };
+
+        const auto baseReleaseSmoothing =
+            sanitizeSmoothing (liveReleaseSmoothing, 0.0f);
+
+        const auto safeLowBassTailReleaseSmoothing =
+            sanitizeSmoothing (lowBassTailReleaseSmoothing, baseReleaseSmoothing);
+
+        const auto safeVeryHighReleaseSmoothing =
+            sanitizeSmoothing (veryHighReleaseSmoothing, baseReleaseSmoothing);
+
+        const auto safeLowBassTailReleaseBlend =
+            std::isfinite (lowBassTailReleaseBlend) ? lowBassTailReleaseBlend : 0.0f;
+
+        const auto safeVeryHighReleaseBlend =
+            std::isfinite (veryHighReleaseBlend) ? veryHighReleaseBlend : 0.0f;
+
         const auto clampedLowBassTailReleaseBlend =
-            juce::jlimit (0.0f, 1.0f, lowBassTailReleaseBlend);
+            juce::jlimit (0.0f, 1.0f, safeLowBassTailReleaseBlend);
 
         const auto clampedVeryHighReleaseBlend =
-            juce::jlimit (0.0f, 1.0f, veryHighReleaseBlend);
+            juce::jlimit (0.0f, 1.0f, safeVeryHighReleaseBlend);
 
         auto releaseSmoothing =
-            liveReleaseSmoothing
+            baseReleaseSmoothing
             + clampedLowBassTailReleaseBlend
-                * (lowBassTailReleaseSmoothing - liveReleaseSmoothing);
+                * (safeLowBassTailReleaseSmoothing - baseReleaseSmoothing);
 
         releaseSmoothing +=
             clampedVeryHighReleaseBlend
-            * (veryHighReleaseSmoothing - releaseSmoothing);
+            * (safeVeryHighReleaseSmoothing - releaseSmoothing);
 
         return releaseSmoothing;
     }
@@ -647,7 +667,11 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
             for (const auto& descriptor : getFrequencyDependentSourceDescriptors())
             {
                 if (descriptor.source != nullptr)
-                    descriptor.source->hasValidFftData = false;
+                {
+                    descriptor.source->rangeSampleRate = 0.0f;
+                    descriptor.source->rangeMinFrequencyHz = 0.0f;
+                    descriptor.source->rangeMaxFrequencyHz = 0.0f;
+                }
             }
         }
     }
