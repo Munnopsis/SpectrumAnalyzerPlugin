@@ -1216,12 +1216,15 @@ void AnalyzerEngine::processOneFftBlock()
             frameAdvanceSeconds,
             frequencyDependentTransientAssistReleaseSeconds);
 
-    const auto peakPowerToDb = [] (float power) noexcept
+    const auto displayStatsToDb = [] (const DisplayBinPowerStats& stats) noexcept
     {
-        const auto sanitizedPower =
-            std::isfinite (power) ? juce::jmax (0.0f, power) : 0.0f;
+        const auto displayPower = getPeakPreservingDisplayPower (stats);
+        const auto displayMagnitude = std::sqrt (displayPower);
 
-        return juce::Decibels::gainToDecibels (std::sqrt (sanitizedPower), -100.0f);
+        return juce::jlimit (
+            -100.0f,
+            0.0f,
+            juce::Decibels::gainToDecibels (displayMagnitude, -100.0f));
     };
 
     auto energyFramePeakPower = 0.0f;
@@ -1324,7 +1327,8 @@ void AnalyzerEngine::processOneFftBlock()
             }
         }
 
-        auto visualBinPowerStats = binPowerStats;
+        auto liveVisualBinPowerStats = binPowerStats;
+        const auto peakHoldVisualBinPowerStats = binPowerStats;
         auto assistAmount = 0.0f;
 
         if (currentFrequencyDependentResolutionEnabled
@@ -1336,36 +1340,49 @@ void AnalyzerEngine::processOneFftBlock()
             if (centerFrequency > 0.0f
                 && centerFrequency <= frequencyDependentTransientAssistMaxHz)
             {
-                const auto frequencyDependentPeakDb =
-                    peakPowerToDb (binPowerStats.peakPower);
+                const auto frequencyDependentDisplayDb =
+                    displayStatsToDb (binPowerStats);
 
-                const auto mainPeakDb =
-                    peakPowerToDb (mainBinPowerStats.peakPower);
+                const auto mainDisplayDb =
+                    displayStatsToDb (mainBinPowerStats);
 
                 const auto mainAboveFrequencyDependentDb =
-                    mainPeakDb - frequencyDependentPeakDb;
+                    mainDisplayDb - frequencyDependentDisplayDb;
 
                 const auto frequencyDependentAboveMainDb =
-                    frequencyDependentPeakDb - mainPeakDb;
+                    frequencyDependentDisplayDb - mainDisplayDb;
+
+                auto desiredAssistAmount = 0.0f;
 
                 if (mainAboveFrequencyDependentDb >= frequencyDependentTransientAssistMinRiseDb)
                 {
-                    storedAssistAmount =
-                        juce::jmax (storedAssistAmount,
-                                    frequencyDependentTransientAttackBlend);
+                    desiredAssistAmount = frequencyDependentTransientAttackBlend;
                 }
-                else if (storedAssistAmount > 0.0f
-                         && frequencyDependentAboveMainDb
-                             >= frequencyDependentTransientTailSuppressMinExcessDb)
+                else if (frequencyDependentAboveMainDb
+                         >= frequencyDependentTransientTailSuppressMinExcessDb)
                 {
-                    storedAssistAmount =
-                        juce::jmax (storedAssistAmount,
-                                    frequencyDependentTransientTailSuppressBlend);
+                    desiredAssistAmount = frequencyDependentTransientTailSuppressBlend;
+                }
+
+                desiredAssistAmount =
+                    juce::jlimit (0.0f,
+                                  1.0f,
+                                  std::isfinite (desiredAssistAmount)
+                                      ? desiredAssistAmount
+                                      : 0.0f);
+
+                storedAssistAmount =
+                    std::isfinite (storedAssistAmount) ? storedAssistAmount : 0.0f;
+
+                if (desiredAssistAmount > storedAssistAmount)
+                {
+                    storedAssistAmount = desiredAssistAmount;
                 }
                 else if (frameAdvanceSeconds > 0.0f)
                 {
                     storedAssistAmount +=
-                        transientAssistReleaseSmoothing * (0.0f - storedAssistAmount);
+                        transientAssistReleaseSmoothing
+                            * (desiredAssistAmount - storedAssistAmount);
                 }
 
                 storedAssistAmount =
@@ -1382,32 +1399,25 @@ void AnalyzerEngine::processOneFftBlock()
                 storedAssistAmount = 0.0f;
             }
 
-            visualBinPowerStats = applyFrequencyDependentTransientAssist (
+            liveVisualBinPowerStats = applyFrequencyDependentTransientAssist (
                 binPowerStats,
                 mainBinPowerStats,
                 centerFrequency,
                 assistAmount);
         }
 
-        const auto displayPower =
-            getPeakPreservingDisplayPower (visualBinPowerStats);
-
-        const auto displayMagnitude = std::sqrt (displayPower);
-
-        const auto db =
-            juce::Decibels::gainToDecibels (displayMagnitude, -100.0f);
-
-        const auto targetDb = juce::jlimit (-100.0f, 0.0f, db);
+        const auto liveTargetDb = displayStatsToDb (liveVisualBinPowerStats);
+        const auto peakHoldTargetDb = displayStatsToDb (peakHoldVisualBinPowerStats);
 
         energyFrameMeanPower[index] = binPowerStats.meanPower;
         energyFramePeakPower = juce::jmax (energyFramePeakPower, binPowerStats.meanPower);
 
-        rawSpectrumDb[index] = targetDb;
+        rawSpectrumDb[index] = liveTargetDb;
 
         if (shouldWarmStartDisplayAccumulation)
         {
-            smoothedSpectrumDb[index] = targetDb;
-            peakHoldSpectrumDb[index] = targetDb;
+            smoothedSpectrumDb[index] = liveTargetDb;
+            peakHoldSpectrumDb[index] = peakHoldTargetDb;
             rmsPowerSpectrum[index] = binPowerStats.meanPower;
             continue;
         }
@@ -1415,13 +1425,13 @@ void AnalyzerEngine::processOneFftBlock()
         const auto previousDb = smoothedSpectrumDb[index];
 
         const auto smoothing =
-            targetDb > previousDb ? liveAttackSmoothing : liveReleaseSmoothing;
+            liveTargetDb > previousDb ? liveAttackSmoothing : liveReleaseSmoothing;
 
         smoothedSpectrumDb[index] =
-            previousDb + smoothing * (targetDb - previousDb);
+            previousDb + smoothing * (liveTargetDb - previousDb);
 
-        if (targetDb > peakHoldSpectrumDb[index])
-            peakHoldSpectrumDb[index] = targetDb;
+        if (peakHoldTargetDb > peakHoldSpectrumDb[index])
+            peakHoldSpectrumDb[index] = peakHoldTargetDb;
         else
             peakHoldSpectrumDb[index] =
                 juce::jmax (-100.0f, peakHoldSpectrumDb[index] - decayPerFrame);
