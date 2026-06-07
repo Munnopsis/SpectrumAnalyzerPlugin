@@ -964,7 +964,7 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
             && frequencyDependentBassPath.displayBinFftRanges.size() > index)
         {
             const auto bassBinPowerStats =
-        getFrequencyDependentSourceStatsForDisplayBin (
+            getFrequencyDependentSourceStatsForDisplayBin (
             frequencyDependentBassPath,
             frequencyDependentBassFftSize,
             index);
