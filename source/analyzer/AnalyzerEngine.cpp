@@ -20,6 +20,36 @@ namespace
         return minFrequency * std::pow (maxFrequency / minFrequency, clampedPosition);
     }
 
+    float smoothLogFrequencyBlend (float frequencyHz,
+                                   float lowerHz,
+                                   float upperHz) noexcept
+    {
+        if (! std::isfinite (frequencyHz))
+            return 0.0f;
+
+        if (std::isfinite (upperHz) && upperHz > 0.0f && frequencyHz >= upperHz)
+            return 1.0f;
+
+        if (frequencyHz <= 0.0f
+            || ! std::isfinite (lowerHz)
+            || ! std::isfinite (upperHz)
+            || lowerHz <= 0.0f
+            || upperHz <= lowerHz)
+        {
+            return 0.0f;
+        }
+
+        if (frequencyHz <= lowerHz)
+            return 0.0f;
+
+        const auto normalisedLogPosition =
+            std::log (frequencyHz / lowerHz) / std::log (upperHz / lowerHz);
+
+        const auto t = juce::jlimit (0.0f, 1.0f, normalisedLogPosition);
+
+        return t * t * (3.0f - 2.0f * t);
+    }
+
     float getCalibratedFftBinAmplitude (const std::vector<float>& frequencyOnlyFftData,
                                         int fftBin,
                                         int fftSize) noexcept
@@ -959,33 +989,17 @@ void AnalyzerEngine::updateFrequencyDependentHighBinFftRangesIfNeeded()
 float AnalyzerEngine::getFrequencyDependentMainBlendForFrequency (
     float frequencyHz) const noexcept
 {
-    if (frequencyHz <= frequencyDependentBassOnlyMaxHz)
-        return 0.0f;
-
-    if (frequencyHz >= frequencyDependentMainOnlyMinHz)
-        return 1.0f;
-
-    return juce::jlimit (
-        0.0f,
-        1.0f,
-        (frequencyHz - frequencyDependentBassOnlyMaxHz)
-            / (frequencyDependentMainOnlyMinHz - frequencyDependentBassOnlyMaxHz));
+    return smoothLogFrequencyBlend (frequencyHz,
+                                    frequencyDependentBassOnlyMaxHz,
+                                    frequencyDependentMainOnlyMinHz);
 }
 
 float AnalyzerEngine::getFrequencyDependentHighBlendForFrequency (
     float frequencyHz) const noexcept
 {
-    if (frequencyHz <= frequencyDependentMainOnlyMaxHz)
-        return 0.0f;
-
-    if (frequencyHz >= frequencyDependentHighOnlyMinHz)
-        return 1.0f;
-
-    return juce::jlimit (
-        0.0f,
-        1.0f,
-        (frequencyHz - frequencyDependentMainOnlyMaxHz)
-            / (frequencyDependentHighOnlyMinHz - frequencyDependentMainOnlyMaxHz));
+    return smoothLogFrequencyBlend (frequencyHz,
+                                    frequencyDependentMainOnlyMaxHz,
+                                    frequencyDependentHighOnlyMinHz);
 }
 
 AnalyzerEngine::DisplayBinPowerStats AnalyzerEngine::blendDisplayBinPowerStats (
