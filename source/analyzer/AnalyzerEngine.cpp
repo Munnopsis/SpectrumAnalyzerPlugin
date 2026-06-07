@@ -1014,12 +1014,10 @@ AnalyzerEngine::getFrequencyDependentLowCompositeForDisplayBin (
     size_t displayBinIndex,
     float centerFrequencyHz,
     const DisplayBinPowerStats& mainStats,
-    const FrequencyDependentSourceAvailability& sourceAvailability) const
+    const FrequencyDependentSourceAvailability& sourceAvailability,
+    const FrequencyDependentBlendWeights& blendWeights) const
 {
     FrequencyDependentLowCompositeResult result;
-
-    const auto blendWeights =
-        getFrequencyDependentBlendWeightsForFrequency (centerFrequencyHz);
 
     if (sourceAvailability.canUseBass
         && frequencyDependentBassPath.displayBinFftRanges.size() > displayBinIndex)
@@ -1077,15 +1075,13 @@ AnalyzerEngine::applyFrequencyDependentHighBlendForDisplayBin (
     size_t displayBinIndex,
     float centerFrequencyHz,
     const DisplayBinPowerStats& baseStats,
-    const FrequencyDependentSourceAvailability& sourceAvailability) const
+    const FrequencyDependentSourceAvailability& sourceAvailability,
+    const FrequencyDependentBlendWeights& blendWeights) const
 {
     if (centerFrequencyHz <= 0.0f)
         return baseStats;
 
     auto highCompositeStats = baseStats;
-
-    const auto blendWeights =
-        getFrequencyDependentBlendWeightsForFrequency (centerFrequencyHz);
 
     if (sourceAvailability.canUseHigh
         && frequencyDependentHighPath.displayBinFftRanges.size() > displayBinIndex)
@@ -1172,7 +1168,8 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
                 index,
                 result.centerFrequencyHz,
                 result.mainStats,
-                sourceAvailability);
+                sourceAvailability,
+                blendWeights);
 
         if (lowCompositeResult.hasTransientReferenceStats)
         {
@@ -1194,7 +1191,8 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
                 index,
                 result.centerFrequencyHz,
                 result.compositeStats,
-                sourceAvailability);
+                sourceAvailability,
+                blendWeights);
     }
 
     return result;

@@ -207,12 +207,14 @@ private:
         size_t displayBinIndex,
         float centerFrequencyHz,
         const DisplayBinPowerStats& mainStats,
-        const FrequencyDependentSourceAvailability& sourceAvailability) const;
+        const FrequencyDependentSourceAvailability& sourceAvailability,
+        const FrequencyDependentBlendWeights& blendWeights) const;
     DisplayBinPowerStats applyFrequencyDependentHighBlendForDisplayBin (
         size_t displayBinIndex,
         float centerFrequencyHz,
         const DisplayBinPowerStats& baseStats,
-        const FrequencyDependentSourceAvailability& sourceAvailability) const;
+        const FrequencyDependentSourceAvailability& sourceAvailability,
+        const FrequencyDependentBlendWeights& blendWeights) const;
     FrequencyDependentBinStats getFrequencyDependentBinStatsForDisplayBin (
         int displayBinIndex,
         int fftSizeForBlock,
