@@ -1314,6 +1314,41 @@ AnalyzerEngine::DisplayBinPowerStats AnalyzerEngine::applyFrequencyDependentTran
         assistBlend);
 }
 
+float AnalyzerEngine::getFrequencyDependentTransientAttackBlend() const noexcept
+{
+    return currentFrequencyDependentTunedResolutionEnabled
+        ? frequencyDependentTunedTransientAttackBlend
+        : frequencyDependentTransientAttackBlend;
+}
+
+float AnalyzerEngine::getFrequencyDependentTransientTailSuppressBlend() const noexcept
+{
+    return currentFrequencyDependentTunedResolutionEnabled
+        ? frequencyDependentTunedTransientTailSuppressBlend
+        : frequencyDependentTransientTailSuppressBlend;
+}
+
+float AnalyzerEngine::getFrequencyDependentTransientAssistReleaseSeconds() const noexcept
+{
+    return currentFrequencyDependentTunedResolutionEnabled
+        ? frequencyDependentTunedTransientAssistReleaseSeconds
+        : frequencyDependentTransientAssistReleaseSeconds;
+}
+
+float AnalyzerEngine::getFrequencyDependentLowBassTailReleaseTimeSeconds() const noexcept
+{
+    return currentFrequencyDependentTunedResolutionEnabled
+        ? frequencyDependentTunedLowBassTailReleaseTimeSeconds
+        : frequencyDependentLowBassTailReleaseTimeSeconds;
+}
+
+float AnalyzerEngine::getFrequencyDependentVeryHighReleaseTimeSeconds() const noexcept
+{
+    return currentFrequencyDependentTunedResolutionEnabled
+        ? frequencyDependentTunedVeryHighReleaseTimeSeconds
+        : frequencyDependentVeryHighReleaseTimeSeconds;
+}
+
 AnalyzerEngine::FrequencyDependentLiveAssistResult
     AnalyzerEngine::applyFrequencyDependentLiveAssistForDisplayBin (
         const DisplayBinPowerStats& compositeStats,
@@ -1351,12 +1386,12 @@ AnalyzerEngine::FrequencyDependentLiveAssistResult
 
     if (referenceAboveFrequencyDependentDb >= frequencyDependentTransientAssistMinRiseDb)
     {
-        desiredAssistAmount = frequencyDependentTransientAttackBlend;
+        desiredAssistAmount = getFrequencyDependentTransientAttackBlend();
     }
     else if (frequencyDependentAboveReferenceDb
              >= frequencyDependentTransientTailSuppressMinExcessDb)
     {
-        desiredAssistAmount = frequencyDependentTransientTailSuppressBlend;
+        desiredAssistAmount = getFrequencyDependentTransientTailSuppressBlend();
         result.lowBassTailReleaseBlend =
             blendWeights.lowBassTailReleaseBlend;
     }
@@ -1971,17 +2006,17 @@ void AnalyzerEngine::processOneFftBlock()
     const auto lowBassTailReleaseSmoothing =
         smoothingCoefficientForTimeConstant (
             frameAdvanceSeconds,
-            frequencyDependentLowBassTailReleaseTimeSeconds);
+            getFrequencyDependentLowBassTailReleaseTimeSeconds());
 
     const auto veryHighReleaseSmoothing =
         smoothingCoefficientForTimeConstant (
-            frameAdvanceSeconds,
-            frequencyDependentVeryHighReleaseTimeSeconds);
+        frameAdvanceSeconds,
+        getFrequencyDependentVeryHighReleaseTimeSeconds());
 
     const auto transientAssistReleaseSmoothing =
         smoothingCoefficientForTimeConstant (
-            frameAdvanceSeconds,
-            frequencyDependentTransientAssistReleaseSeconds);
+        frameAdvanceSeconds,
+        getFrequencyDependentTransientAssistReleaseSeconds());
 
     resetFrequencyDependentPolicyFrameSummary();
 

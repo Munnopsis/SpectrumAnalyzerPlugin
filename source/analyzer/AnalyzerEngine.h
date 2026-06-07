@@ -298,6 +298,11 @@ class AnalyzerEngine : private juce::Thread
         float frequencyHz) const noexcept;
     FrequencyDependentBlendWeights getFrequencyDependentBlendWeightsForFrequency(
         float frequencyHz) const noexcept;
+    float getFrequencyDependentTransientAttackBlend() const noexcept;
+    float getFrequencyDependentTransientTailSuppressBlend() const noexcept;
+    float getFrequencyDependentTransientAssistReleaseSeconds() const noexcept;
+    float getFrequencyDependentLowBassTailReleaseTimeSeconds() const noexcept;
+    float getFrequencyDependentVeryHighReleaseTimeSeconds() const noexcept;
     FrequencyDependentLowCompositeResult getFrequencyDependentLowCompositeForDisplayBin(
         size_t displayBinIndex,
         float centerFrequencyHz,
@@ -395,6 +400,11 @@ class AnalyzerEngine : private juce::Thread
     static constexpr float liveReleaseTimeSeconds = 0.500f;
     static constexpr float frequencyDependentLowBassTailReleaseTimeSeconds = 0.180f;
     static constexpr float frequencyDependentVeryHighReleaseTimeSeconds = 0.220f;
+    static constexpr float frequencyDependentTunedTransientAttackBlend = 0.62f;
+    static constexpr float frequencyDependentTunedTransientTailSuppressBlend = 0.92f;
+    static constexpr float frequencyDependentTunedTransientAssistReleaseSeconds = 0.085f;
+    static constexpr float frequencyDependentTunedLowBassTailReleaseTimeSeconds = 0.130f;
+    static constexpr float frequencyDependentTunedVeryHighReleaseTimeSeconds = 0.200f;
     static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
     static constexpr float energyAveragingWindowSeconds = 20.0f;
