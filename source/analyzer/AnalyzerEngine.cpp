@@ -974,17 +974,23 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
         result.hasCenterFrequency = result.centerFrequencyHz > 0.0f;
     }
 
-    if (canUseFrequencyDependentBassPath
-        && result.hasCenterFrequency
-        && frequencyDependentBassPath.displayBinFftRanges.size() > index)
+        if (result.hasCenterFrequency)
     {
-        const auto bassBinPowerStats =
-            getFrequencyDependentSourceStatsForDisplayBin (
-                frequencyDependentBassPath,
-                frequencyDependentBassFftSize,
-                index);
+        auto hasLowFrequencyCompositeStats = false;
+        auto lowFrequencyCompositeStats = DisplayBinPowerStats {};
 
-        auto lowFrequencyCompositeStats = bassBinPowerStats;
+        if (canUseFrequencyDependentBassPath
+            && frequencyDependentBassPath.displayBinFftRanges.size() > index)
+        {
+            lowFrequencyCompositeStats =
+                getFrequencyDependentSourceStatsForDisplayBin (
+                    frequencyDependentBassPath,
+                    frequencyDependentBassFftSize,
+                    index);
+
+            hasLowFrequencyCompositeStats =
+                lowFrequencyCompositeStats.numBinsUsed > 0;
+        }
 
         if (canUseFrequencyDependentMidBassPath
             && frequencyDependentMidBassPath.displayBinFftRanges.size() > index)
@@ -995,22 +1001,38 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
                     frequencyDependentMidBassFftSize,
                     index);
 
-            const auto midBassBlend =
-                getFrequencyDependentMidBassBlendForFrequency (result.centerFrequencyHz);
+            if (midBassBinPowerStats.numBinsUsed > 0)
+            {
+                if (hasLowFrequencyCompositeStats)
+                {
+                    const auto midBassBlend =
+                        getFrequencyDependentMidBassBlendForFrequency (
+                            result.centerFrequencyHz);
 
-            lowFrequencyCompositeStats =
-                blendDisplayBinPowerStats (bassBinPowerStats,
-                                           midBassBinPowerStats,
-                                           midBassBlend);
+                    lowFrequencyCompositeStats =
+                        blendDisplayBinPowerStats (lowFrequencyCompositeStats,
+                                                   midBassBinPowerStats,
+                                                   midBassBlend);
+                }
+                else
+                {
+                    lowFrequencyCompositeStats = midBassBinPowerStats;
+                    hasLowFrequencyCompositeStats = true;
+                }
+            }
         }
 
-        const auto mainBlend =
-            getFrequencyDependentMainBlendForFrequency (result.centerFrequencyHz);
+        if (hasLowFrequencyCompositeStats)
+        {
+            const auto mainBlend =
+                getFrequencyDependentMainBlendForFrequency (
+                    result.centerFrequencyHz);
 
-        result.compositeStats =
-            blendDisplayBinPowerStats (lowFrequencyCompositeStats,
-                                       result.mainStats,
-                                       mainBlend);
+            result.compositeStats =
+                blendDisplayBinPowerStats (lowFrequencyCompositeStats,
+                                           result.mainStats,
+                                           mainBlend);
+        }
     }
 
     if (canUseFrequencyDependentHighPath
