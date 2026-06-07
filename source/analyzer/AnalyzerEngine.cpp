@@ -1163,6 +1163,9 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
         const auto blendWeights =
             getFrequencyDependentBlendWeightsForFrequency (result.centerFrequencyHz);
 
+        result.blendWeights = blendWeights;
+        result.hasBlendWeights = true;
+
         const auto lowCompositeResult =
             getFrequencyDependentLowCompositeForDisplayBin (
                 index,
@@ -1279,18 +1282,13 @@ AnalyzerEngine::applyFrequencyDependentLiveAssistForDisplayBin (
     const DisplayBinPowerStats& transientReferenceStats,
     float centerFrequencyHz,
     bool hasCenterFrequency,
+    const FrequencyDependentBlendWeights& blendWeights,
     float& storedAssistAmount,
     float frameAdvanceSeconds,
     float transientAssistReleaseSmoothing) const noexcept
 {
     FrequencyDependentLiveAssistResult result;
     result.liveVisualStats = compositeStats;
-
-    const auto getLowBassTailReleaseBlend = [this] (float frequencyHz) noexcept
-    {
-        return getFrequencyDependentBlendWeightsForFrequency (
-            frequencyHz).lowBassTailReleaseBlend;
-    };
 
     if (! hasCenterFrequency
         || centerFrequencyHz > frequencyDependentTransientAssistMaxHz)
@@ -1322,7 +1320,7 @@ AnalyzerEngine::applyFrequencyDependentLiveAssistForDisplayBin (
     {
         desiredAssistAmount = frequencyDependentTransientTailSuppressBlend;
         result.lowBassTailReleaseBlend =
-            getLowBassTailReleaseBlend (centerFrequencyHz);
+            blendWeights.lowBassTailReleaseBlend;
     }
 
     desiredAssistAmount =
@@ -1361,7 +1359,7 @@ AnalyzerEngine::applyFrequencyDependentLiveAssistForDisplayBin (
     {
         result.lowBassTailReleaseBlend =
             juce::jmax (result.lowBassTailReleaseBlend,
-                        getLowBassTailReleaseBlend (centerFrequencyHz));
+                        blendWeights.lowBassTailReleaseBlend);
     }
 
     result.liveVisualStats =
@@ -1731,6 +1729,7 @@ void AnalyzerEngine::processOneFftBlock()
                     transientReferenceBinPowerStats,
                     binStats.centerFrequencyHz,
                     binStats.hasCenterFrequency,
+                    binStats.blendWeights,
                     storedAssistAmount,
                     frameAdvanceSeconds,
                     transientAssistReleaseSmoothing);
@@ -1739,11 +1738,9 @@ void AnalyzerEngine::processOneFftBlock()
             lowBassTailReleaseBlend = assistResult.lowBassTailReleaseBlend;
 
             if (frequencyDependentSourceAvailability.canUseVeryHigh
-                && binStats.hasCenterFrequency)
+                && binStats.hasBlendWeights)
             {
-                veryHighReleaseBlend =
-                    getFrequencyDependentBlendWeightsForFrequency (
-                        binStats.centerFrequencyHz).veryHighBlend;
+                veryHighReleaseBlend = binStats.blendWeights.veryHighBlend;
 
                 if (veryHighReleaseBlend <= 0.0f)
                     veryHighReleaseBlend = 0.0f;

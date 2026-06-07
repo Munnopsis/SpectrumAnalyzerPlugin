@@ -108,14 +108,25 @@ private:
         bool hasValidFftData = false;
     };
 
+    struct FrequencyDependentBlendWeights
+    {
+        float midBassBlend = 0.0f;
+        float mainBlend = 0.0f;
+        float highBlend = 0.0f;
+        float veryHighBlend = 0.0f;
+        float lowBassTailReleaseBlend = 0.0f;
+    };
+
     struct FrequencyDependentBinStats
     {
         DisplayBinPowerStats mainStats;
         DisplayBinPowerStats compositeStats;
         DisplayBinPowerStats transientReferenceStats;
+        FrequencyDependentBlendWeights blendWeights;
         float centerFrequencyHz = 0.0f;
         bool hasCenterFrequency = false;
         bool hasTransientReferenceStats = false;
+        bool hasBlendWeights = false;
     };
 
     struct FrequencyDependentLowCompositeResult
@@ -155,15 +166,6 @@ private:
         bool canUseMidBass = false;
         bool canUseHigh = false;
         bool canUseVeryHigh = false;
-    };
-
-    struct FrequencyDependentBlendWeights
-    {
-        float midBassBlend = 0.0f;
-        float mainBlend = 0.0f;
-        float highBlend = 0.0f;
-        float veryHighBlend = 0.0f;
-        float lowBassTailReleaseBlend = 0.0f;
     };
 
     void run() override;
@@ -232,6 +234,7 @@ private:
         const DisplayBinPowerStats& transientReferenceStats,
         float centerFrequencyHz,
         bool hasCenterFrequency,
+        const FrequencyDependentBlendWeights& blendWeights,
         float& storedAssistAmount,
         float frameAdvanceSeconds,
         float transientAssistReleaseSmoothing) const noexcept;
