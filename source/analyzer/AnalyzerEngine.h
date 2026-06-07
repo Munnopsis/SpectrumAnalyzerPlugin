@@ -6,6 +6,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include <array>
 #include <atomic>
 #include <mutex>
 #include <vector>
@@ -115,9 +116,25 @@ private:
         bool hasCenterFrequency = false;
     };
 
+    enum class FrequencyDependentSourceRole
+    {
+        bass,
+        high
+    };
+
+    struct FrequencyDependentSourceDescriptor
+    {
+        FrequencyDependentSourceRole role = FrequencyDependentSourceRole::bass;
+        FrequencyDependentFftSource* source = nullptr;
+        int fftOrder = 0;
+        int fftSize = 0;
+    };
+
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
+    std::array<FrequencyDependentSourceDescriptor, 2>
+        getFrequencyDependentSourceDescriptors() noexcept;
     void configureFft (int newFftOrder);
     void resetOverlapBuffer();
     void configureFrequencyDependentFftSource (FrequencyDependentFftSource& source,

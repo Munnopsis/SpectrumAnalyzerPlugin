@@ -218,8 +218,11 @@ void AnalyzerEngine::reset()
 
     if (currentFrequencyDependentResolutionEnabled)
     {
-        resetFrequencyDependentBassPath();
-        resetFrequencyDependentHighPath();
+        for (const auto& descriptor : getFrequencyDependentSourceDescriptors())
+        {
+            if (descriptor.source != nullptr)
+                resetFrequencyDependentFftSource (*descriptor.source);
+        }
     }
 
     secondsSinceLastFramePublish = 0.0f;
@@ -368,6 +371,25 @@ void AnalyzerEngine::setDisplayFrequencyRange (float minimumHz, float maximumHz)
     requestedDisplayMaxFrequencyHz.store (clampedMaximum, std::memory_order_relaxed);
 }
 
+std::array<AnalyzerEngine::FrequencyDependentSourceDescriptor, 2>
+AnalyzerEngine::getFrequencyDependentSourceDescriptors() noexcept
+{
+    return {{
+        {
+            FrequencyDependentSourceRole::bass,
+            &frequencyDependentBassPath,
+            frequencyDependentBassFftOrder,
+            frequencyDependentBassFftSize
+        },
+        {
+            FrequencyDependentSourceRole::high,
+            &frequencyDependentHighPath,
+            frequencyDependentHighFftOrder,
+            frequencyDependentHighFftSize
+        }
+    }};
+}
+
 void AnalyzerEngine::configureFft (int newFftOrder)
 {
     currentFftOrder = juce::jlimit (minFftOrder, maxFftOrder, newFftOrder);
@@ -395,13 +417,23 @@ void AnalyzerEngine::configureFft (int newFftOrder)
 
     if (currentFrequencyDependentResolutionEnabled)
     {
-        configureFrequencyDependentBassPath();
-        configureFrequencyDependentHighPath();
+        for (const auto& descriptor : getFrequencyDependentSourceDescriptors())
+        {
+            if (descriptor.source != nullptr)
+            {
+                configureFrequencyDependentFftSource (*descriptor.source,
+                                                       descriptor.fftOrder,
+                                                       descriptor.fftSize);
+            }
+        }
     }
     else
     {
-        frequencyDependentBassPath.hasValidFftData = false;
-        frequencyDependentHighPath.hasValidFftData = false;
+        for (const auto& descriptor : getFrequencyDependentSourceDescriptors())
+        {
+            if (descriptor.source != nullptr)
+                descriptor.source->hasValidFftData = false;
+        }
     }
 }
 
@@ -1223,10 +1255,28 @@ void AnalyzerEngine::processOneFftBlock()
 
     if (currentFrequencyDependentResolutionEnabled)
     {
-        appendSamplesToFrequencyDependentBassPath (newSamples, numNewSamples);
-        appendSamplesToFrequencyDependentHighPath (newSamples, numNewSamples);
-        processFrequencyDependentBassPathIfReady();
-        processFrequencyDependentHighPathIfReady();
+        const auto frequencyDependentSourceDescriptors =
+            getFrequencyDependentSourceDescriptors();
+
+        for (const auto& descriptor : frequencyDependentSourceDescriptors)
+        {
+            if (descriptor.source != nullptr)
+            {
+                appendSamplesToFrequencyDependentFftSource (*descriptor.source,
+                                                            newSamples,
+                                                            numNewSamples,
+                                                            descriptor.fftSize);
+            }
+        }
+
+        for (const auto& descriptor : frequencyDependentSourceDescriptors)
+        {
+            if (descriptor.source != nullptr)
+            {
+                processFrequencyDependentFftSourceIfReady (*descriptor.source,
+                                                           descriptor.fftSize);
+            }
+        }
     }
 
     std::fill (fftData.begin(), fftData.end(), 0.0f);
@@ -1254,8 +1304,14 @@ void AnalyzerEngine::processOneFftBlock()
 
     if (currentFrequencyDependentResolutionEnabled)
     {
-        updateFrequencyDependentBassBinFftRangesIfNeeded();
-        updateFrequencyDependentHighBinFftRangesIfNeeded();
+        for (const auto& descriptor : getFrequencyDependentSourceDescriptors())
+        {
+            if (descriptor.source != nullptr)
+            {
+                updateFrequencyDependentSourceBinFftRangesIfNeeded (*descriptor.source,
+                                                                    descriptor.fftSize);
+            }
+        }
     }
 
     if (displayBinFftRanges.size() != static_cast<size_t> (displayBinCount))
