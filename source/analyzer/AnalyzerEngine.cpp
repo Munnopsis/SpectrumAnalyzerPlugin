@@ -178,6 +178,31 @@ namespace
             0.0f,
             juce::Decibels::gainToDecibels (displayMagnitude, -100.0f));
     }
+
+    float blendFrequencyDependentLiveReleaseSmoothing (
+        float liveReleaseSmoothing,
+        float lowBassTailReleaseSmoothing,
+        float lowBassTailReleaseBlend,
+        float veryHighReleaseSmoothing,
+        float veryHighReleaseBlend) noexcept
+    {
+        const auto clampedLowBassTailReleaseBlend =
+            juce::jlimit (0.0f, 1.0f, lowBassTailReleaseBlend);
+
+        const auto clampedVeryHighReleaseBlend =
+            juce::jlimit (0.0f, 1.0f, veryHighReleaseBlend);
+
+        auto releaseSmoothing =
+            liveReleaseSmoothing
+            + clampedLowBassTailReleaseBlend
+                * (lowBassTailReleaseSmoothing - liveReleaseSmoothing);
+
+        releaseSmoothing +=
+            clampedVeryHighReleaseBlend
+            * (veryHighReleaseSmoothing - releaseSmoothing);
+
+        return releaseSmoothing;
+    }
 }
 
 AnalyzerEngine::AnalyzerEngine()
@@ -1708,20 +1733,13 @@ void AnalyzerEngine::processOneFftBlock()
 
         const auto previousDb = smoothedSpectrumDb[index];
 
-        const auto clampedLowBassTailReleaseBlend =
-            juce::jlimit (0.0f, 1.0f, lowBassTailReleaseBlend);
-
-        const auto clampedVeryHighReleaseBlend =
-            juce::jlimit (0.0f, 1.0f, veryHighReleaseBlend);
-
-        auto releaseSmoothing =
-            liveReleaseSmoothing
-            + clampedLowBassTailReleaseBlend
-                * (lowBassTailReleaseSmoothing - liveReleaseSmoothing);
-
-        releaseSmoothing +=
-            clampedVeryHighReleaseBlend
-            * (veryHighReleaseSmoothing - releaseSmoothing);
+        const auto releaseSmoothing =
+            blendFrequencyDependentLiveReleaseSmoothing (
+                liveReleaseSmoothing,
+                lowBassTailReleaseSmoothing,
+                lowBassTailReleaseBlend,
+                veryHighReleaseSmoothing,
+                veryHighReleaseBlend);
 
         const auto smoothing =
             liveTargetDb > previousDb ? liveAttackSmoothing : releaseSmoothing;
