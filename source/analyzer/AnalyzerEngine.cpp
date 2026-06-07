@@ -1030,6 +1030,7 @@ AnalyzerEngine::getFrequencyDependentLowCompositeForDisplayBin (
 
         result.hasLowCompositeStats =
             result.lowCompositeStats.numBinsUsed > 0;
+        result.usedBassComposite = result.hasLowCompositeStats;
     }
 
     if (sourceAvailability.canUseMidBass
@@ -1043,6 +1044,8 @@ AnalyzerEngine::getFrequencyDependentLowCompositeForDisplayBin (
 
         if (midBassBinPowerStats.numBinsUsed > 0)
         {
+            result.usedMidBassComposite = true;
+
             if (centerFrequencyHz <= frequencyDependentMainOnlyMinHz)
             {
                 result.transientReferenceStats =
@@ -1158,6 +1161,7 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
     result.compositeStats = result.mainStats;
     result.transientReferenceStats = result.mainStats;
     result.hasTransientReferenceStats = result.mainStats.numBinsUsed > 0;
+    result.usedMainComposite = result.mainStats.numBinsUsed > 0;
 
     if (displayBinCenterFrequenciesHz.size() > index)
     {
@@ -1180,6 +1184,9 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
                 result.mainStats,
                 sourceAvailability,
                 blendWeights);
+
+        result.usedBassComposite = lowCompositeResult.usedBassComposite;
+        result.usedMidBassComposite = lowCompositeResult.usedMidBassComposite;
 
         if (lowCompositeResult.hasTransientReferenceStats)
         {

@@ -127,6 +127,9 @@ private:
         bool hasCenterFrequency = false;
         bool hasTransientReferenceStats = false;
         bool hasBlendWeights = false;
+        bool usedBassComposite = false;
+        bool usedMidBassComposite = false;
+        bool usedMainComposite = false;
         bool usedHighComposite = false;
         bool usedVeryHighComposite = false;
     };
@@ -137,6 +140,8 @@ private:
         DisplayBinPowerStats transientReferenceStats;
         bool hasLowCompositeStats = false;
         bool hasTransientReferenceStats = false;
+        bool usedBassComposite = false;
+        bool usedMidBassComposite = false;
     };
 
     struct FrequencyDependentHighCompositeResult
