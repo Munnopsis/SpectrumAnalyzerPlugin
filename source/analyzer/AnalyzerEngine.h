@@ -114,7 +114,8 @@ private:
     static constexpr float liveReleaseTimeSeconds = 0.500f;
     static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
-    static constexpr float energyTimeSeconds = 8.0f;
+    static constexpr float energyAveragingWindowSeconds = 20.0f;
+    static constexpr float energyActivityThresholdDb = -90.0f;
 
     static constexpr int maxInstantaneousNotePeaks = 60;
     static constexpr int maxPublishedNotePeaks = 16;
@@ -166,12 +167,14 @@ private:
     bool overlapBufferPrimed = false;
     float secondsSinceLastFramePublish = 0.0f;
     bool displayAccumulationWarmStartRequested = false;
+    float energyAccumulatedActiveSeconds = 0.0f;
 
     std::vector<float> rawSpectrumDb;
     std::vector<float> smoothedSpectrumDb;
     std::vector<float> peakHoldSpectrumDb;
     std::vector<float> rmsPowerSpectrum;
     std::vector<float> energyPowerSpectrum;
+    std::vector<float> energyFrameMeanPower;
     std::vector<float> notePeakBinDecibels;
 
     std::vector<float> latestSpectrumDb;

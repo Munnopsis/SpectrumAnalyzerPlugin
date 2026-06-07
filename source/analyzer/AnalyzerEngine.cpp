@@ -152,6 +152,7 @@ AnalyzerEngine::AnalyzerEngine()
     peakHoldSpectrumDb.resize (displayBinCount, -100.0f);
     rmsPowerSpectrum.resize (displayBinCount, 0.0f);
     energyPowerSpectrum.resize (displayBinCount, 0.0f);
+    energyFrameMeanPower.resize (displayBinCount, 0.0f);
     instantaneousNotePeaks.reserve (maxInstantaneousNotePeaks);
     trackedNotePeaks.reserve (maxInstantaneousNotePeaks);
     currentNotePeaks.reserve (maxPublishedNotePeaks);
@@ -215,6 +216,8 @@ void AnalyzerEngine::reset()
     std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
     std::fill (rmsPowerSpectrum.begin(), rmsPowerSpectrum.end(), 0.0f);
     std::fill (energyPowerSpectrum.begin(), energyPowerSpectrum.end(), 0.0f);
+    std::fill (energyFrameMeanPower.begin(), energyFrameMeanPower.end(), 0.0f);
+    energyAccumulatedActiveSeconds = 0.0f;
     displayAccumulationWarmStartRequested = false;
     instantaneousNotePeaks.clear();
     trackedNotePeaks.clear();
@@ -267,6 +270,8 @@ void AnalyzerEngine::handleClearEnergyRequest()
         return;
 
     std::fill (energyPowerSpectrum.begin(), energyPowerSpectrum.end(), 0.0f);
+    std::fill (energyFrameMeanPower.begin(), energyFrameMeanPower.end(), 0.0f);
+    energyAccumulatedActiveSeconds = 0.0f;
 
     std::lock_guard<std::mutex> lock (latestSpectrumMutex);
     std::fill (latestEnergySpectrumDb.begin(), latestEnergySpectrumDb.end(), -100.0f);
@@ -692,6 +697,12 @@ void AnalyzerEngine::processOneFftBlock()
     if (displayBinFftRanges.size() != static_cast<size_t> (displayBinCount))
         return;
 
+    if (energyFrameMeanPower.size() != static_cast<size_t> (displayBinCount)
+        || energyPowerSpectrum.size() != static_cast<size_t> (displayBinCount))
+    {
+        return;
+    }
+
     const auto shouldWarmStartDisplayAccumulation =
         displayAccumulationWarmStartRequested;
 
@@ -706,14 +717,13 @@ void AnalyzerEngine::processOneFftBlock()
     const auto rmsAlpha =
         smoothingCoefficientForTimeConstant (frameAdvanceSeconds, currentRmsTimeSeconds);
 
-    const auto energyAlpha =
-        smoothingCoefficientForTimeConstant (frameAdvanceSeconds, energyTimeSeconds);
-
     const auto liveAttackSmoothing =
         smoothingCoefficientForTimeConstant (frameAdvanceSeconds, liveAttackTimeSeconds);
 
     const auto liveReleaseSmoothing =
         smoothingCoefficientForTimeConstant (frameAdvanceSeconds, liveReleaseTimeSeconds);
+
+    auto energyFramePeakPower = 0.0f;
 
     for (int i = 0; i < displayBinCount; ++i)
     {
@@ -739,6 +749,9 @@ void AnalyzerEngine::processOneFftBlock()
         const auto targetDb = juce::jlimit (-100.0f, 0.0f, db);
         const auto index = static_cast<size_t> (i);
 
+        energyFrameMeanPower[index] = binPowerStats.meanPower;
+        energyFramePeakPower = juce::jmax (energyFramePeakPower, binPowerStats.meanPower);
+
         rawSpectrumDb[index] = targetDb;
 
         if (shouldWarmStartDisplayAccumulation)
@@ -746,7 +759,6 @@ void AnalyzerEngine::processOneFftBlock()
             smoothedSpectrumDb[index] = targetDb;
             peakHoldSpectrumDb[index] = targetDb;
             rmsPowerSpectrum[index] = binPowerStats.meanPower;
-            energyPowerSpectrum[index] = binPowerStats.meanPower;
             continue;
         }
 
@@ -767,10 +779,46 @@ void AnalyzerEngine::processOneFftBlock()
         rmsPowerSpectrum[index] =
             rmsPowerSpectrum[index]
             + rmsAlpha * (binPowerStats.meanPower - rmsPowerSpectrum[index]);
+    }
 
-        energyPowerSpectrum[index] =
-            energyPowerSpectrum[index]
-            + energyAlpha * (binPowerStats.meanPower - energyPowerSpectrum[index]);
+    const auto activityThresholdGain =
+        juce::Decibels::decibelsToGain (energyActivityThresholdDb);
+
+    const auto activityThresholdPower = activityThresholdGain * activityThresholdGain;
+    const auto frameIsActiveForEnergy = energyFramePeakPower > activityThresholdPower;
+
+    if (shouldWarmStartDisplayAccumulation)
+    {
+        std::fill (energyPowerSpectrum.begin(), energyPowerSpectrum.end(), 0.0f);
+        energyAccumulatedActiveSeconds = 0.0f;
+    }
+
+    if (frameAdvanceSeconds > 0.0f && frameIsActiveForEnergy)
+    {
+        const auto previousAccumulatedSeconds = energyAccumulatedActiveSeconds;
+        const auto nextAccumulatedSeconds =
+            juce::jmin (energyAveragingWindowSeconds,
+                        previousAccumulatedSeconds + frameAdvanceSeconds);
+
+        const auto energyWeight =
+            previousAccumulatedSeconds <= 0.0f
+                ? 1.0f
+                : juce::jlimit (0.0f,
+                                1.0f,
+                                frameAdvanceSeconds
+                                    / juce::jmax (frameAdvanceSeconds,
+                                                  nextAccumulatedSeconds));
+
+        for (int i = 0; i < displayBinCount; ++i)
+        {
+            const auto index = static_cast<size_t> (i);
+
+            energyPowerSpectrum[index] =
+                energyPowerSpectrum[index]
+                + energyWeight * (energyFrameMeanPower[index] - energyPowerSpectrum[index]);
+        }
+
+        energyAccumulatedActiveSeconds = nextAccumulatedSeconds;
     }
 
     secondsSinceLastFramePublish += frameAdvanceSeconds;
