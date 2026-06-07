@@ -157,6 +157,15 @@ private:
         bool canUseVeryHigh = false;
     };
 
+    struct FrequencyDependentBlendWeights
+    {
+        float midBassBlend = 0.0f;
+        float mainBlend = 0.0f;
+        float highBlend = 0.0f;
+        float veryHighBlend = 0.0f;
+        float lowBassTailReleaseBlend = 0.0f;
+    };
+
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
@@ -191,6 +200,8 @@ private:
     float getFrequencyDependentMainBlendForFrequency (float frequencyHz) const noexcept;
     float getFrequencyDependentHighBlendForFrequency (float frequencyHz) const noexcept;
     float getFrequencyDependentVeryHighBlendForFrequency (
+        float frequencyHz) const noexcept;
+    FrequencyDependentBlendWeights getFrequencyDependentBlendWeightsForFrequency (
         float frequencyHz) const noexcept;
     FrequencyDependentLowCompositeResult getFrequencyDependentLowCompositeForDisplayBin (
         size_t displayBinIndex,

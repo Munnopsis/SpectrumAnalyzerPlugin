@@ -982,6 +982,33 @@ float AnalyzerEngine::getFrequencyDependentVeryHighBlendForFrequency (
                                     frequencyDependentVeryHighOnlyMinHz);
 }
 
+AnalyzerEngine::FrequencyDependentBlendWeights
+AnalyzerEngine::getFrequencyDependentBlendWeightsForFrequency (
+    float frequencyHz) const noexcept
+{
+    FrequencyDependentBlendWeights result;
+
+    if (! std::isfinite (frequencyHz) || frequencyHz <= 0.0f)
+        return result;
+
+    result.midBassBlend =
+        getFrequencyDependentMidBassBlendForFrequency (frequencyHz);
+
+    result.mainBlend =
+        getFrequencyDependentMainBlendForFrequency (frequencyHz);
+
+    result.highBlend =
+        getFrequencyDependentHighBlendForFrequency (frequencyHz);
+
+    result.veryHighBlend =
+        getFrequencyDependentVeryHighBlendForFrequency (frequencyHz);
+
+    result.lowBassTailReleaseBlend =
+        juce::jlimit (0.0f, 1.0f, 1.0f - result.mainBlend);
+
+    return result;
+}
+
 AnalyzerEngine::FrequencyDependentLowCompositeResult
 AnalyzerEngine::getFrequencyDependentLowCompositeForDisplayBin (
     size_t displayBinIndex,
@@ -990,6 +1017,9 @@ AnalyzerEngine::getFrequencyDependentLowCompositeForDisplayBin (
     const FrequencyDependentSourceAvailability& sourceAvailability) const
 {
     FrequencyDependentLowCompositeResult result;
+
+    const auto blendWeights =
+        getFrequencyDependentBlendWeightsForFrequency (centerFrequencyHz);
 
     if (sourceAvailability.canUseBass
         && frequencyDependentBassPath.displayBinFftRanges.size() > displayBinIndex)
@@ -1017,26 +1047,19 @@ AnalyzerEngine::getFrequencyDependentLowCompositeForDisplayBin (
         {
             if (centerFrequencyHz <= frequencyDependentMainOnlyMinHz)
             {
-                const auto transientReferenceMainBlend =
-                    getFrequencyDependentMainBlendForFrequency (centerFrequencyHz);
-
                 result.transientReferenceStats =
                     blendDisplayBinPowerStats (midBassBinPowerStats,
                                                mainStats,
-                                               transientReferenceMainBlend);
+                                               blendWeights.mainBlend);
                 result.hasTransientReferenceStats = true;
             }
 
             if (result.hasLowCompositeStats)
             {
-                const auto midBassBlend =
-                    getFrequencyDependentMidBassBlendForFrequency (
-                        centerFrequencyHz);
-
                 result.lowCompositeStats =
                     blendDisplayBinPowerStats (result.lowCompositeStats,
                                                midBassBinPowerStats,
-                                               midBassBlend);
+                                               blendWeights.midBassBlend);
             }
             else
             {
@@ -1061,13 +1084,13 @@ AnalyzerEngine::applyFrequencyDependentHighBlendForDisplayBin (
 
     auto highCompositeStats = baseStats;
 
+    const auto blendWeights =
+        getFrequencyDependentBlendWeightsForFrequency (centerFrequencyHz);
+
     if (sourceAvailability.canUseHigh
         && frequencyDependentHighPath.displayBinFftRanges.size() > displayBinIndex)
     {
-        const auto highBlend =
-            getFrequencyDependentHighBlendForFrequency (centerFrequencyHz);
-
-        if (highBlend > 0.0f)
+        if (blendWeights.highBlend > 0.0f)
         {
             const auto highBinPowerStats =
                 getFrequencyDependentSourceStatsForDisplayBin (
@@ -1078,17 +1101,14 @@ AnalyzerEngine::applyFrequencyDependentHighBlendForDisplayBin (
             highCompositeStats =
                 blendDisplayBinPowerStats (highCompositeStats,
                                            highBinPowerStats,
-                                           highBlend);
+                                           blendWeights.highBlend);
         }
     }
 
     if (sourceAvailability.canUseVeryHigh
         && frequencyDependentVeryHighPath.displayBinFftRanges.size() > displayBinIndex)
     {
-        const auto veryHighBlend =
-            getFrequencyDependentVeryHighBlendForFrequency (centerFrequencyHz);
-
-        if (veryHighBlend > 0.0f)
+        if (blendWeights.veryHighBlend > 0.0f)
         {
             const auto veryHighBinPowerStats =
                 getFrequencyDependentSourceStatsForDisplayBin (
@@ -1099,7 +1119,7 @@ AnalyzerEngine::applyFrequencyDependentHighBlendForDisplayBin (
             highCompositeStats =
                 blendDisplayBinPowerStats (highCompositeStats,
                                            veryHighBinPowerStats,
-                                           veryHighBlend);
+                                           blendWeights.veryHighBlend);
         }
     }
 
@@ -1144,6 +1164,9 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
 
     if (result.hasCenterFrequency)
     {
+        const auto blendWeights =
+            getFrequencyDependentBlendWeightsForFrequency (result.centerFrequencyHz);
+
         const auto lowCompositeResult =
             getFrequencyDependentLowCompositeForDisplayBin (
                 index,
@@ -1160,14 +1183,10 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
 
         if (lowCompositeResult.hasLowCompositeStats)
         {
-            const auto mainBlend =
-                getFrequencyDependentMainBlendForFrequency (
-                    result.centerFrequencyHz);
-
             result.compositeStats =
                 blendDisplayBinPowerStats (lowCompositeResult.lowCompositeStats,
                                            result.mainStats,
-                                           mainBlend);
+                                           blendWeights.mainBlend);
         }
 
         result.compositeStats =
@@ -1271,13 +1290,8 @@ AnalyzerEngine::applyFrequencyDependentLiveAssistForDisplayBin (
 
     const auto getLowBassTailReleaseBlend = [this] (float frequencyHz) noexcept
     {
-        if (! std::isfinite (frequencyHz) || frequencyHz <= 0.0f)
-            return 0.0f;
-
-        return juce::jlimit (
-            0.0f,
-            1.0f,
-            1.0f - getFrequencyDependentMainBlendForFrequency (frequencyHz));
+        return getFrequencyDependentBlendWeightsForFrequency (
+            frequencyHz).lowBassTailReleaseBlend;
     };
 
     if (! hasCenterFrequency
@@ -1730,8 +1744,8 @@ void AnalyzerEngine::processOneFftBlock()
                 && binStats.hasCenterFrequency)
             {
                 veryHighReleaseBlend =
-                    getFrequencyDependentVeryHighBlendForFrequency (
-                        binStats.centerFrequencyHz);
+                    getFrequencyDependentBlendWeightsForFrequency (
+                        binStats.centerFrequencyHz).veryHighBlend;
 
                 if (veryHighReleaseBlend <= 0.0f)
                     veryHighReleaseBlend = 0.0f;
