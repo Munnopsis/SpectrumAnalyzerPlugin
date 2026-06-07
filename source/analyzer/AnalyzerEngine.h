@@ -149,6 +149,14 @@ private:
         int fftSize = 0;
     };
 
+    struct FrequencyDependentSourceAvailability
+    {
+        bool canUseBass = false;
+        bool canUseMidBass = false;
+        bool canUseHigh = false;
+        bool canUseVeryHigh = false;
+    };
+
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
@@ -156,6 +164,8 @@ private:
         getFrequencyDependentSourceDescriptors() noexcept;
     bool canUseFrequencyDependentSource (const FrequencyDependentFftSource& source,
         int fftSize) const noexcept;
+    FrequencyDependentSourceAvailability
+        getFrequencyDependentSourceAvailability() const noexcept;
 
     DisplayBinPowerStats getFrequencyDependentSourceStatsForDisplayBin (
         const FrequencyDependentFftSource& source,
@@ -186,21 +196,16 @@ private:
         size_t displayBinIndex,
         float centerFrequencyHz,
         const DisplayBinPowerStats& mainStats,
-        bool canUseFrequencyDependentBassPath,
-        bool canUseFrequencyDependentMidBassPath) const;
+        const FrequencyDependentSourceAvailability& sourceAvailability) const;
     DisplayBinPowerStats applyFrequencyDependentHighBlendForDisplayBin (
         size_t displayBinIndex,
         float centerFrequencyHz,
         const DisplayBinPowerStats& baseStats,
-        bool canUseFrequencyDependentHighPath,
-        bool canUseFrequencyDependentVeryHighPath) const;
+        const FrequencyDependentSourceAvailability& sourceAvailability) const;
     FrequencyDependentBinStats getFrequencyDependentBinStatsForDisplayBin (
         int displayBinIndex,
         int fftSizeForBlock,
-        bool canUseFrequencyDependentBassPath,
-        bool canUseFrequencyDependentMidBassPath,
-        bool canUseFrequencyDependentHighPath,
-        bool canUseFrequencyDependentVeryHighPath) const;
+        const FrequencyDependentSourceAvailability& sourceAvailability) const;
     DisplayBinPowerStats blendDisplayBinPowerStats (const DisplayBinPowerStats& bassStats,
                                                     const DisplayBinPowerStats& mainStats,
                                                     float mainBlend) const noexcept;

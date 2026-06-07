@@ -472,6 +472,33 @@ bool AnalyzerEngine::canUseFrequencyDependentSource (
            && displayBinCenterFrequenciesHz.size() == static_cast<size_t> (displayBinCount);
 }
 
+AnalyzerEngine::FrequencyDependentSourceAvailability
+AnalyzerEngine::getFrequencyDependentSourceAvailability() const noexcept
+{
+    FrequencyDependentSourceAvailability result;
+
+    if (! currentFrequencyDependentResolutionEnabled)
+        return result;
+
+    result.canUseBass =
+        canUseFrequencyDependentSource (frequencyDependentBassPath,
+                                        frequencyDependentBassFftSize);
+
+    result.canUseMidBass =
+        canUseFrequencyDependentSource (frequencyDependentMidBassPath,
+                                        frequencyDependentMidBassFftSize);
+
+    result.canUseHigh =
+        canUseFrequencyDependentSource (frequencyDependentHighPath,
+                                        frequencyDependentHighFftSize);
+
+    result.canUseVeryHigh =
+        canUseFrequencyDependentSource (frequencyDependentVeryHighPath,
+                                        frequencyDependentVeryHighFftSize);
+
+    return result;
+}
+
 AnalyzerEngine::DisplayBinPowerStats
 AnalyzerEngine::getFrequencyDependentSourceStatsForDisplayBin (
     const FrequencyDependentFftSource& source,
@@ -960,12 +987,11 @@ AnalyzerEngine::getFrequencyDependentLowCompositeForDisplayBin (
     size_t displayBinIndex,
     float centerFrequencyHz,
     const DisplayBinPowerStats& mainStats,
-    bool canUseFrequencyDependentBassPath,
-    bool canUseFrequencyDependentMidBassPath) const
+    const FrequencyDependentSourceAvailability& sourceAvailability) const
 {
     FrequencyDependentLowCompositeResult result;
 
-    if (canUseFrequencyDependentBassPath
+    if (sourceAvailability.canUseBass
         && frequencyDependentBassPath.displayBinFftRanges.size() > displayBinIndex)
     {
         result.lowCompositeStats =
@@ -978,7 +1004,7 @@ AnalyzerEngine::getFrequencyDependentLowCompositeForDisplayBin (
             result.lowCompositeStats.numBinsUsed > 0;
     }
 
-    if (canUseFrequencyDependentMidBassPath
+    if (sourceAvailability.canUseMidBass
         && frequencyDependentMidBassPath.displayBinFftRanges.size() > displayBinIndex)
     {
         const auto midBassBinPowerStats =
@@ -1028,15 +1054,14 @@ AnalyzerEngine::applyFrequencyDependentHighBlendForDisplayBin (
     size_t displayBinIndex,
     float centerFrequencyHz,
     const DisplayBinPowerStats& baseStats,
-    bool canUseFrequencyDependentHighPath,
-    bool canUseFrequencyDependentVeryHighPath) const
+    const FrequencyDependentSourceAvailability& sourceAvailability) const
 {
     if (centerFrequencyHz <= 0.0f)
         return baseStats;
 
     auto highCompositeStats = baseStats;
 
-    if (canUseFrequencyDependentHighPath
+    if (sourceAvailability.canUseHigh
         && frequencyDependentHighPath.displayBinFftRanges.size() > displayBinIndex)
     {
         const auto highBlend =
@@ -1057,7 +1082,7 @@ AnalyzerEngine::applyFrequencyDependentHighBlendForDisplayBin (
         }
     }
 
-    if (canUseFrequencyDependentVeryHighPath
+    if (sourceAvailability.canUseVeryHigh
         && frequencyDependentVeryHighPath.displayBinFftRanges.size() > displayBinIndex)
     {
         const auto veryHighBlend =
@@ -1085,10 +1110,7 @@ AnalyzerEngine::FrequencyDependentBinStats
 AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
     int displayBinIndex,
     int fftSizeForBlock,
-    bool canUseFrequencyDependentBassPath,
-    bool canUseFrequencyDependentMidBassPath,
-    bool canUseFrequencyDependentHighPath,
-    bool canUseFrequencyDependentVeryHighPath) const
+    const FrequencyDependentSourceAvailability& sourceAvailability) const
 {
     FrequencyDependentBinStats result;
 
@@ -1127,8 +1149,7 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
                 index,
                 result.centerFrequencyHz,
                 result.mainStats,
-                canUseFrequencyDependentBassPath,
-                canUseFrequencyDependentMidBassPath);
+                sourceAvailability);
 
         if (lowCompositeResult.hasTransientReferenceStats)
         {
@@ -1154,8 +1175,7 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
                 index,
                 result.centerFrequencyHz,
                 result.compositeStats,
-                canUseFrequencyDependentHighPath,
-                canUseFrequencyDependentVeryHighPath);
+                sourceAvailability);
     }
 
     return result;
@@ -1667,25 +1687,8 @@ void AnalyzerEngine::processOneFftBlock()
             frequencyDependentTransientAssistReleaseSeconds);
 
     auto energyFramePeakPower = 0.0f;
-    const auto canUseFrequencyDependentBassPath =
-        currentFrequencyDependentResolutionEnabled
-        && canUseFrequencyDependentSource (frequencyDependentBassPath,
-                                           frequencyDependentBassFftSize);
-
-    const auto canUseFrequencyDependentMidBassPath =
-        currentFrequencyDependentResolutionEnabled
-        && canUseFrequencyDependentSource (frequencyDependentMidBassPath,
-                                           frequencyDependentMidBassFftSize);
-
-    const auto canUseFrequencyDependentHighPath =
-        currentFrequencyDependentResolutionEnabled
-        && canUseFrequencyDependentSource (frequencyDependentHighPath,
-                                           frequencyDependentHighFftSize);
-
-    const auto canUseFrequencyDependentVeryHighPath =
-        currentFrequencyDependentResolutionEnabled
-        && canUseFrequencyDependentSource (frequencyDependentVeryHighPath,
-                                           frequencyDependentVeryHighFftSize);
+    const auto frequencyDependentSourceAvailability =
+        getFrequencyDependentSourceAvailability();
 
     for (int i = 0; i < displayBinCount; ++i)
     {
@@ -1693,10 +1696,7 @@ void AnalyzerEngine::processOneFftBlock()
         const auto binStats = getFrequencyDependentBinStatsForDisplayBin (
             i,
             fftSizeForBlock,
-            canUseFrequencyDependentBassPath,
-            canUseFrequencyDependentMidBassPath,
-            canUseFrequencyDependentHighPath,
-            canUseFrequencyDependentVeryHighPath);
+            frequencyDependentSourceAvailability);
 
         const auto& transientReferenceBinPowerStats =
             binStats.hasTransientReferenceStats
@@ -1726,7 +1726,7 @@ void AnalyzerEngine::processOneFftBlock()
             liveVisualBinPowerStats = assistResult.liveVisualStats;
             lowBassTailReleaseBlend = assistResult.lowBassTailReleaseBlend;
 
-            if (canUseFrequencyDependentVeryHighPath
+            if (frequencyDependentSourceAvailability.canUseVeryHigh
                 && binStats.hasCenterFrequency)
             {
                 veryHighReleaseBlend =
