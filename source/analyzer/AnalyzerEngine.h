@@ -104,6 +104,20 @@ private:
         bool hasValidFftData = false;
     };
 
+    struct FrequencyDependentHighPath
+    {
+        std::unique_ptr<juce::dsp::FFT> fft;
+        std::unique_ptr<juce::dsp::WindowingFunction<float>> window;
+        std::vector<float> timeDomainBlock;
+        std::vector<float> fftData;
+        std::vector<DisplayBinFftRange> displayBinFftRanges;
+        float rangeSampleRate = 0.0f;
+        float rangeMinFrequencyHz = 0.0f;
+        float rangeMaxFrequencyHz = 0.0f;
+        int samplesCollected = 0;
+        bool hasValidFftData = false;
+    };
+
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
@@ -115,6 +129,12 @@ private:
     void processFrequencyDependentBassPathIfReady();
     void updateFrequencyDependentBassBinFftRangesIfNeeded();
     float getFrequencyDependentMainBlendForFrequency (float frequencyHz) const noexcept;
+    void configureFrequencyDependentHighPath();
+    void resetFrequencyDependentHighPath();
+    void appendSamplesToFrequencyDependentHighPath (const float* samples, int numSamples);
+    void processFrequencyDependentHighPathIfReady();
+    void updateFrequencyDependentHighBinFftRangesIfNeeded();
+    float getFrequencyDependentHighBlendForFrequency (float frequencyHz) const noexcept;
     DisplayBinPowerStats blendDisplayBinPowerStats (const DisplayBinPowerStats& bassStats,
                                                     const DisplayBinPowerStats& mainStats,
                                                     float mainBlend) const noexcept;
@@ -144,9 +164,13 @@ private:
     static constexpr int frequencyDependentMainFftSize = 1 << frequencyDependentMainFftOrder;
     static constexpr int frequencyDependentBassFftOrder = 15;
     static constexpr int frequencyDependentBassFftSize = 1 << frequencyDependentBassFftOrder;
+    static constexpr int frequencyDependentHighFftOrder = 12;
+    static constexpr int frequencyDependentHighFftSize = 1 << frequencyDependentHighFftOrder;
     static constexpr float defaultPeakHoldDecayDbPerSecond = 8.0f;
     static constexpr float frequencyDependentBassOnlyMaxHz = 160.0f;
     static constexpr float frequencyDependentMainOnlyMinHz = 320.0f;
+    static constexpr float frequencyDependentMainOnlyMaxHz = 3000.0f;
+    static constexpr float frequencyDependentHighOnlyMinHz = 6000.0f;
 
     static constexpr float liveAttackTimeSeconds = 0.100f;
     static constexpr float liveReleaseTimeSeconds = 0.500f;
@@ -205,6 +229,7 @@ private:
     float displayBinRangeMaxFrequencyHz = 0.0f;
     int displayBinRangeFftSize = 0;
     FrequencyDependentBassPath frequencyDependentBassPath;
+    FrequencyDependentHighPath frequencyDependentHighPath;
 
     bool overlapBufferPrimed = false;
     float secondsSinceLastFramePublish = 0.0f;

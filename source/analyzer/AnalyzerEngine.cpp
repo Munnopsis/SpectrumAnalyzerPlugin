@@ -186,7 +186,10 @@ void AnalyzerEngine::reset()
     resetOverlapBuffer();
 
     if (currentFrequencyDependentResolutionEnabled)
+    {
         resetFrequencyDependentBassPath();
+        resetFrequencyDependentHighPath();
+    }
 
     secondsSinceLastFramePublish = 0.0f;
 
@@ -349,9 +352,15 @@ void AnalyzerEngine::configureFft (int newFftOrder)
     overlapBufferPrimed = false;
 
     if (currentFrequencyDependentResolutionEnabled)
+    {
         configureFrequencyDependentBassPath();
+        configureFrequencyDependentHighPath();
+    }
     else
+    {
         frequencyDependentBassPath.hasValidFftData = false;
+        frequencyDependentHighPath.hasValidFftData = false;
+    }
 }
 
 void AnalyzerEngine::resetOverlapBuffer()
@@ -407,6 +416,53 @@ void AnalyzerEngine::resetFrequencyDependentBassPath()
     frequencyDependentBassPath.rangeMaxFrequencyHz = 0.0f;
     frequencyDependentBassPath.samplesCollected = 0;
     frequencyDependentBassPath.hasValidFftData = false;
+}
+
+void AnalyzerEngine::configureFrequencyDependentHighPath()
+{
+    frequencyDependentHighPath.fft =
+        std::make_unique<juce::dsp::FFT> (frequencyDependentHighFftOrder);
+
+    frequencyDependentHighPath.window =
+        std::make_unique<juce::dsp::WindowingFunction<float>> (
+            static_cast<size_t> (frequencyDependentHighFftSize),
+            juce::dsp::WindowingFunction<float>::hann,
+            false);
+
+    frequencyDependentHighPath.timeDomainBlock.assign (
+        static_cast<size_t> (frequencyDependentHighFftSize),
+        0.0f);
+
+    frequencyDependentHighPath.fftData.assign (
+        static_cast<size_t> (frequencyDependentHighFftSize * 2),
+        0.0f);
+
+    frequencyDependentHighPath.displayBinFftRanges.assign (
+        static_cast<size_t> (displayBinCount),
+        {});
+
+    frequencyDependentHighPath.rangeSampleRate = 0.0f;
+    frequencyDependentHighPath.rangeMinFrequencyHz = 0.0f;
+    frequencyDependentHighPath.rangeMaxFrequencyHz = 0.0f;
+    frequencyDependentHighPath.samplesCollected = 0;
+    frequencyDependentHighPath.hasValidFftData = false;
+}
+
+void AnalyzerEngine::resetFrequencyDependentHighPath()
+{
+    std::fill (frequencyDependentHighPath.timeDomainBlock.begin(),
+               frequencyDependentHighPath.timeDomainBlock.end(),
+               0.0f);
+
+    std::fill (frequencyDependentHighPath.fftData.begin(),
+               frequencyDependentHighPath.fftData.end(),
+               0.0f);
+
+    frequencyDependentHighPath.rangeSampleRate = 0.0f;
+    frequencyDependentHighPath.rangeMinFrequencyHz = 0.0f;
+    frequencyDependentHighPath.rangeMaxFrequencyHz = 0.0f;
+    frequencyDependentHighPath.samplesCollected = 0;
+    frequencyDependentHighPath.hasValidFftData = false;
 }
 
 void AnalyzerEngine::requestDisplayAccumulationWarmStartForRangeChange() noexcept
@@ -627,6 +683,83 @@ void AnalyzerEngine::processFrequencyDependentBassPathIfReady()
     frequencyDependentBassPath.hasValidFftData = true;
 }
 
+void AnalyzerEngine::appendSamplesToFrequencyDependentHighPath (
+    const float* samples,
+    int numSamples)
+{
+    if (samples == nullptr || numSamples <= 0)
+        return;
+
+    if (frequencyDependentHighPath.timeDomainBlock.size()
+        != static_cast<size_t> (frequencyDependentHighFftSize))
+    {
+        return;
+    }
+
+    if (numSamples >= frequencyDependentHighFftSize)
+    {
+        std::copy (samples + (numSamples - frequencyDependentHighFftSize),
+                   samples + numSamples,
+                   frequencyDependentHighPath.timeDomainBlock.begin());
+
+        frequencyDependentHighPath.samplesCollected = frequencyDependentHighFftSize;
+        frequencyDependentHighPath.hasValidFftData = false;
+        return;
+    }
+
+    std::copy (frequencyDependentHighPath.timeDomainBlock.begin() + numSamples,
+               frequencyDependentHighPath.timeDomainBlock.end(),
+               frequencyDependentHighPath.timeDomainBlock.begin());
+
+    std::copy (samples,
+               samples + numSamples,
+               frequencyDependentHighPath.timeDomainBlock.begin()
+                   + (frequencyDependentHighFftSize - numSamples));
+
+    frequencyDependentHighPath.samplesCollected =
+        juce::jmin (frequencyDependentHighFftSize,
+                    frequencyDependentHighPath.samplesCollected + numSamples);
+
+    frequencyDependentHighPath.hasValidFftData = false;
+}
+
+void AnalyzerEngine::processFrequencyDependentHighPathIfReady()
+{
+    if (frequencyDependentHighPath.samplesCollected < frequencyDependentHighFftSize)
+    {
+        frequencyDependentHighPath.hasValidFftData = false;
+        return;
+    }
+
+    if (frequencyDependentHighPath.fft == nullptr
+        || frequencyDependentHighPath.window == nullptr
+        || frequencyDependentHighPath.timeDomainBlock.size()
+            < static_cast<size_t> (frequencyDependentHighFftSize)
+        || frequencyDependentHighPath.fftData.size()
+            < static_cast<size_t> (frequencyDependentHighFftSize * 2))
+    {
+        frequencyDependentHighPath.hasValidFftData = false;
+        return;
+    }
+
+    std::fill (frequencyDependentHighPath.fftData.begin(),
+               frequencyDependentHighPath.fftData.end(),
+               0.0f);
+
+    std::copy (frequencyDependentHighPath.timeDomainBlock.begin(),
+               frequencyDependentHighPath.timeDomainBlock.end(),
+               frequencyDependentHighPath.fftData.begin());
+
+    frequencyDependentHighPath.window->multiplyWithWindowingTable (
+        frequencyDependentHighPath.fftData.data(),
+        static_cast<size_t> (frequencyDependentHighFftSize));
+
+    frequencyDependentHighPath.fft->performFrequencyOnlyForwardTransform (
+        frequencyDependentHighPath.fftData.data());
+
+    frequencyDependentHighPath.hasValidFftData = true;
+}
+
 void AnalyzerEngine::updateFrequencyDependentBassBinFftRangesIfNeeded()
 {
     const auto sampleRateForRanges = static_cast<float> (currentSampleRate);
@@ -725,6 +858,104 @@ void AnalyzerEngine::updateFrequencyDependentBassBinFftRangesIfNeeded()
     frequencyDependentBassPath.rangeMaxFrequencyHz = clampedMaximum;
 }
 
+void AnalyzerEngine::updateFrequencyDependentHighBinFftRangesIfNeeded()
+{
+    const auto sampleRateForRanges = static_cast<float> (currentSampleRate);
+
+    if (frequencyDependentHighFftSize <= 0 || sampleRateForRanges <= 0.0f)
+        return;
+
+    const auto nyquistLimitedMaximum =
+        AnalyzerFrequencyRange::getMaximumHzForSampleRate (sampleRateForRanges);
+
+    if (nyquistLimitedMaximum <= AnalyzerFrequencyRange::minimumHz)
+        return;
+
+    const auto clampedMinimum =
+        juce::jlimit (AnalyzerFrequencyRange::minimumHz,
+                      nyquistLimitedMaximum - 1.0f,
+                      currentDisplayMinFrequencyHz);
+
+    const auto clampedMaximum =
+        juce::jlimit (clampedMinimum + 1.0f,
+                      nyquistLimitedMaximum,
+                      currentDisplayMaxFrequencyHz);
+
+    if (frequencyDependentHighPath.displayBinFftRanges.size()
+            == static_cast<size_t> (displayBinCount)
+        && std::abs (frequencyDependentHighPath.rangeSampleRate - sampleRateForRanges) < 0.001f
+        && std::abs (frequencyDependentHighPath.rangeMinFrequencyHz - clampedMinimum) < 0.001f
+        && std::abs (frequencyDependentHighPath.rangeMaxFrequencyHz - clampedMaximum) < 0.001f)
+    {
+        return;
+    }
+
+    frequencyDependentHighPath.displayBinFftRanges.assign (
+        static_cast<size_t> (displayBinCount),
+        {});
+
+    const auto maxAvailableBin = (frequencyDependentHighFftSize / 2) - 1;
+
+    if (maxAvailableBin < 1)
+    {
+        frequencyDependentHighPath.rangeSampleRate = sampleRateForRanges;
+        frequencyDependentHighPath.rangeMinFrequencyHz = clampedMinimum;
+        frequencyDependentHighPath.rangeMaxFrequencyHz = clampedMaximum;
+        return;
+    }
+
+    const auto displayDenominator = static_cast<float> (displayBinCount - 1);
+    const auto fftBinsPerHz =
+        static_cast<float> (frequencyDependentHighFftSize) / sampleRateForRanges;
+
+    for (int i = 0; i < displayBinCount; ++i)
+    {
+        const auto leftNormalised =
+            (static_cast<float> (i) - 0.5f) / displayDenominator;
+
+        const auto rightNormalised =
+            (static_cast<float> (i) + 0.5f) / displayDenominator;
+
+        const auto leftFrequency =
+            logFrequencyAtNormalisedPosition (leftNormalised, clampedMinimum, clampedMaximum);
+
+        const auto rightFrequency =
+            logFrequencyAtNormalisedPosition (rightNormalised, clampedMinimum, clampedMaximum);
+
+        const auto leftBin =
+            juce::jlimit (0.5f,
+                          static_cast<float> (maxAvailableBin) + 0.5f,
+                          leftFrequency * fftBinsPerHz);
+
+        const auto rightBin =
+            juce::jlimit (leftBin,
+                          static_cast<float> (maxAvailableBin) + 0.5f,
+                          rightFrequency * fftBinsPerHz);
+
+        const auto firstBin =
+            juce::jlimit (1,
+                          maxAvailableBin,
+                          static_cast<int> (std::floor (leftBin - 0.5f)));
+
+        const auto lastBin =
+            juce::jlimit (1,
+                          maxAvailableBin,
+                          static_cast<int> (std::ceil (rightBin + 0.5f)));
+
+        auto& range =
+            frequencyDependentHighPath.displayBinFftRanges[static_cast<size_t> (i)];
+
+        range.leftBin = leftBin;
+        range.rightBin = rightBin;
+        range.firstBin = firstBin;
+        range.lastBin = juce::jmax (firstBin, lastBin);
+    }
+
+    frequencyDependentHighPath.rangeSampleRate = sampleRateForRanges;
+    frequencyDependentHighPath.rangeMinFrequencyHz = clampedMinimum;
+    frequencyDependentHighPath.rangeMaxFrequencyHz = clampedMaximum;
+}
+
 float AnalyzerEngine::getFrequencyDependentMainBlendForFrequency (
     float frequencyHz) const noexcept
 {
@@ -739,6 +970,22 @@ float AnalyzerEngine::getFrequencyDependentMainBlendForFrequency (
         1.0f,
         (frequencyHz - frequencyDependentBassOnlyMaxHz)
             / (frequencyDependentMainOnlyMinHz - frequencyDependentBassOnlyMaxHz));
+}
+
+float AnalyzerEngine::getFrequencyDependentHighBlendForFrequency (
+    float frequencyHz) const noexcept
+{
+    if (frequencyHz <= frequencyDependentMainOnlyMaxHz)
+        return 0.0f;
+
+    if (frequencyHz >= frequencyDependentHighOnlyMinHz)
+        return 1.0f;
+
+    return juce::jlimit (
+        0.0f,
+        1.0f,
+        (frequencyHz - frequencyDependentMainOnlyMaxHz)
+            / (frequencyDependentHighOnlyMinHz - frequencyDependentMainOnlyMaxHz));
 }
 
 AnalyzerEngine::DisplayBinPowerStats AnalyzerEngine::blendDisplayBinPowerStats (
@@ -989,7 +1236,9 @@ void AnalyzerEngine::processOneFftBlock()
     if (currentFrequencyDependentResolutionEnabled)
     {
         appendSamplesToFrequencyDependentBassPath (newSamples, numNewSamples);
+        appendSamplesToFrequencyDependentHighPath (newSamples, numNewSamples);
         processFrequencyDependentBassPathIfReady();
+        processFrequencyDependentHighPathIfReady();
     }
 
     std::fill (fftData.begin(), fftData.end(), 0.0f);
@@ -1016,7 +1265,10 @@ void AnalyzerEngine::processOneFftBlock()
     updateDisplayBinFftRangesIfNeeded();
 
     if (currentFrequencyDependentResolutionEnabled)
+    {
         updateFrequencyDependentBassBinFftRangesIfNeeded();
+        updateFrequencyDependentHighBinFftRangesIfNeeded();
+    }
 
     if (displayBinFftRanges.size() != static_cast<size_t> (displayBinCount))
         return;
@@ -1061,6 +1313,19 @@ void AnalyzerEngine::processOneFftBlock()
             > frequencyDependentBassPath.rangeMinFrequencyHz
         && displayBinCenterFrequenciesHz.size() == static_cast<size_t> (displayBinCount);
 
+    const auto canUseFrequencyDependentHighPath =
+        currentFrequencyDependentResolutionEnabled
+        && frequencyDependentHighPath.hasValidFftData
+        && frequencyDependentHighPath.fftData.size()
+            >= static_cast<size_t> (frequencyDependentHighFftSize * 2)
+        && frequencyDependentHighPath.displayBinFftRanges.size()
+            == static_cast<size_t> (displayBinCount)
+        && frequencyDependentHighPath.rangeSampleRate > 0.0f
+        && frequencyDependentHighPath.rangeMinFrequencyHz > 0.0f
+        && frequencyDependentHighPath.rangeMaxFrequencyHz
+            > frequencyDependentHighPath.rangeMinFrequencyHz
+        && displayBinCenterFrequenciesHz.size() == static_cast<size_t> (displayBinCount);
+
     for (int i = 0; i < displayBinCount; ++i)
     {
         const auto& displayBinRange =
@@ -1101,6 +1366,36 @@ void AnalyzerEngine::processOneFftBlock()
                     bassBinPowerStats,
                     mainBinPowerStats,
                     mainBlend);
+            }
+        }
+
+        if (canUseFrequencyDependentHighPath)
+        {
+            const auto centerFrequency = displayBinCenterFrequenciesHz[index];
+
+            if (centerFrequency > 0.0f)
+            {
+                const auto highBlend =
+                    getFrequencyDependentHighBlendForFrequency (centerFrequency);
+
+                if (highBlend > 0.0f)
+                {
+                    const auto& highDisplayBinRange =
+                        frequencyDependentHighPath.displayBinFftRanges[index];
+
+                    const auto highBinPowerStats =
+                        getFftBinPowerStatsForRange (frequencyDependentHighPath.fftData,
+                                                     frequencyDependentHighFftSize,
+                                                     highDisplayBinRange.firstBin,
+                                                     highDisplayBinRange.lastBin,
+                                                     highDisplayBinRange.leftBin,
+                                                     highDisplayBinRange.rightBin);
+
+                    binPowerStats = blendDisplayBinPowerStats (
+                        binPowerStats,
+                        highBinPowerStats,
+                        highBlend);
+                }
             }
         }
 
