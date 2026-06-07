@@ -8,12 +8,14 @@ enum class AnalyzerFftSize
     size2048,
     size4096,
     size8192,
+    size16384,
+    size32768,
     count
 };
 
 inline juce::StringArray getAnalyzerFftSizeChoices()
 {
-    return { "1024", "2048", "4096", "8192" };
+    return { "1024", "2048", "4096", "8192", "16384", "32768" };
 }
 
 inline int analyzerFftOrderFromIndex (int index) noexcept
@@ -24,6 +26,8 @@ inline int analyzerFftOrderFromIndex (int index) noexcept
         case static_cast<int> (AnalyzerFftSize::size2048): return 11;
         case static_cast<int> (AnalyzerFftSize::size4096): return 12;
         case static_cast<int> (AnalyzerFftSize::size8192): return 13;
+        case static_cast<int> (AnalyzerFftSize::size16384): return 14;
+        case static_cast<int> (AnalyzerFftSize::size32768): return 15;
         default: return 11;
     }
 }

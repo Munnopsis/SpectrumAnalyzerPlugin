@@ -100,7 +100,7 @@ private:
 
     static constexpr int minFftOrder = 10;
     static constexpr int defaultFftOrder = 11;
-    static constexpr int maxFftOrder = 13;
+    static constexpr int maxFftOrder = 15;
 
     static constexpr int displayBinCount = 256;
     static constexpr int fftOverlapFactor = 4; // 4 = 75% overlap, hop size = fftSize / 4
