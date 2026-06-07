@@ -73,6 +73,8 @@ private:
 
     struct DisplayBinFftRange
     {
+        float leftBin = 1.0f;
+        float rightBin = 1.0f;
         int firstBin = 1;
         int lastBin = 1;
     };

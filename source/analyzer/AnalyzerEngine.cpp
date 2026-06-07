@@ -47,7 +47,9 @@ namespace
         const std::vector<float>& frequencyOnlyFftData,
         int fftSize,
         int firstBin,
-        int lastBin) noexcept
+        int lastBin,
+        float leftBin,
+        float rightBin) noexcept
     {
         DisplayBinPowerStats result;
 
@@ -59,32 +61,57 @@ namespace
         if (maxAvailableBin < 1)
             return result;
 
+        const auto clampedLeftBin =
+            juce::jlimit (0.5f,
+                          static_cast<float> (maxAvailableBin) + 0.5f,
+                          leftBin);
+
+        const auto clampedRightBin =
+            juce::jlimit (clampedLeftBin,
+                          static_cast<float> (maxAvailableBin) + 0.5f,
+                          rightBin);
+
+        if (clampedRightBin <= clampedLeftBin)
+            return result;
+
         const auto clampedFirstBin = juce::jlimit (1, maxAvailableBin, firstBin);
         const auto clampedLastBin = juce::jlimit (1, maxAvailableBin, lastBin);
 
         if (clampedLastBin < clampedFirstBin)
             return result;
 
-        auto powerSum = 0.0f;
+        auto weightedPowerSum = 0.0f;
+        auto weightSum = 0.0f;
         auto peakPower = 0.0f;
         auto numBinsUsed = 0;
 
         for (auto bin = clampedFirstBin; bin <= clampedLastBin; ++bin)
         {
+            const auto binLeft = static_cast<float> (bin) - 0.5f;
+            const auto binRight = static_cast<float> (bin) + 0.5f;
+
+            const auto overlap =
+                juce::jmin (binRight, clampedRightBin)
+                - juce::jmax (binLeft, clampedLeftBin);
+
+            if (overlap <= 0.0f)
+                continue;
+
             const auto amplitude =
                 getCalibratedFftBinAmplitude (frequencyOnlyFftData, bin, fftSize);
 
             const auto power = amplitude * amplitude;
 
-            powerSum += power;
+            weightedPowerSum += power * overlap;
+            weightSum += overlap;
             peakPower = juce::jmax (peakPower, power);
             ++numBinsUsed;
         }
 
-        if (numBinsUsed <= 0)
+        if (numBinsUsed <= 0 || weightSum <= 0.0f)
             return result;
 
-        result.meanPower = powerSum / static_cast<float> (numBinsUsed);
+        result.meanPower = weightedPowerSum / weightSum;
         result.peakPower = peakPower;
         result.numBinsUsed = numBinsUsed;
 
@@ -377,6 +404,8 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
     }
 
     const auto displayDenominator = static_cast<float> (displayBinCount - 1);
+    const auto fftBinsPerHz =
+        static_cast<float> (fftSizeForRanges) / sampleRateForRanges;
 
     for (int i = 0; i < displayBinCount; ++i)
     {
@@ -392,21 +421,29 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
         const auto rightFrequency =
             logFrequencyAtNormalisedPosition (rightNormalised, minFrequency, maxFrequency);
 
+        const auto leftBin =
+            juce::jlimit (0.5f,
+                          static_cast<float> (maxAvailableBin) + 0.5f,
+                          leftFrequency * fftBinsPerHz);
+
+        const auto rightBin =
+            juce::jlimit (leftBin,
+                          static_cast<float> (maxAvailableBin) + 0.5f,
+                          rightFrequency * fftBinsPerHz);
+
         const auto firstBin =
             juce::jlimit (1,
                           maxAvailableBin,
-                          static_cast<int> (std::floor (leftFrequency
-                                                        * static_cast<float> (fftSizeForRanges)
-                                                        / sampleRateForRanges)));
+                          static_cast<int> (std::floor (leftBin - 0.5f)));
 
         const auto lastBin =
             juce::jlimit (1,
                           maxAvailableBin,
-                          static_cast<int> (std::ceil (rightFrequency
-                                                       * static_cast<float> (fftSizeForRanges)
-                                                       / sampleRateForRanges)));
+                          static_cast<int> (std::ceil (rightBin + 0.5f)));
 
         auto& range = displayBinFftRanges[static_cast<size_t> (i)];
+        range.leftBin = leftBin;
+        range.rightBin = rightBin;
         range.firstBin = firstBin;
         range.lastBin = juce::jmax (firstBin, lastBin);
     }
@@ -652,7 +689,9 @@ void AnalyzerEngine::processOneFftBlock()
             getFftBinPowerStatsForRange (fftData,
                                          fftSizeForBlock,
                                          displayBinRange.firstBin,
-                                         displayBinRange.lastBin);
+                                         displayBinRange.lastBin,
+                                         displayBinRange.leftBin,
+                                         displayBinRange.rightBin);
 
         const auto displayPower =
             getPeakPreservingDisplayPower (binPowerStats);
