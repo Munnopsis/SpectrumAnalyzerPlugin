@@ -71,6 +71,7 @@ public:
     static inline const juce::String showLiveCurveParamId { "showLiveCurve" };
     static inline const juce::String showRmsCurveParamId { "showRmsCurve" };
     static inline const juce::String showPeakHoldCurveParamId { "showPeakHoldCurve" };
+    static inline const juce::String showEnergyCurveParamId { "showEnergyCurve" };
     static inline const juce::String inputModeParamId { "inputMode" };
     static inline const juce::String fftSizeParamId { "fftSize" };
     static inline const juce::String peakHoldDecayParamId { "peakHoldDecay" };
@@ -91,6 +92,11 @@ public:
     bool shouldShowRmsCurve() const noexcept
     {
         return parameters.getRawParameterValue (showRmsCurveParamId)->load() > 0.5f;
+    }
+
+    bool shouldShowEnergyCurve() const noexcept
+    {
+        return parameters.getRawParameterValue (showEnergyCurveParamId)->load() > 0.5f;
     }
 
     bool shouldShowPeakHoldCurve() const noexcept

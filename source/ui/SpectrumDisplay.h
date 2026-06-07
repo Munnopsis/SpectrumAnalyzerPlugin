@@ -43,8 +43,9 @@ public:
     std::function<void (float minimumHz, float maximumHz)> onVisibleFrequencyRangeChanged;
 
     void setCurveVisibility (bool shouldShowLive,
-                         bool shouldShowRms,
-                         bool shouldShowPeakHold);
+                             bool shouldShowRms,
+                             bool shouldShowEnergy,
+                             bool shouldShowPeakHold);
 
     void paint (juce::Graphics& g) override;
     void resized() override;
@@ -159,6 +160,7 @@ private:
 
     bool showLiveCurve = true;
     bool showRmsCurve = true;
+    bool showEnergyCurve = true;
     bool showPeakHoldCurve = true;
     bool hasMouseReadout = false;
     bool isPanningVisibleFrequencyRange = false;

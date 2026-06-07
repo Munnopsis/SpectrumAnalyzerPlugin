@@ -20,6 +20,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (inspectButton);
     addAndMakeVisible (liveButton);
     addAndMakeVisible (rmsButton);
+    addAndMakeVisible (energyButton);
     addAndMakeVisible (peakButton);
     addAndMakeVisible (clearPeakButton);
     addAndMakeVisible (freezeButton);
@@ -34,6 +35,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     inspectButton.setName ("InspectButton");
     liveButton.setName ("LiveButton");
     rmsButton.setName ("RmsButton");
+    energyButton.setName ("EnergyButton");
     peakButton.setName ("PeakButton");
     clearPeakButton.setName ("ClearPeakButton");
     freezeButton.setName ("FreezeButton");
@@ -48,6 +50,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     inspectButton.setWantsKeyboardFocus (true);
     liveButton.setWantsKeyboardFocus (true);
     rmsButton.setWantsKeyboardFocus (true);
+    energyButton.setWantsKeyboardFocus (true);
     peakButton.setWantsKeyboardFocus (true);
     clearPeakButton.setWantsKeyboardFocus (true);
     freezeButton.setWantsKeyboardFocus (true);
@@ -62,6 +65,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     inspectButton.setTooltip ("Open the Melatonin UI inspector");
     liveButton.setTooltip ("Show or hide the live spectrum curve");
     rmsButton.setTooltip ("Show or hide the RMS spectrum curve");
+    energyButton.setTooltip ("Show or hide the Energy spectrum curve");
     peakButton.setTooltip ("Show or hide the peak hold curve");
     clearPeakButton.setTooltip ("Clear the peak hold curve");
     freezeButton.setTooltip ("Freeze the current live spectrum as a reference curve");
@@ -84,6 +88,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     liveButton.setClickingTogglesState (true);
     rmsButton.setClickingTogglesState (true);
+    energyButton.setClickingTogglesState (true);
     peakButton.setClickingTogglesState (true);
     freezeButton.setClickingTogglesState (false);
     tooltipButton.setClickingTogglesState (true);
@@ -166,6 +171,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         PluginProcessor::showRmsCurveParamId,
         rmsButton);
 
+    energyButtonAttachment = std::make_unique<ButtonAttachment> (
+        state,
+        PluginProcessor::showEnergyCurveParamId,
+        energyButton);
+
     peakButtonAttachment = std::make_unique<ButtonAttachment> (
         state,
         PluginProcessor::showPeakHoldCurveParamId,
@@ -174,6 +184,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     spectrumDisplay.setCurveVisibility (
         processorRef.shouldShowLiveCurve(),
         processorRef.shouldShowRmsCurve(),
+        processorRef.shouldShowEnergyCurve(),
         processorRef.shouldShowPeakHoldCurve());
 
     updateFreezeButtonState();
@@ -248,6 +259,9 @@ void PluginEditor::resized()
     rmsButton.setBounds (secondRow.removeFromLeft (64));
     addGap (secondRow, 6);
 
+    energyButton.setBounds (secondRow.removeFromLeft (76));
+    addGap (secondRow, 6);
+
     peakButton.setBounds (secondRow.removeFromLeft (64));
     addGap (secondRow, 8);
 
@@ -272,6 +286,7 @@ void PluginEditor::timerCallback()
     spectrumDisplay.setCurveVisibility (
         processorRef.shouldShowLiveCurve(),
         processorRef.shouldShowRmsCurve(),
+        processorRef.shouldShowEnergyCurve(),
         processorRef.shouldShowPeakHoldCurve());
 
     if (processorRef.copyLatestAnalyzerFrame (analyzerFrame))

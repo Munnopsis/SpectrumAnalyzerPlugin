@@ -47,6 +47,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         "Show Peak Hold Curve",
         true));
 
+    params.push_back (std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { showEnergyCurveParamId, 1 },
+        "Show Energy Curve",
+        true));
+
     params.push_back (std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID { inputModeParamId, 1 },
         "Input Mode",

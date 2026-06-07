@@ -175,10 +175,12 @@ bool SpectrumDisplay::hasFrozenReferenceSpectrum() const noexcept
 
 void SpectrumDisplay::setCurveVisibility (bool shouldShowLive,
                                           bool shouldShowRms,
+                                          bool shouldShowEnergy,
                                           bool shouldShowPeakHold)
 {
     showLiveCurve = shouldShowLive;
     showRmsCurve = shouldShowRms;
+    showEnergyCurve = shouldShowEnergy;
     showPeakHoldCurve = shouldShowPeakHold;
 
     repaint();
@@ -200,7 +202,7 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     {
         drawFrozenReferenceCurve (g, bounds);
 
-        if (! energyDb.empty())
+        if (showEnergyCurve && ! energyDb.empty())
             drawEnergyCurve (g, bounds);
 
         if (showRmsCurve && ! rmsDb.empty())
@@ -495,7 +497,7 @@ juce::String SpectrumDisplay::buildCurveReadoutText (float frequencyHz) const
     if (showRmsCurve && getInterpolatedCurveValueDb (rmsDb, frequencyHz, valueDb))
         values.add (formatCurveValue ("RMS", valueDb));
 
-    if (getInterpolatedCurveValueDb (energyDb, frequencyHz, valueDb))
+    if (showEnergyCurve && getInterpolatedCurveValueDb (energyDb, frequencyHz, valueDb))
         values.add (formatCurveValue ("Energy", valueDb));
 
     if (showPeakHoldCurve && getInterpolatedCurveValueDb (peakHoldDb, frequencyHz, valueDb))
@@ -1042,14 +1044,15 @@ void SpectrumDisplay::drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds
         juce::String label;
         juce::Colour colour;
         bool visible;
+        bool shouldDraw;
     };
 
     const std::array<LegendItem, 5> items {{
-        { "Live", juce::Colour::fromRGB (90, 220, 255), showLiveCurve },
-        { "Energy", juce::Colour::fromRGB (120, 255, 160).withAlpha (0.78f), ! energyDb.empty() },
-        { "RMS", juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f), showRmsCurve },
-        { "Peak", juce::Colour::fromRGB (255, 190, 80).withAlpha (0.9f), showPeakHoldCurve },
-        { "Ref", juce::Colours::white.withAlpha (0.34f), hasFrozenReferenceSpectrum() }
+        { "Live", juce::Colour::fromRGB (90, 220, 255), showLiveCurve, true },
+        { "Energy", juce::Colour::fromRGB (120, 255, 160).withAlpha (0.78f), true, showEnergyCurve && ! energyDb.empty() },
+        { "RMS", juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f), showRmsCurve, true },
+        { "Peak", juce::Colour::fromRGB (255, 190, 80).withAlpha (0.9f), showPeakHoldCurve, true },
+        { "Ref", juce::Colours::white.withAlpha (0.34f), hasFrozenReferenceSpectrum(), true }
     }};
 
     g.setFont (juce::FontOptions (12.0f));
@@ -1058,6 +1061,9 @@ void SpectrumDisplay::drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds
 
     for (const auto& item : items)
     {
+        if (! item.shouldDraw)
+            continue;
+
         const auto itemWidth = 64.0f;
         auto itemArea = juce::Rectangle<float> (x, legendBounds.getY(), itemWidth, legendBounds.getHeight());
 

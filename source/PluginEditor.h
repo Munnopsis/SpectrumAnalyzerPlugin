@@ -75,6 +75,7 @@ private:
     // Buttons / Boxes / ui elements
     juce::TextButton liveButton { "Live" };
     juce::TextButton rmsButton { "RMS" };
+    juce::TextButton energyButton { "Energy" };
     juce::TextButton peakButton { "Peak" };
     juce::TextButton clearPeakButton { "Clear Peak" };
     juce::TextButton freezeButton { "Freeze" };
@@ -89,6 +90,7 @@ private:
     // Attachments
     std::unique_ptr<ButtonAttachment> liveButtonAttachment;
     std::unique_ptr<ButtonAttachment> rmsButtonAttachment;
+    std::unique_ptr<ButtonAttachment> energyButtonAttachment;
     std::unique_ptr<ButtonAttachment> peakButtonAttachment;
     std::unique_ptr<ComboBoxAttachment> inputModeAttachment;
     std::unique_ptr<ComboBoxAttachment> fftSizeAttachment;
