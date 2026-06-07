@@ -90,27 +90,16 @@ private:
         int lastBin = 1;
     };
 
-    struct FrequencyDependentBassPath
+    struct FrequencyDependentFftSource
     {
         std::unique_ptr<juce::dsp::FFT> fft;
         std::unique_ptr<juce::dsp::WindowingFunction<float>> window;
         std::vector<float> timeDomainBlock;
         std::vector<float> fftData;
         std::vector<DisplayBinFftRange> displayBinFftRanges;
-        float rangeSampleRate = 0.0f;
-        float rangeMinFrequencyHz = 0.0f;
-        float rangeMaxFrequencyHz = 0.0f;
-        int samplesCollected = 0;
-        bool hasValidFftData = false;
-    };
-
-    struct FrequencyDependentHighPath
-    {
-        std::unique_ptr<juce::dsp::FFT> fft;
-        std::unique_ptr<juce::dsp::WindowingFunction<float>> window;
-        std::vector<float> timeDomainBlock;
-        std::vector<float> fftData;
-        std::vector<DisplayBinFftRange> displayBinFftRanges;
+        int fftOrder = 0;
+        int fftSize = 0;
+        float nominalWindowSeconds = 0.0f;
         float rangeSampleRate = 0.0f;
         float rangeMinFrequencyHz = 0.0f;
         float rangeMaxFrequencyHz = 0.0f;
@@ -123,6 +112,19 @@ private:
     void updateFftSizeIfNeeded();
     void configureFft (int newFftOrder);
     void resetOverlapBuffer();
+    void configureFrequencyDependentFftSource (FrequencyDependentFftSource& source,
+                                               int fftOrder,
+                                               int fftSize);
+    void resetFrequencyDependentFftSource (FrequencyDependentFftSource& source);
+    void appendSamplesToFrequencyDependentFftSource (FrequencyDependentFftSource& source,
+                                                     const float* samples,
+                                                     int numSamples,
+                                                     int fftSize);
+    void processFrequencyDependentFftSourceIfReady (FrequencyDependentFftSource& source,
+                                                    int fftSize);
+    void updateFrequencyDependentSourceBinFftRangesIfNeeded (
+        FrequencyDependentFftSource& source,
+        int fftSize);
     void configureFrequencyDependentBassPath();
     void resetFrequencyDependentBassPath();
     void appendSamplesToFrequencyDependentBassPath (const float* samples, int numSamples);
@@ -239,8 +241,8 @@ private:
     float displayBinRangeMinFrequencyHz = 0.0f;
     float displayBinRangeMaxFrequencyHz = 0.0f;
     int displayBinRangeFftSize = 0;
-    FrequencyDependentBassPath frequencyDependentBassPath;
-    FrequencyDependentHighPath frequencyDependentHighPath;
+    FrequencyDependentFftSource frequencyDependentBassPath;
+    FrequencyDependentFftSource frequencyDependentHighPath;
 
     bool overlapBufferPrimed = false;
     float secondsSinceLastFramePublish = 0.0f;
