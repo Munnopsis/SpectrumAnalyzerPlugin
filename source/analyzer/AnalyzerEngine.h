@@ -104,6 +104,7 @@ private:
 
     static constexpr int displayBinCount = 256;
     static constexpr int fftOverlapFactor = 4; // 4 = 75% overlap, hop size = fftSize / 4
+    static constexpr int maximumFftHopSizeSamples = 2048;
     static constexpr float defaultPeakHoldDecayDbPerSecond = 8.0f;
 
     static constexpr float liveAttackTimeSeconds = 0.100f;

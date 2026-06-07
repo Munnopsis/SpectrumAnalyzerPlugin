@@ -456,7 +456,9 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
 
 int AnalyzerEngine::getFftHopSize() const noexcept
 {
-    return juce::jmax (1, currentFftSize / fftOverlapFactor);
+    return juce::jmax (1,
+                       juce::jmin (currentFftSize / fftOverlapFactor,
+                                   maximumFftHopSizeSamples));
 }
 
 void AnalyzerEngine::publishLatestFrame()
