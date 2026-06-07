@@ -1572,6 +1572,13 @@ void AnalyzerEngine::processOneFftBlock()
                                       : 0.0f);
 
                 assistAmount = storedAssistAmount;
+
+                if (centerFrequency <= frequencyDependentBassOnlyMaxHz
+                    && storedAssistAmount > 0.001f
+                    && frequencyDependentAboveReferenceDb > 0.0f)
+                {
+                    lowBassTailSuppressionActive = true;
+                }
             }
             else
             {
