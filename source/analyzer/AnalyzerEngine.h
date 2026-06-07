@@ -127,6 +127,8 @@ private:
         bool hasCenterFrequency = false;
         bool hasTransientReferenceStats = false;
         bool hasBlendWeights = false;
+        bool usedHighComposite = false;
+        bool usedVeryHighComposite = false;
     };
 
     struct FrequencyDependentLowCompositeResult
@@ -135,6 +137,13 @@ private:
         DisplayBinPowerStats transientReferenceStats;
         bool hasLowCompositeStats = false;
         bool hasTransientReferenceStats = false;
+    };
+
+    struct FrequencyDependentHighCompositeResult
+    {
+        DisplayBinPowerStats compositeStats;
+        bool usedHighComposite = false;
+        bool usedVeryHighComposite = false;
     };
 
     struct FrequencyDependentLiveAssistResult
@@ -211,7 +220,7 @@ private:
         const DisplayBinPowerStats& mainStats,
         const FrequencyDependentSourceAvailability& sourceAvailability,
         const FrequencyDependentBlendWeights& blendWeights) const;
-    DisplayBinPowerStats applyFrequencyDependentHighBlendForDisplayBin (
+    FrequencyDependentHighCompositeResult applyFrequencyDependentHighBlendForDisplayBin (
         size_t displayBinIndex,
         float centerFrequencyHz,
         const DisplayBinPowerStats& baseStats,

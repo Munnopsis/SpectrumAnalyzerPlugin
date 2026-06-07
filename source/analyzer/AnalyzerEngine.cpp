@@ -1070,7 +1070,7 @@ AnalyzerEngine::getFrequencyDependentLowCompositeForDisplayBin (
     return result;
 }
 
-AnalyzerEngine::DisplayBinPowerStats
+AnalyzerEngine::FrequencyDependentHighCompositeResult
 AnalyzerEngine::applyFrequencyDependentHighBlendForDisplayBin (
     size_t displayBinIndex,
     float centerFrequencyHz,
@@ -1078,48 +1078,55 @@ AnalyzerEngine::applyFrequencyDependentHighBlendForDisplayBin (
     const FrequencyDependentSourceAvailability& sourceAvailability,
     const FrequencyDependentBlendWeights& blendWeights) const
 {
-    if (centerFrequencyHz <= 0.0f)
-        return baseStats;
+    FrequencyDependentHighCompositeResult result;
+    result.compositeStats = baseStats;
 
-    auto highCompositeStats = baseStats;
+    if (centerFrequencyHz <= 0.0f)
+        return result;
 
     if (sourceAvailability.canUseHigh
-        && frequencyDependentHighPath.displayBinFftRanges.size() > displayBinIndex)
+        && frequencyDependentHighPath.displayBinFftRanges.size() > displayBinIndex
+        && blendWeights.highBlend > 0.0f)
     {
-        if (blendWeights.highBlend > 0.0f)
-        {
-            const auto highBinPowerStats =
-                getFrequencyDependentSourceStatsForDisplayBin (
-                    frequencyDependentHighPath,
-                    frequencyDependentHighFftSize,
-                    displayBinIndex);
+        const auto highBinPowerStats =
+            getFrequencyDependentSourceStatsForDisplayBin (
+                frequencyDependentHighPath,
+                frequencyDependentHighFftSize,
+                displayBinIndex);
 
-            highCompositeStats =
-                blendDisplayBinPowerStats (highCompositeStats,
+        if (highBinPowerStats.numBinsUsed > 0)
+        {
+            result.compositeStats =
+                blendDisplayBinPowerStats (result.compositeStats,
                                            highBinPowerStats,
                                            blendWeights.highBlend);
+
+            result.usedHighComposite = true;
         }
     }
 
     if (sourceAvailability.canUseVeryHigh
-        && frequencyDependentVeryHighPath.displayBinFftRanges.size() > displayBinIndex)
+        && frequencyDependentVeryHighPath.displayBinFftRanges.size() > displayBinIndex
+        && blendWeights.veryHighBlend > 0.0f)
     {
-        if (blendWeights.veryHighBlend > 0.0f)
-        {
-            const auto veryHighBinPowerStats =
-                getFrequencyDependentSourceStatsForDisplayBin (
-                    frequencyDependentVeryHighPath,
-                    frequencyDependentVeryHighFftSize,
-                    displayBinIndex);
+        const auto veryHighBinPowerStats =
+            getFrequencyDependentSourceStatsForDisplayBin (
+                frequencyDependentVeryHighPath,
+                frequencyDependentVeryHighFftSize,
+                displayBinIndex);
 
-            highCompositeStats =
-                blendDisplayBinPowerStats (highCompositeStats,
+        if (veryHighBinPowerStats.numBinsUsed > 0)
+        {
+            result.compositeStats =
+                blendDisplayBinPowerStats (result.compositeStats,
                                            veryHighBinPowerStats,
                                            blendWeights.veryHighBlend);
+
+            result.usedVeryHighComposite = true;
         }
     }
 
-    return highCompositeStats;
+    return result;
 }
 
 AnalyzerEngine::FrequencyDependentBinStats
@@ -1189,13 +1196,17 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
                                            blendWeights.mainBlend);
         }
 
-        result.compositeStats =
+        const auto highCompositeResult =
             applyFrequencyDependentHighBlendForDisplayBin (
                 index,
                 result.centerFrequencyHz,
                 result.compositeStats,
                 sourceAvailability,
                 blendWeights);
+
+        result.compositeStats = highCompositeResult.compositeStats;
+        result.usedHighComposite = highCompositeResult.usedHighComposite;
+        result.usedVeryHighComposite = highCompositeResult.usedVeryHighComposite;
     }
 
     return result;
@@ -1737,7 +1748,7 @@ void AnalyzerEngine::processOneFftBlock()
             liveVisualBinPowerStats = assistResult.liveVisualStats;
             lowBassTailReleaseBlend = assistResult.lowBassTailReleaseBlend;
 
-            if (frequencyDependentSourceAvailability.canUseVeryHigh
+            if (binStats.usedVeryHighComposite
                 && binStats.hasBlendWeights)
             {
                 veryHighReleaseBlend = binStats.blendWeights.veryHighBlend;
