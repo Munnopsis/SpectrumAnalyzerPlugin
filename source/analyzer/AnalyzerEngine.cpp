@@ -236,6 +236,7 @@ AnalyzerEngine::AnalyzerEngine()
     energyFrameMeanPower.resize (displayBinCount, 0.0f);
     displayBinCenterFrequenciesHz.resize (displayBinCount, 0.0f);
     frequencyDependentTransientAssistAmounts.resize (displayBinCount, 0.0f);
+    frequencyDependentBinPolicySnapshots.resize (static_cast<size_t> (displayBinCount));
     instantaneousNotePeaks.reserve (maxInstantaneousNotePeaks);
     trackedNotePeaks.reserve (maxInstantaneousNotePeaks);
     currentNotePeaks.reserve (maxPublishedNotePeaks);
@@ -322,6 +323,15 @@ void AnalyzerEngine::reset()
                    frequencyDependentTransientAssistAmounts.end(),
                    0.0f);
     }
+    if (frequencyDependentBinPolicySnapshots.size() != static_cast<size_t> (displayBinCount))
+    {
+        frequencyDependentBinPolicySnapshots.resize (
+            static_cast<size_t> (displayBinCount));
+    }
+
+    std::fill (frequencyDependentBinPolicySnapshots.begin(),
+               frequencyDependentBinPolicySnapshots.end(),
+               FrequencyDependentBinPolicySnapshot {});
     energyAccumulatedActiveSeconds = 0.0f;
     displayAccumulationWarmStartRequested = false;
     instantaneousNotePeaks.clear();
@@ -1214,6 +1224,11 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
         result.compositeStats = highCompositeResult.compositeStats;
         result.usedHighComposite = highCompositeResult.usedHighComposite;
         result.usedVeryHighComposite = highCompositeResult.usedVeryHighComposite;
+        result.usedFrequencyDependentSourceComposite =
+            result.usedBassComposite
+            || result.usedMidBassComposite
+            || result.usedHighComposite
+            || result.usedVeryHighComposite;
     }
 
     return result;
@@ -1385,6 +1400,58 @@ AnalyzerEngine::applyFrequencyDependentLiveAssistForDisplayBin (
                                                 transientReferenceStats,
                                                 centerFrequencyHz,
                                                 result.assistAmount);
+
+    return result;
+}
+
+AnalyzerEngine::FrequencyDependentLiveReleaseBlendWeights
+AnalyzerEngine::getFrequencyDependentLiveReleaseBlendWeightsForDisplayBin (
+    const FrequencyDependentBinStats& binStats,
+    const FrequencyDependentLiveAssistResult& assistResult) const noexcept
+{
+    FrequencyDependentLiveReleaseBlendWeights result;
+
+    result.lowBassTailReleaseBlend =
+        std::isfinite (assistResult.lowBassTailReleaseBlend)
+            ? assistResult.lowBassTailReleaseBlend
+            : 0.0f;
+
+    if (binStats.usedVeryHighComposite
+        && binStats.hasBlendWeights)
+    {
+        result.veryHighReleaseBlend =
+            std::isfinite (binStats.blendWeights.veryHighBlend)
+                ? binStats.blendWeights.veryHighBlend
+                : 0.0f;
+
+        if (result.veryHighReleaseBlend <= 0.0f)
+            result.veryHighReleaseBlend = 0.0f;
+    }
+
+    return result;
+}
+
+AnalyzerEngine::FrequencyDependentBinPolicySnapshot
+AnalyzerEngine::getFrequencyDependentBinPolicySnapshot (
+    const FrequencyDependentBinStats& binStats,
+    const FrequencyDependentLiveReleaseBlendWeights& liveReleaseBlendWeights) const noexcept
+{
+    FrequencyDependentBinPolicySnapshot result;
+
+    result.centerFrequencyHz = binStats.centerFrequencyHz;
+    result.blendWeights = binStats.blendWeights;
+    result.liveReleaseBlendWeights = liveReleaseBlendWeights;
+
+    result.hasCenterFrequency = binStats.hasCenterFrequency;
+    result.hasBlendWeights = binStats.hasBlendWeights;
+
+    result.usedBassComposite = binStats.usedBassComposite;
+    result.usedMidBassComposite = binStats.usedMidBassComposite;
+    result.usedMainComposite = binStats.usedMainComposite;
+    result.usedHighComposite = binStats.usedHighComposite;
+    result.usedVeryHighComposite = binStats.usedVeryHighComposite;
+    result.usedFrequencyDependentSourceComposite =
+        binStats.usedFrequencyDependentSourceComposite;
 
     return result;
 }
@@ -1672,6 +1739,12 @@ void AnalyzerEngine::processOneFftBlock()
         return;
     }
 
+    if (frequencyDependentBinPolicySnapshots.size()
+        != static_cast<size_t> (displayBinCount))
+    {
+        return;
+    }
+
     const auto shouldWarmStartDisplayAccumulation =
         displayAccumulationWarmStartRequested;
 
@@ -1734,8 +1807,7 @@ void AnalyzerEngine::processOneFftBlock()
 
         auto liveVisualBinPowerStats = binPowerStats;
         const auto peakHoldVisualBinPowerStats = binPowerStats;
-        auto lowBassTailReleaseBlend = 0.0f;
-        auto veryHighReleaseBlend = 0.0f;
+        auto liveReleaseBlendWeights = FrequencyDependentLiveReleaseBlendWeights {};
 
         if (currentFrequencyDependentResolutionEnabled)
         {
@@ -1753,17 +1825,17 @@ void AnalyzerEngine::processOneFftBlock()
                     transientAssistReleaseSmoothing);
 
             liveVisualBinPowerStats = assistResult.liveVisualStats;
-            lowBassTailReleaseBlend = assistResult.lowBassTailReleaseBlend;
 
-            if (binStats.usedVeryHighComposite
-                && binStats.hasBlendWeights)
-            {
-                veryHighReleaseBlend = binStats.blendWeights.veryHighBlend;
-
-                if (veryHighReleaseBlend <= 0.0f)
-                    veryHighReleaseBlend = 0.0f;
-            }
+            liveReleaseBlendWeights =
+                getFrequencyDependentLiveReleaseBlendWeightsForDisplayBin (
+                    binStats,
+                    assistResult);
         }
+
+        frequencyDependentBinPolicySnapshots[index] =
+            getFrequencyDependentBinPolicySnapshot (
+                binStats,
+                liveReleaseBlendWeights);
 
         const auto liveTargetDb = displayBinPowerStatsToDb (liveVisualBinPowerStats);
         const auto peakHoldTargetDb =
@@ -1788,9 +1860,9 @@ void AnalyzerEngine::processOneFftBlock()
             blendFrequencyDependentLiveReleaseSmoothing (
                 liveReleaseSmoothing,
                 lowBassTailReleaseSmoothing,
-                lowBassTailReleaseBlend,
+                liveReleaseBlendWeights.lowBassTailReleaseBlend,
                 veryHighReleaseSmoothing,
-                veryHighReleaseBlend);
+                liveReleaseBlendWeights.veryHighReleaseBlend);
 
         const auto smoothing =
             liveTargetDb > previousDb ? liveAttackSmoothing : releaseSmoothing;

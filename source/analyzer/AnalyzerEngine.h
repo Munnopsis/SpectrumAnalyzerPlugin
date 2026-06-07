@@ -132,6 +132,7 @@ private:
         bool usedMainComposite = false;
         bool usedHighComposite = false;
         bool usedVeryHighComposite = false;
+        bool usedFrequencyDependentSourceComposite = false;
     };
 
     struct FrequencyDependentLowCompositeResult
@@ -156,6 +157,30 @@ private:
         DisplayBinPowerStats liveVisualStats;
         float assistAmount = 0.0f;
         float lowBassTailReleaseBlend = 0.0f;
+    };
+
+    struct FrequencyDependentLiveReleaseBlendWeights
+    {
+        float lowBassTailReleaseBlend = 0.0f;
+        float veryHighReleaseBlend = 0.0f;
+    };
+
+    struct FrequencyDependentBinPolicySnapshot
+    {
+        float centerFrequencyHz = 0.0f;
+
+        FrequencyDependentBlendWeights blendWeights;
+        FrequencyDependentLiveReleaseBlendWeights liveReleaseBlendWeights;
+
+        bool hasCenterFrequency = false;
+        bool hasBlendWeights = false;
+
+        bool usedBassComposite = false;
+        bool usedMidBassComposite = false;
+        bool usedMainComposite = false;
+        bool usedHighComposite = false;
+        bool usedVeryHighComposite = false;
+        bool usedFrequencyDependentSourceComposite = false;
     };
 
     enum class FrequencyDependentSourceRole
@@ -252,6 +277,13 @@ private:
         float& storedAssistAmount,
         float frameAdvanceSeconds,
         float transientAssistReleaseSmoothing) const noexcept;
+    FrequencyDependentLiveReleaseBlendWeights
+        getFrequencyDependentLiveReleaseBlendWeightsForDisplayBin (
+            const FrequencyDependentBinStats& binStats,
+            const FrequencyDependentLiveAssistResult& assistResult) const noexcept;
+    FrequencyDependentBinPolicySnapshot getFrequencyDependentBinPolicySnapshot (
+        const FrequencyDependentBinStats& binStats,
+        const FrequencyDependentLiveReleaseBlendWeights& liveReleaseBlendWeights) const noexcept;
     void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
     void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();
@@ -367,6 +399,7 @@ private:
     bool displayAccumulationWarmStartRequested = false;
     float energyAccumulatedActiveSeconds = 0.0f;
     std::vector<float> frequencyDependentTransientAssistAmounts;
+    std::vector<FrequencyDependentBinPolicySnapshot> frequencyDependentBinPolicySnapshots;
 
     std::vector<float> rawSpectrumDb;
     std::vector<float> smoothedSpectrumDb;
