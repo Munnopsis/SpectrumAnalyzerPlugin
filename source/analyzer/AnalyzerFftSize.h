@@ -35,7 +35,7 @@ inline int analyzerFftOrderFromIndex (int index) noexcept
         case static_cast<int> (AnalyzerFftSize::size8192): return 13;
         case static_cast<int> (AnalyzerFftSize::size16384): return 14;
         case static_cast<int> (AnalyzerFftSize::size32768): return 15;
-        case static_cast<int> (AnalyzerFftSize::frequencyDependent): return 14;
+        case static_cast<int> (AnalyzerFftSize::frequencyDependent): return 13;
         default: return 11;
     }
 }
