@@ -217,8 +217,8 @@ private:
     static constexpr int frequencyDependentHighFftOrder = 12;
     static constexpr int frequencyDependentHighFftSize = 1 << frequencyDependentHighFftOrder;
     static constexpr float defaultPeakHoldDecayDbPerSecond = 8.0f;
-    static constexpr float frequencyDependentDeepBassOnlyMaxHz = 80.0f;
-    static constexpr float frequencyDependentMidBassOnlyMinHz = 160.0f;
+    static constexpr float frequencyDependentDeepBassOnlyMaxHz = 60.0f;
+    static constexpr float frequencyDependentMidBassOnlyMinHz = 140.0f;
     static constexpr float frequencyDependentBassOnlyMaxHz = 160.0f;
     static constexpr float frequencyDependentMainOnlyMinHz = 320.0f;
     static constexpr float frequencyDependentMainOnlyMaxHz = 3000.0f;
