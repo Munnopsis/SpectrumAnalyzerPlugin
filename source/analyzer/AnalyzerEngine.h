@@ -178,8 +178,10 @@ private:
     static constexpr float frequencyDependentHighOnlyMinHz = 6000.0f;
     static constexpr float frequencyDependentTransientAssistMaxHz = 320.0f;
     static constexpr float frequencyDependentTransientAssistMinRiseDb = 4.0f;
-    static constexpr float frequencyDependentTransientAssistStrength = 0.75f;
-    static constexpr float frequencyDependentTransientAssistReleaseSeconds = 0.220f;
+    static constexpr float frequencyDependentTransientAttackBlend = 0.55f;
+    static constexpr float frequencyDependentTransientTailSuppressBlend = 0.85f;
+    static constexpr float frequencyDependentTransientTailSuppressMinExcessDb = 2.0f;
+    static constexpr float frequencyDependentTransientAssistReleaseSeconds = 0.120f;
 
     static constexpr float liveAttackTimeSeconds = 0.100f;
     static constexpr float liveReleaseTimeSeconds = 0.500f;

@@ -1082,8 +1082,7 @@ AnalyzerEngine::DisplayBinPowerStats AnalyzerEngine::applyFrequencyDependentTran
         return frequencyDependentStats;
 
     const auto assistBlend =
-        juce::jlimit (0.0f, 1.0f, assistAmount)
-        * frequencyDependentTransientAssistStrength;
+        juce::jlimit (0.0f, 1.0f, assistAmount);
 
     return blendDisplayBinPowerStats (frequencyDependentStats,
                                       mainStats,
@@ -1505,10 +1504,25 @@ void AnalyzerEngine::processOneFftBlock()
                 const auto mainPeakDb =
                     peakPowerToDb (mainBinPowerStats.peakPower);
 
-                if (mainPeakDb - frequencyDependentPeakDb
-                    >= frequencyDependentTransientAssistMinRiseDb)
+                const auto mainAboveFrequencyDependentDb =
+                    mainPeakDb - frequencyDependentPeakDb;
+
+                const auto frequencyDependentAboveMainDb =
+                    frequencyDependentPeakDb - mainPeakDb;
+
+                if (mainAboveFrequencyDependentDb >= frequencyDependentTransientAssistMinRiseDb)
                 {
-                    storedAssistAmount = 1.0f;
+                    storedAssistAmount =
+                        juce::jmax (storedAssistAmount,
+                                    frequencyDependentTransientAttackBlend);
+                }
+                else if (storedAssistAmount > 0.0f
+                         && frequencyDependentAboveMainDb
+                             >= frequencyDependentTransientTailSuppressMinExcessDb)
+                {
+                    storedAssistAmount =
+                        juce::jmax (storedAssistAmount,
+                                    frequencyDependentTransientTailSuppressBlend);
                 }
                 else if (frameAdvanceSeconds > 0.0f)
                 {
