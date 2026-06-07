@@ -277,6 +277,7 @@ private:
     static constexpr float liveAttackTimeSeconds = 0.100f;
     static constexpr float liveReleaseTimeSeconds = 0.500f;
     static constexpr float frequencyDependentLowBassTailReleaseTimeSeconds = 0.180f;
+    static constexpr float frequencyDependentVeryHighReleaseTimeSeconds = 0.220f;
     static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
     static constexpr float energyAveragingWindowSeconds = 20.0f;

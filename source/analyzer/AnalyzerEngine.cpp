@@ -1662,6 +1662,11 @@ void AnalyzerEngine::processOneFftBlock()
             frameAdvanceSeconds,
             frequencyDependentLowBassTailReleaseTimeSeconds);
 
+    const auto veryHighReleaseSmoothing =
+        smoothingCoefficientForTimeConstant (
+            frameAdvanceSeconds,
+            frequencyDependentVeryHighReleaseTimeSeconds);
+
     const auto transientAssistReleaseSmoothing =
         smoothingCoefficientForTimeConstant (
             frameAdvanceSeconds,
@@ -1708,6 +1713,7 @@ void AnalyzerEngine::processOneFftBlock()
         auto liveVisualBinPowerStats = binPowerStats;
         const auto peakHoldVisualBinPowerStats = binPowerStats;
         auto lowBassTailReleaseBlend = 0.0f;
+        auto veryHighReleaseBlend = 0.0f;
 
         if (currentFrequencyDependentResolutionEnabled)
         {
@@ -1725,6 +1731,13 @@ void AnalyzerEngine::processOneFftBlock()
 
             liveVisualBinPowerStats = assistResult.liveVisualStats;
             lowBassTailReleaseBlend = assistResult.lowBassTailReleaseBlend;
+
+            if (binStats.hasCenterFrequency)
+            {
+                veryHighReleaseBlend =
+                    getFrequencyDependentVeryHighBlendForFrequency (
+                        binStats.centerFrequencyHz);
+            }
         }
 
         const auto liveTargetDb = displayBinPowerStatsToDb (liveVisualBinPowerStats);
@@ -1749,10 +1762,17 @@ void AnalyzerEngine::processOneFftBlock()
         const auto clampedLowBassTailReleaseBlend =
             juce::jlimit (0.0f, 1.0f, lowBassTailReleaseBlend);
 
-        const auto releaseSmoothing =
+        const auto clampedVeryHighReleaseBlend =
+            juce::jlimit (0.0f, 1.0f, veryHighReleaseBlend);
+
+        auto releaseSmoothing =
             liveReleaseSmoothing
             + clampedLowBassTailReleaseBlend
                 * (lowBassTailReleaseSmoothing - liveReleaseSmoothing);
+
+        releaseSmoothing +=
+            clampedVeryHighReleaseBlend
+            * (veryHighReleaseSmoothing - releaseSmoothing);
 
         const auto smoothing =
             liveTargetDb > previousDb ? liveAttackSmoothing : releaseSmoothing;
