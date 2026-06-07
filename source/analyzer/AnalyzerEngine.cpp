@@ -371,7 +371,7 @@ void AnalyzerEngine::setDisplayFrequencyRange (float minimumHz, float maximumHz)
     requestedDisplayMaxFrequencyHz.store (clampedMaximum, std::memory_order_relaxed);
 }
 
-std::array<AnalyzerEngine::FrequencyDependentSourceDescriptor, 2>
+std::array<AnalyzerEngine::FrequencyDependentSourceDescriptor, 3>
 AnalyzerEngine::getFrequencyDependentSourceDescriptors() noexcept
 {
     return {{
@@ -380,6 +380,12 @@ AnalyzerEngine::getFrequencyDependentSourceDescriptors() noexcept
             &frequencyDependentBassPath,
             frequencyDependentBassFftOrder,
             frequencyDependentBassFftSize
+        },
+        {
+            FrequencyDependentSourceRole::midBass,
+            &frequencyDependentMidBassPath,
+            frequencyDependentMidBassFftOrder,
+            frequencyDependentMidBassFftSize
         },
         {
             FrequencyDependentSourceRole::high,
@@ -959,15 +965,15 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
         result.hasCenterFrequency = result.centerFrequencyHz > 0.0f;
     }
 
-        if (canUseFrequencyDependentBassPath
-            && result.hasCenterFrequency
-            && frequencyDependentBassPath.displayBinFftRanges.size() > index)
-        {
-            const auto bassBinPowerStats =
+    if (canUseFrequencyDependentBassPath
+    && result.hasCenterFrequency
+    && frequencyDependentBassPath.displayBinFftRanges.size() > index)
+    {
+        const auto bassBinPowerStats =
             getFrequencyDependentSourceStatsForDisplayBin (
-            frequencyDependentBassPath,
-            frequencyDependentBassFftSize,
-            index);
+                frequencyDependentBassPath,
+                frequencyDependentBassFftSize,
+                index);
 
         const auto mainBlend =
             getFrequencyDependentMainBlendForFrequency (result.centerFrequencyHz);
@@ -988,10 +994,10 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
         if (highBlend > 0.0f)
         {
             const auto highBinPowerStats =
-    getFrequencyDependentSourceStatsForDisplayBin (
-        frequencyDependentHighPath,
-        frequencyDependentHighFftSize,
-        index);
+                getFrequencyDependentSourceStatsForDisplayBin (
+                    frequencyDependentHighPath,
+                    frequencyDependentHighFftSize,
+                    index);
 
             result.compositeStats =
                 blendDisplayBinPowerStats (result.compositeStats,
@@ -1404,9 +1410,9 @@ void AnalyzerEngine::processOneFftBlock()
 
     auto energyFramePeakPower = 0.0f;
     const auto canUseFrequencyDependentBassPath =
-    currentFrequencyDependentResolutionEnabled
-    && canUseFrequencyDependentSource (frequencyDependentBassPath,
-                                       frequencyDependentBassFftSize);
+        currentFrequencyDependentResolutionEnabled
+        && canUseFrequencyDependentSource (frequencyDependentBassPath,
+                                           frequencyDependentBassFftSize);
 
     const auto canUseFrequencyDependentHighPath =
         currentFrequencyDependentResolutionEnabled

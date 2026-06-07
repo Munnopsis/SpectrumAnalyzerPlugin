@@ -119,6 +119,7 @@ private:
     enum class FrequencyDependentSourceRole
     {
         bass,
+        midBass,
         high
     };
 
@@ -133,7 +134,7 @@ private:
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
-    std::array<FrequencyDependentSourceDescriptor, 2>
+    std::array<FrequencyDependentSourceDescriptor, 3>
         getFrequencyDependentSourceDescriptors() noexcept;
     bool canUseFrequencyDependentSource (const FrequencyDependentFftSource& source,
         int fftSize) const noexcept;
@@ -142,7 +143,7 @@ private:
         const FrequencyDependentFftSource& source,
         int fftSize,
         size_t displayBinIndex) const noexcept;
-    
+
     void configureFft (int newFftOrder);
     void resetOverlapBuffer();
     void configureFrequencyDependentFftSource (FrequencyDependentFftSource& source,
@@ -209,6 +210,8 @@ private:
     static constexpr int frequencyDependentMainFftSize = 1 << frequencyDependentMainFftOrder;
     static constexpr int frequencyDependentBassFftOrder = 15;
     static constexpr int frequencyDependentBassFftSize = 1 << frequencyDependentBassFftOrder;
+    static constexpr int frequencyDependentMidBassFftOrder = 14;
+    static constexpr int frequencyDependentMidBassFftSize = 1 << frequencyDependentMidBassFftOrder;
     static constexpr int frequencyDependentHighFftOrder = 12;
     static constexpr int frequencyDependentHighFftSize = 1 << frequencyDependentHighFftOrder;
     static constexpr float defaultPeakHoldDecayDbPerSecond = 8.0f;
@@ -280,6 +283,7 @@ private:
     float displayBinRangeMaxFrequencyHz = 0.0f;
     int displayBinRangeFftSize = 0;
     FrequencyDependentFftSource frequencyDependentBassPath;
+    FrequencyDependentFftSource frequencyDependentMidBassPath;
     FrequencyDependentFftSource frequencyDependentHighPath;
 
     bool overlapBufferPrimed = false;
