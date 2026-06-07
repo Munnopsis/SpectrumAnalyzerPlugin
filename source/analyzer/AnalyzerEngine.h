@@ -164,6 +164,7 @@ private:
     void appendSamplesToFrequencyDependentBassPath (const float* samples, int numSamples);
     void processFrequencyDependentBassPathIfReady();
     void updateFrequencyDependentBassBinFftRangesIfNeeded();
+    float getFrequencyDependentMidBassBlendForFrequency (float frequencyHz) const noexcept;
     float getFrequencyDependentMainBlendForFrequency (float frequencyHz) const noexcept;
     void configureFrequencyDependentHighPath();
     void resetFrequencyDependentHighPath();
@@ -175,6 +176,7 @@ private:
         int displayBinIndex,
         int fftSizeForBlock,
         bool canUseFrequencyDependentBassPath,
+        bool canUseFrequencyDependentMidBassPath,
         bool canUseFrequencyDependentHighPath) const;
     DisplayBinPowerStats blendDisplayBinPowerStats (const DisplayBinPowerStats& bassStats,
                                                     const DisplayBinPowerStats& mainStats,
@@ -215,6 +217,8 @@ private:
     static constexpr int frequencyDependentHighFftOrder = 12;
     static constexpr int frequencyDependentHighFftSize = 1 << frequencyDependentHighFftOrder;
     static constexpr float defaultPeakHoldDecayDbPerSecond = 8.0f;
+    static constexpr float frequencyDependentDeepBassOnlyMaxHz = 80.0f;
+    static constexpr float frequencyDependentMidBassOnlyMinHz = 160.0f;
     static constexpr float frequencyDependentBassOnlyMaxHz = 160.0f;
     static constexpr float frequencyDependentMainOnlyMinHz = 320.0f;
     static constexpr float frequencyDependentMainOnlyMaxHz = 3000.0f;
