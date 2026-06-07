@@ -118,6 +118,14 @@ private:
         bool hasTransientReferenceStats = false;
     };
 
+    struct FrequencyDependentLowCompositeResult
+    {
+        DisplayBinPowerStats lowCompositeStats;
+        DisplayBinPowerStats transientReferenceStats;
+        bool hasLowCompositeStats = false;
+        bool hasTransientReferenceStats = false;
+    };
+
     struct FrequencyDependentLiveAssistResult
     {
         DisplayBinPowerStats liveVisualStats;
@@ -181,6 +189,17 @@ private:
     void processFrequencyDependentHighPathIfReady();
     void updateFrequencyDependentHighBinFftRangesIfNeeded();
     float getFrequencyDependentHighBlendForFrequency (float frequencyHz) const noexcept;
+    FrequencyDependentLowCompositeResult getFrequencyDependentLowCompositeForDisplayBin (
+        size_t displayBinIndex,
+        float centerFrequencyHz,
+        const DisplayBinPowerStats& mainStats,
+        bool canUseFrequencyDependentBassPath,
+        bool canUseFrequencyDependentMidBassPath) const;
+    DisplayBinPowerStats applyFrequencyDependentHighBlendForDisplayBin (
+        size_t displayBinIndex,
+        float centerFrequencyHz,
+        const DisplayBinPowerStats& baseStats,
+        bool canUseFrequencyDependentHighPath) const;
     FrequencyDependentBinStats getFrequencyDependentBinStatsForDisplayBin (
         int displayBinIndex,
         int fftSizeForBlock,
