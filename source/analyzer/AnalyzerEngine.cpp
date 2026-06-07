@@ -638,7 +638,18 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
     }
 
     if (displayMappingChanged)
+    {
         requestDisplayAccumulationWarmStartForRangeChange();
+
+        if (currentFrequencyDependentResolutionEnabled)
+        {
+            for (const auto& descriptor : getFrequencyDependentSourceDescriptors())
+            {
+                if (descriptor.source != nullptr)
+                    descriptor.source->hasValidFftData = false;
+            }
+        }
+    }
 
     displayBinFftRanges.assign (static_cast<size_t> (displayBinCount), {});
 
@@ -1373,14 +1384,16 @@ void AnalyzerEngine::publishLatestFrame()
             const auto energyMagnitude = std::sqrt (energyPowerSpectrum[i]);
 
             latestRmsSpectrumDb[i] =
-                juce::jlimit (-100.0f,
-                              0.0f,
-                              juce::Decibels::gainToDecibels (rmsMagnitude, -100.0f));
+                juce::jlimit (
+                    -100.0f,
+                    0.0f,
+                    juce::Decibels::gainToDecibels (rmsMagnitude, -100.0f));
 
             latestEnergySpectrumDb[i] =
-                juce::jlimit (-100.0f,
-                              0.0f,
-                              juce::Decibels::gainToDecibels (energyMagnitude, -100.0f));
+                juce::jlimit (
+                    -100.0f,
+                    0.0f,
+                    juce::Decibels::gainToDecibels (energyMagnitude, -100.0f));
         }
     }
 
@@ -1738,6 +1751,9 @@ void AnalyzerEngine::processOneFftBlock()
                 veryHighReleaseBlend =
                     getFrequencyDependentVeryHighBlendForFrequency (
                         binStats.centerFrequencyHz);
+
+                if (veryHighReleaseBlend <= 0.0f)
+                    veryHighReleaseBlend = 0.0f;
             }
         }
 
