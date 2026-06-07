@@ -1176,6 +1176,9 @@ AnalyzerEngine::applyFrequencyDependentLiveAssistForDisplayBin (
 
     const auto getLowBassTailReleaseBlend = [this] (float frequencyHz) noexcept
     {
+        if (! std::isfinite (frequencyHz) || frequencyHz <= 0.0f)
+            return 0.0f;
+
         return juce::jlimit (
             0.0f,
             1.0f,
@@ -1589,8 +1592,8 @@ void AnalyzerEngine::processOneFftBlock()
 
     const auto canUseFrequencyDependentMidBassPath =
         currentFrequencyDependentResolutionEnabled
-            && canUseFrequencyDependentSource (frequencyDependentMidBassPath,
-                                               frequencyDependentMidBassFftSize);
+        && canUseFrequencyDependentSource (frequencyDependentMidBassPath,
+                                           frequencyDependentMidBassFftSize);
 
     const auto canUseFrequencyDependentHighPath =
         currentFrequencyDependentResolutionEnabled
