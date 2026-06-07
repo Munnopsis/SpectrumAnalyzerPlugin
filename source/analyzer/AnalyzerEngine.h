@@ -135,6 +135,14 @@ private:
     void updateFftSizeIfNeeded();
     std::array<FrequencyDependentSourceDescriptor, 2>
         getFrequencyDependentSourceDescriptors() noexcept;
+    bool canUseFrequencyDependentSource (const FrequencyDependentFftSource& source,
+        int fftSize) const noexcept;
+
+    DisplayBinPowerStats getFrequencyDependentSourceStatsForDisplayBin (
+        const FrequencyDependentFftSource& source,
+        int fftSize,
+        size_t displayBinIndex) const noexcept;
+    
     void configureFft (int newFftOrder);
     void resetOverlapBuffer();
     void configureFrequencyDependentFftSource (FrequencyDependentFftSource& source,

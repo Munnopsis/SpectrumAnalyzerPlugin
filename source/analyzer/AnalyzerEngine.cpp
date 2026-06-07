@@ -390,6 +390,46 @@ AnalyzerEngine::getFrequencyDependentSourceDescriptors() noexcept
     }};
 }
 
+bool AnalyzerEngine::canUseFrequencyDependentSource (
+    const FrequencyDependentFftSource& source,
+    int fftSize) const noexcept
+{
+    return fftSize > 0
+           && source.hasValidFftData
+           && source.fftData.size() >= static_cast<size_t> (fftSize * 2)
+           && source.displayBinFftRanges.size() == static_cast<size_t> (displayBinCount)
+           && source.rangeSampleRate > 0.0f
+           && source.rangeMinFrequencyHz > 0.0f
+           && source.rangeMaxFrequencyHz > source.rangeMinFrequencyHz
+           && displayBinCenterFrequenciesHz.size() == static_cast<size_t> (displayBinCount);
+}
+
+AnalyzerEngine::DisplayBinPowerStats
+AnalyzerEngine::getFrequencyDependentSourceStatsForDisplayBin (
+    const FrequencyDependentFftSource& source,
+    int fftSize,
+    size_t displayBinIndex) const noexcept
+{
+    if (fftSize <= 0)
+        return {};
+
+    if (source.displayBinFftRanges.size() <= displayBinIndex)
+        return {};
+
+    if (source.fftData.size() < static_cast<size_t> (fftSize * 2))
+        return {};
+
+    const auto& sourceDisplayBinRange =
+        source.displayBinFftRanges[displayBinIndex];
+
+    return getFftBinPowerStatsForRange (source.fftData,
+                                        fftSize,
+                                        sourceDisplayBinRange.firstBin,
+                                        sourceDisplayBinRange.lastBin,
+                                        sourceDisplayBinRange.leftBin,
+                                        sourceDisplayBinRange.rightBin);
+}
+
 void AnalyzerEngine::configureFft (int newFftOrder)
 {
     currentFftOrder = juce::jlimit (minFftOrder, maxFftOrder, newFftOrder);
@@ -919,20 +959,15 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
         result.hasCenterFrequency = result.centerFrequencyHz > 0.0f;
     }
 
-    if (canUseFrequencyDependentBassPath
-        && result.hasCenterFrequency
-        && frequencyDependentBassPath.displayBinFftRanges.size() > index)
-    {
-        const auto& bassDisplayBinRange =
-            frequencyDependentBassPath.displayBinFftRanges[index];
-
-        const auto bassBinPowerStats =
-            getFftBinPowerStatsForRange (frequencyDependentBassPath.fftData,
-                                         frequencyDependentBassFftSize,
-                                         bassDisplayBinRange.firstBin,
-                                         bassDisplayBinRange.lastBin,
-                                         bassDisplayBinRange.leftBin,
-                                         bassDisplayBinRange.rightBin);
+        if (canUseFrequencyDependentBassPath
+            && result.hasCenterFrequency
+            && frequencyDependentBassPath.displayBinFftRanges.size() > index)
+        {
+            const auto bassBinPowerStats =
+        getFrequencyDependentSourceStatsForDisplayBin (
+            frequencyDependentBassPath,
+            frequencyDependentBassFftSize,
+            index);
 
         const auto mainBlend =
             getFrequencyDependentMainBlendForFrequency (result.centerFrequencyHz);
@@ -952,16 +987,11 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
 
         if (highBlend > 0.0f)
         {
-            const auto& highDisplayBinRange =
-                frequencyDependentHighPath.displayBinFftRanges[index];
-
             const auto highBinPowerStats =
-                getFftBinPowerStatsForRange (frequencyDependentHighPath.fftData,
-                                             frequencyDependentHighFftSize,
-                                             highDisplayBinRange.firstBin,
-                                             highDisplayBinRange.lastBin,
-                                             highDisplayBinRange.leftBin,
-                                             highDisplayBinRange.rightBin);
+    getFrequencyDependentSourceStatsForDisplayBin (
+        frequencyDependentHighPath,
+        frequencyDependentHighFftSize,
+        index);
 
             result.compositeStats =
                 blendDisplayBinPowerStats (result.compositeStats,
@@ -1374,30 +1404,14 @@ void AnalyzerEngine::processOneFftBlock()
 
     auto energyFramePeakPower = 0.0f;
     const auto canUseFrequencyDependentBassPath =
-        currentFrequencyDependentResolutionEnabled
-        && frequencyDependentBassPath.hasValidFftData
-        && frequencyDependentBassPath.fftData.size()
-            >= static_cast<size_t> (frequencyDependentBassFftSize * 2)
-        && frequencyDependentBassPath.displayBinFftRanges.size()
-            == static_cast<size_t> (displayBinCount)
-        && frequencyDependentBassPath.rangeSampleRate > 0.0f
-        && frequencyDependentBassPath.rangeMinFrequencyHz > 0.0f
-        && frequencyDependentBassPath.rangeMaxFrequencyHz
-            > frequencyDependentBassPath.rangeMinFrequencyHz
-        && displayBinCenterFrequenciesHz.size() == static_cast<size_t> (displayBinCount);
+    currentFrequencyDependentResolutionEnabled
+    && canUseFrequencyDependentSource (frequencyDependentBassPath,
+                                       frequencyDependentBassFftSize);
 
     const auto canUseFrequencyDependentHighPath =
         currentFrequencyDependentResolutionEnabled
-        && frequencyDependentHighPath.hasValidFftData
-        && frequencyDependentHighPath.fftData.size()
-            >= static_cast<size_t> (frequencyDependentHighFftSize * 2)
-        && frequencyDependentHighPath.displayBinFftRanges.size()
-            == static_cast<size_t> (displayBinCount)
-        && frequencyDependentHighPath.rangeSampleRate > 0.0f
-        && frequencyDependentHighPath.rangeMinFrequencyHz > 0.0f
-        && frequencyDependentHighPath.rangeMaxFrequencyHz
-            > frequencyDependentHighPath.rangeMinFrequencyHz
-        && displayBinCenterFrequenciesHz.size() == static_cast<size_t> (displayBinCount);
+        && canUseFrequencyDependentSource (frequencyDependentHighPath,
+                                           frequencyDependentHighFftSize);
 
     for (int i = 0; i < displayBinCount; ++i)
     {
