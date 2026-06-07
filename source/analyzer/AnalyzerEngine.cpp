@@ -974,7 +974,7 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
         result.hasCenterFrequency = result.centerFrequencyHz > 0.0f;
     }
 
-        if (result.hasCenterFrequency)
+    if (result.hasCenterFrequency)
     {
         auto hasLowFrequencyCompositeStats = false;
         auto lowFrequencyCompositeStats = DisplayBinPowerStats {};
