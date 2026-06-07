@@ -967,6 +967,8 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
                                      displayBinRange.rightBin);
 
     result.compositeStats = result.mainStats;
+    result.transientReferenceStats = result.mainStats;
+    result.hasTransientReferenceStats = result.mainStats.numBinsUsed > 0;
 
     if (displayBinCenterFrequenciesHz.size() > index)
     {
@@ -1003,6 +1005,12 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
 
             if (midBassBinPowerStats.numBinsUsed > 0)
             {
+                if (result.centerFrequencyHz <= frequencyDependentBassOnlyMaxHz)
+                {
+                    result.transientReferenceStats = midBassBinPowerStats;
+                    result.hasTransientReferenceStats = true;
+                }
+
                 if (hasLowFrequencyCompositeStats)
                 {
                     const auto midBassBlend =
@@ -1485,7 +1493,10 @@ void AnalyzerEngine::processOneFftBlock()
             canUseFrequencyDependentMidBassPath,
             canUseFrequencyDependentHighPath);
 
-        const auto& mainBinPowerStats = binStats.mainStats;
+        const auto& transientReferenceBinPowerStats =
+            binStats.hasTransientReferenceStats
+                ? binStats.transientReferenceStats
+                : binStats.mainStats;
         const auto& binPowerStats = binStats.compositeStats;
 
         auto liveVisualBinPowerStats = binPowerStats;
@@ -1503,23 +1514,23 @@ void AnalyzerEngine::processOneFftBlock()
                 const auto frequencyDependentDisplayDb =
                     displayStatsToDb (binPowerStats);
 
-                const auto mainDisplayDb =
-                    displayStatsToDb (mainBinPowerStats);
+                const auto referenceDisplayDb =
+                    displayStatsToDb (transientReferenceBinPowerStats);
 
-                const auto mainAboveFrequencyDependentDb =
-                    mainDisplayDb - frequencyDependentDisplayDb;
+                const auto referenceAboveFrequencyDependentDb =
+                    referenceDisplayDb - frequencyDependentDisplayDb;
 
-                const auto frequencyDependentAboveMainDb =
-                    frequencyDependentDisplayDb - mainDisplayDb;
+                const auto frequencyDependentAboveReferenceDb =
+                    frequencyDependentDisplayDb - referenceDisplayDb;
 
                 auto desiredAssistAmount = 0.0f;
 
-                if (mainAboveFrequencyDependentDb >= frequencyDependentTransientAssistMinRiseDb)
+                if (referenceAboveFrequencyDependentDb >= frequencyDependentTransientAssistMinRiseDb)
                 {
                     desiredAssistAmount = frequencyDependentTransientAttackBlend;
                 }
-                else if (frequencyDependentAboveMainDb
-                         >= frequencyDependentTransientTailSuppressMinExcessDb)
+                else if (frequencyDependentAboveReferenceDb
+                        >= frequencyDependentTransientTailSuppressMinExcessDb)
                 {
                     desiredAssistAmount = frequencyDependentTransientTailSuppressBlend;
                 }
@@ -1561,7 +1572,7 @@ void AnalyzerEngine::processOneFftBlock()
 
             liveVisualBinPowerStats = applyFrequencyDependentTransientAssist (
                 binPowerStats,
-                mainBinPowerStats,
+                transientReferenceBinPowerStats,
                 centerFrequency,
                 assistAmount);
         }

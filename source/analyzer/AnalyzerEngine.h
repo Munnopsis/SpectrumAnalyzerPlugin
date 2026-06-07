@@ -112,8 +112,10 @@ private:
     {
         DisplayBinPowerStats mainStats;
         DisplayBinPowerStats compositeStats;
+        DisplayBinPowerStats transientReferenceStats;
         float centerFrequencyHz = 0.0f;
         bool hasCenterFrequency = false;
+        bool hasTransientReferenceStats = false;
     };
 
     enum class FrequencyDependentSourceRole
