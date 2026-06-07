@@ -551,30 +551,6 @@ void AnalyzerEngine::resetFrequencyDependentFftSource (FrequencyDependentFftSour
     source.hasValidFftData = false;
 }
 
-void AnalyzerEngine::configureFrequencyDependentBassPath()
-{
-    configureFrequencyDependentFftSource (frequencyDependentBassPath,
-                                          frequencyDependentBassFftOrder,
-                                          frequencyDependentBassFftSize);
-}
-
-void AnalyzerEngine::resetFrequencyDependentBassPath()
-{
-    resetFrequencyDependentFftSource (frequencyDependentBassPath);
-}
-
-void AnalyzerEngine::configureFrequencyDependentHighPath()
-{
-    configureFrequencyDependentFftSource (frequencyDependentHighPath,
-                                          frequencyDependentHighFftOrder,
-                                          frequencyDependentHighFftSize);
-}
-
-void AnalyzerEngine::resetFrequencyDependentHighPath()
-{
-    resetFrequencyDependentFftSource (frequencyDependentHighPath);
-}
-
 void AnalyzerEngine::requestDisplayAccumulationWarmStartForRangeChange() noexcept
 {
     displayAccumulationWarmStartRequested = true;
@@ -801,38 +777,6 @@ void AnalyzerEngine::processFrequencyDependentFftSourceIfReady (
     source.hasValidFftData = true;
 }
 
-void AnalyzerEngine::appendSamplesToFrequencyDependentBassPath (
-    const float* samples,
-    int numSamples)
-{
-    appendSamplesToFrequencyDependentFftSource (frequencyDependentBassPath,
-                                                samples,
-                                                numSamples,
-                                                frequencyDependentBassFftSize);
-}
-
-void AnalyzerEngine::processFrequencyDependentBassPathIfReady()
-{
-    processFrequencyDependentFftSourceIfReady (frequencyDependentBassPath,
-                                               frequencyDependentBassFftSize);
-}
-
-void AnalyzerEngine::appendSamplesToFrequencyDependentHighPath (
-    const float* samples,
-    int numSamples)
-{
-    appendSamplesToFrequencyDependentFftSource (frequencyDependentHighPath,
-                                                samples,
-                                                numSamples,
-                                                frequencyDependentHighFftSize);
-}
-
-void AnalyzerEngine::processFrequencyDependentHighPathIfReady()
-{
-    processFrequencyDependentFftSourceIfReady (frequencyDependentHighPath,
-                                               frequencyDependentHighFftSize);
-}
-
 void AnalyzerEngine::updateFrequencyDependentSourceBinFftRangesIfNeeded (
     FrequencyDependentFftSource& source,
     int fftSize)
@@ -928,18 +872,6 @@ void AnalyzerEngine::updateFrequencyDependentSourceBinFftRangesIfNeeded (
     source.rangeSampleRate = sampleRateForRanges;
     source.rangeMinFrequencyHz = clampedMinimum;
     source.rangeMaxFrequencyHz = clampedMaximum;
-}
-
-void AnalyzerEngine::updateFrequencyDependentBassBinFftRangesIfNeeded()
-{
-    updateFrequencyDependentSourceBinFftRangesIfNeeded (frequencyDependentBassPath,
-                                                        frequencyDependentBassFftSize);
-}
-
-void AnalyzerEngine::updateFrequencyDependentHighBinFftRangesIfNeeded()
-{
-    updateFrequencyDependentSourceBinFftRangesIfNeeded (frequencyDependentHighPath,
-                                                        frequencyDependentHighFftSize);
 }
 
 float AnalyzerEngine::getFrequencyDependentMidBassBlendForFrequency (

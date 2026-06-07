@@ -177,18 +177,8 @@ private:
     void updateFrequencyDependentSourceBinFftRangesIfNeeded (
         FrequencyDependentFftSource& source,
         int fftSize);
-    void configureFrequencyDependentBassPath();
-    void resetFrequencyDependentBassPath();
-    void appendSamplesToFrequencyDependentBassPath (const float* samples, int numSamples);
-    void processFrequencyDependentBassPathIfReady();
-    void updateFrequencyDependentBassBinFftRangesIfNeeded();
     float getFrequencyDependentMidBassBlendForFrequency (float frequencyHz) const noexcept;
     float getFrequencyDependentMainBlendForFrequency (float frequencyHz) const noexcept;
-    void configureFrequencyDependentHighPath();
-    void resetFrequencyDependentHighPath();
-    void appendSamplesToFrequencyDependentHighPath (const float* samples, int numSamples);
-    void processFrequencyDependentHighPathIfReady();
-    void updateFrequencyDependentHighBinFftRangesIfNeeded();
     float getFrequencyDependentHighBlendForFrequency (float frequencyHz) const noexcept;
     float getFrequencyDependentVeryHighBlendForFrequency (
         float frequencyHz) const noexcept;
