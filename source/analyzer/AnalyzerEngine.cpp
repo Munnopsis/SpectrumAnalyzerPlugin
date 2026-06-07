@@ -1174,6 +1174,14 @@ AnalyzerEngine::applyFrequencyDependentLiveAssistForDisplayBin (
     FrequencyDependentLiveAssistResult result;
     result.liveVisualStats = compositeStats;
 
+    const auto getLowBassTailReleaseBlend = [this] (float frequencyHz) noexcept
+    {
+        return juce::jlimit (
+            0.0f,
+            1.0f,
+            1.0f - getFrequencyDependentMainBlendForFrequency (frequencyHz));
+    };
+
     if (! hasCenterFrequency
         || centerFrequencyHz > frequencyDependentTransientAssistMaxHz)
     {
@@ -1203,8 +1211,8 @@ AnalyzerEngine::applyFrequencyDependentLiveAssistForDisplayBin (
             >= frequencyDependentTransientTailSuppressMinExcessDb)
     {
         desiredAssistAmount = frequencyDependentTransientTailSuppressBlend;
-        result.lowBassTailSuppressionActive =
-            centerFrequencyHz <= frequencyDependentBassOnlyMaxHz;
+        result.lowBassTailReleaseBlend =
+            getLowBassTailReleaseBlend (centerFrequencyHz);
     }
 
     desiredAssistAmount =
@@ -1237,11 +1245,13 @@ AnalyzerEngine::applyFrequencyDependentLiveAssistForDisplayBin (
 
     result.assistAmount = storedAssistAmount;
 
-    if (centerFrequencyHz <= frequencyDependentBassOnlyMaxHz
+    if (centerFrequencyHz <= frequencyDependentMainOnlyMinHz
         && storedAssistAmount > 0.001f
         && frequencyDependentAboveReferenceDb > 0.0f)
     {
-        result.lowBassTailSuppressionActive = true;
+        result.lowBassTailReleaseBlend =
+            juce::jmax (result.lowBassTailReleaseBlend,
+                        getLowBassTailReleaseBlend (centerFrequencyHz));
     }
 
     result.liveVisualStats =
@@ -1605,7 +1615,7 @@ void AnalyzerEngine::processOneFftBlock()
 
         auto liveVisualBinPowerStats = binPowerStats;
         const auto peakHoldVisualBinPowerStats = binPowerStats;
-        auto lowBassTailSuppressionActive = false;
+        auto lowBassTailReleaseBlend = 0.0f;
 
         if (currentFrequencyDependentResolutionEnabled)
         {
@@ -1622,8 +1632,7 @@ void AnalyzerEngine::processOneFftBlock()
                     transientAssistReleaseSmoothing);
 
             liveVisualBinPowerStats = assistResult.liveVisualStats;
-            lowBassTailSuppressionActive =
-                assistResult.lowBassTailSuppressionActive;
+            lowBassTailReleaseBlend = assistResult.lowBassTailReleaseBlend;
         }
 
         const auto liveTargetDb = displayBinPowerStatsToDb (liveVisualBinPowerStats);
@@ -1645,10 +1654,13 @@ void AnalyzerEngine::processOneFftBlock()
 
         const auto previousDb = smoothedSpectrumDb[index];
 
+        const auto clampedLowBassTailReleaseBlend =
+            juce::jlimit (0.0f, 1.0f, lowBassTailReleaseBlend);
+
         const auto releaseSmoothing =
-            lowBassTailSuppressionActive
-                ? lowBassTailReleaseSmoothing
-                : liveReleaseSmoothing;
+            liveReleaseSmoothing
+            + clampedLowBassTailReleaseBlend
+                * (lowBassTailReleaseSmoothing - liveReleaseSmoothing);
 
         const auto smoothing =
             liveTargetDb > previousDb ? liveAttackSmoothing : releaseSmoothing;

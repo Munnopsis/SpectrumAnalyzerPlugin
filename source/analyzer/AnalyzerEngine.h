@@ -122,7 +122,7 @@ private:
     {
         DisplayBinPowerStats liveVisualStats;
         float assistAmount = 0.0f;
-        bool lowBassTailSuppressionActive = false;
+        float lowBassTailReleaseBlend = 0.0f;
     };
 
     enum class FrequencyDependentSourceRole
