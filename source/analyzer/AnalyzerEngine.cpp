@@ -1732,7 +1732,8 @@ void AnalyzerEngine::processOneFftBlock()
             liveVisualBinPowerStats = assistResult.liveVisualStats;
             lowBassTailReleaseBlend = assistResult.lowBassTailReleaseBlend;
 
-            if (binStats.hasCenterFrequency)
+            if (canUseFrequencyDependentVeryHighPath
+                && binStats.hasCenterFrequency)
             {
                 veryHighReleaseBlend =
                     getFrequencyDependentVeryHighBlendForFrequency (
