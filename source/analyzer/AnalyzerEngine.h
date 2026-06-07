@@ -217,6 +217,23 @@ private:
         int binsUsingLowBassFastRelease = 0;
         int binsUsingVeryHighFastRelease = 0;
         int transitionBins = 0;
+
+        int classifiedBins = 0;
+        bool hasConsistentBinCounts = true;
+
+        float noneRatio = 0.0f;
+        float bassRatio = 0.0f;
+        float bassToMidBassRatio = 0.0f;
+        float midBassToMainRatio = 0.0f;
+        float mainRatio = 0.0f;
+        float mainToHighRatio = 0.0f;
+        float highToVeryHighRatio = 0.0f;
+        float veryHighRatio = 0.0f;
+
+        float frequencyDependentSourceRatio = 0.0f;
+        float lowBassFastReleaseRatio = 0.0f;
+        float veryHighFastReleaseRatio = 0.0f;
+        float transitionRatio = 0.0f;
     };
 
     enum class FrequencyDependentSourceRole
@@ -325,6 +342,7 @@ private:
     void resetFrequencyDependentPolicyFrameSummary() noexcept;
     void accumulateFrequencyDependentPolicyFrameSummary (
         const FrequencyDependentBinPolicySnapshot& snapshot) noexcept;
+    void finalizeFrequencyDependentPolicyFrameSummary() noexcept;
     void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
     void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();

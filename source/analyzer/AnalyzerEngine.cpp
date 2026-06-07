@@ -179,6 +179,17 @@ namespace
             juce::Decibels::gainToDecibels (displayMagnitude, -100.0f));
     }
 
+    float safePolicyRatio (int numerator, int denominator) noexcept
+    {
+        if (denominator <= 0 || numerator <= 0)
+            return 0.0f;
+
+        return juce::jlimit (
+            0.0f,
+            1.0f,
+            static_cast<float> (numerator) / static_cast<float> (denominator));
+    }
+
     float blendFrequencyDependentLiveReleaseSmoothing (
         float liveReleaseSmoothing,
         float lowBassTailReleaseSmoothing,
@@ -1479,11 +1490,6 @@ AnalyzerEngine::getFrequencyDependentPolicyBandForSnapshot (
         return FrequencyDependentPolicyBand::none;
 
     const auto hasBlendWeights = snapshot.hasBlendWeights;
-    const auto highBlend =
-        hasBlendWeights && std::isfinite (snapshot.blendWeights.highBlend)
-            ? snapshot.blendWeights.highBlend
-            : 0.0f;
-
     const auto veryHighBlend =
         hasBlendWeights && std::isfinite (snapshot.blendWeights.veryHighBlend)
             ? snapshot.blendWeights.veryHighBlend
@@ -1507,9 +1513,7 @@ AnalyzerEngine::getFrequencyDependentPolicyBandForSnapshot (
             : FrequencyDependentPolicyBand::highToVeryHigh;
 
     if (snapshot.usedHighComposite)
-        return highBlend >= fullBlendThreshold
-            ? FrequencyDependentPolicyBand::mainToHigh
-            : FrequencyDependentPolicyBand::mainToHigh;
+        return FrequencyDependentPolicyBand::mainToHigh;
 
     if (snapshot.usedMidBassComposite
         && snapshot.usedMainComposite
@@ -1594,6 +1598,63 @@ void AnalyzerEngine::accumulateFrequencyDependentPolicyFrameSummary (
 
     if (snapshot.isTransitionBand)
         ++frequencyDependentPolicyFrameSummary.transitionBins;
+}
+
+void AnalyzerEngine::finalizeFrequencyDependentPolicyFrameSummary() noexcept
+{
+    auto& summary = frequencyDependentPolicyFrameSummary;
+
+    summary.classifiedBins =
+        summary.noneBins
+        + summary.bassBins
+        + summary.bassToMidBassBins
+        + summary.midBassToMainBins
+        + summary.mainBins
+        + summary.mainToHighBins
+        + summary.highToVeryHighBins
+        + summary.veryHighBins;
+
+    summary.hasConsistentBinCounts =
+        summary.classifiedBins == summary.totalBins;
+
+    summary.noneRatio =
+        safePolicyRatio (summary.noneBins, summary.totalBins);
+
+    summary.bassRatio =
+        safePolicyRatio (summary.bassBins, summary.totalBins);
+
+    summary.bassToMidBassRatio =
+        safePolicyRatio (summary.bassToMidBassBins, summary.totalBins);
+
+    summary.midBassToMainRatio =
+        safePolicyRatio (summary.midBassToMainBins, summary.totalBins);
+
+    summary.mainRatio =
+        safePolicyRatio (summary.mainBins, summary.totalBins);
+
+    summary.mainToHighRatio =
+        safePolicyRatio (summary.mainToHighBins, summary.totalBins);
+
+    summary.highToVeryHighRatio =
+        safePolicyRatio (summary.highToVeryHighBins, summary.totalBins);
+
+    summary.veryHighRatio =
+        safePolicyRatio (summary.veryHighBins, summary.totalBins);
+
+    summary.frequencyDependentSourceRatio =
+        safePolicyRatio (summary.binsUsingFrequencyDependentSources,
+                         summary.totalBins);
+
+    summary.lowBassFastReleaseRatio =
+        safePolicyRatio (summary.binsUsingLowBassFastRelease,
+                         summary.totalBins);
+
+    summary.veryHighFastReleaseRatio =
+        safePolicyRatio (summary.binsUsingVeryHighFastRelease,
+                         summary.totalBins);
+
+    summary.transitionRatio =
+        safePolicyRatio (summary.transitionBins, summary.totalBins);
 }
 
 int AnalyzerEngine::getFftHopSize() const noexcept
@@ -2025,6 +2086,8 @@ void AnalyzerEngine::processOneFftBlock()
             rmsPowerSpectrum[index]
             + rmsAlpha * (binPowerStats.meanPower - rmsPowerSpectrum[index]);
     }
+
+    finalizeFrequencyDependentPolicyFrameSummary();
 
     const auto activityThresholdGain =
         juce::Decibels::decibelsToGain (energyActivityThresholdDb);
