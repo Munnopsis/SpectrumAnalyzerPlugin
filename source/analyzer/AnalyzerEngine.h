@@ -107,6 +107,14 @@ private:
         bool hasValidFftData = false;
     };
 
+    struct FrequencyDependentBinStats
+    {
+        DisplayBinPowerStats mainStats;
+        DisplayBinPowerStats compositeStats;
+        float centerFrequencyHz = 0.0f;
+        bool hasCenterFrequency = false;
+    };
+
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
@@ -137,6 +145,11 @@ private:
     void processFrequencyDependentHighPathIfReady();
     void updateFrequencyDependentHighBinFftRangesIfNeeded();
     float getFrequencyDependentHighBlendForFrequency (float frequencyHz) const noexcept;
+    FrequencyDependentBinStats getFrequencyDependentBinStatsForDisplayBin (
+        int displayBinIndex,
+        int fftSizeForBlock,
+        bool canUseFrequencyDependentBassPath,
+        bool canUseFrequencyDependentHighPath) const;
     DisplayBinPowerStats blendDisplayBinPowerStats (const DisplayBinPowerStats& bassStats,
                                                     const DisplayBinPowerStats& mainStats,
                                                     float mainBlend) const noexcept;

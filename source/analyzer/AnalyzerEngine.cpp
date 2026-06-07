@@ -852,6 +852,95 @@ float AnalyzerEngine::getFrequencyDependentHighBlendForFrequency (
                                     frequencyDependentHighOnlyMinHz);
 }
 
+AnalyzerEngine::FrequencyDependentBinStats
+AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
+    int displayBinIndex,
+    int fftSizeForBlock,
+    bool canUseFrequencyDependentBassPath,
+    bool canUseFrequencyDependentHighPath) const
+{
+    FrequencyDependentBinStats result;
+
+    if (displayBinIndex < 0 || fftSizeForBlock <= 0)
+        return result;
+
+    const auto index = static_cast<size_t> (displayBinIndex);
+
+    if (displayBinFftRanges.size() <= index)
+        return result;
+
+    const auto& displayBinRange = displayBinFftRanges[index];
+
+    result.mainStats =
+        getFftBinPowerStatsForRange (fftData,
+                                     fftSizeForBlock,
+                                     displayBinRange.firstBin,
+                                     displayBinRange.lastBin,
+                                     displayBinRange.leftBin,
+                                     displayBinRange.rightBin);
+
+    result.compositeStats = result.mainStats;
+
+    if (displayBinCenterFrequenciesHz.size() > index)
+    {
+        result.centerFrequencyHz = displayBinCenterFrequenciesHz[index];
+        result.hasCenterFrequency = result.centerFrequencyHz > 0.0f;
+    }
+
+    if (canUseFrequencyDependentBassPath
+        && result.hasCenterFrequency
+        && frequencyDependentBassPath.displayBinFftRanges.size() > index)
+    {
+        const auto& bassDisplayBinRange =
+            frequencyDependentBassPath.displayBinFftRanges[index];
+
+        const auto bassBinPowerStats =
+            getFftBinPowerStatsForRange (frequencyDependentBassPath.fftData,
+                                         frequencyDependentBassFftSize,
+                                         bassDisplayBinRange.firstBin,
+                                         bassDisplayBinRange.lastBin,
+                                         bassDisplayBinRange.leftBin,
+                                         bassDisplayBinRange.rightBin);
+
+        const auto mainBlend =
+            getFrequencyDependentMainBlendForFrequency (result.centerFrequencyHz);
+
+        result.compositeStats =
+            blendDisplayBinPowerStats (bassBinPowerStats,
+                                       result.mainStats,
+                                       mainBlend);
+    }
+
+    if (canUseFrequencyDependentHighPath
+        && result.hasCenterFrequency
+        && frequencyDependentHighPath.displayBinFftRanges.size() > index)
+    {
+        const auto highBlend =
+            getFrequencyDependentHighBlendForFrequency (result.centerFrequencyHz);
+
+        if (highBlend > 0.0f)
+        {
+            const auto& highDisplayBinRange =
+                frequencyDependentHighPath.displayBinFftRanges[index];
+
+            const auto highBinPowerStats =
+                getFftBinPowerStatsForRange (frequencyDependentHighPath.fftData,
+                                             frequencyDependentHighFftSize,
+                                             highDisplayBinRange.firstBin,
+                                             highDisplayBinRange.lastBin,
+                                             highDisplayBinRange.leftBin,
+                                             highDisplayBinRange.rightBin);
+
+            result.compositeStats =
+                blendDisplayBinPowerStats (result.compositeStats,
+                                           highBinPowerStats,
+                                           highBlend);
+        }
+    }
+
+    return result;
+}
+
 AnalyzerEngine::DisplayBinPowerStats AnalyzerEngine::blendDisplayBinPowerStats (
     const DisplayBinPowerStats& bassStats,
     const DisplayBinPowerStats& mainStats,
@@ -1256,88 +1345,27 @@ void AnalyzerEngine::processOneFftBlock()
 
     for (int i = 0; i < displayBinCount; ++i)
     {
-        const auto& displayBinRange =
-            displayBinFftRanges[static_cast<size_t> (i)];
-
-        const auto mainBinPowerStats =
-            getFftBinPowerStatsForRange (fftData,
-                                         fftSizeForBlock,
-                                         displayBinRange.firstBin,
-                                         displayBinRange.lastBin,
-                                         displayBinRange.leftBin,
-                                         displayBinRange.rightBin);
-
-        auto binPowerStats = mainBinPowerStats;
         const auto index = static_cast<size_t> (i);
+        const auto binStats =
+            getFrequencyDependentBinStatsForDisplayBin (
+                i,
+                fftSizeForBlock,
+                canUseFrequencyDependentBassPath,
+                canUseFrequencyDependentHighPath);
 
-        if (canUseFrequencyDependentBassPath)
-        {
-            const auto centerFrequency = displayBinCenterFrequenciesHz[index];
-
-            if (centerFrequency > 0.0f)
-            {
-                const auto& bassDisplayBinRange =
-                    frequencyDependentBassPath.displayBinFftRanges[index];
-
-                const auto bassBinPowerStats =
-                    getFftBinPowerStatsForRange (frequencyDependentBassPath.fftData,
-                                                 frequencyDependentBassFftSize,
-                                                 bassDisplayBinRange.firstBin,
-                                                 bassDisplayBinRange.lastBin,
-                                                 bassDisplayBinRange.leftBin,
-                                                 bassDisplayBinRange.rightBin);
-
-                const auto mainBlend =
-                    getFrequencyDependentMainBlendForFrequency (centerFrequency);
-
-                binPowerStats = blendDisplayBinPowerStats (
-                    bassBinPowerStats,
-                    mainBinPowerStats,
-                    mainBlend);
-            }
-        }
-
-        if (canUseFrequencyDependentHighPath)
-        {
-            const auto centerFrequency = displayBinCenterFrequenciesHz[index];
-
-            if (centerFrequency > 0.0f)
-            {
-                const auto highBlend =
-                    getFrequencyDependentHighBlendForFrequency (centerFrequency);
-
-                if (highBlend > 0.0f)
-                {
-                    const auto& highDisplayBinRange =
-                        frequencyDependentHighPath.displayBinFftRanges[index];
-
-                    const auto highBinPowerStats =
-                        getFftBinPowerStatsForRange (frequencyDependentHighPath.fftData,
-                                                     frequencyDependentHighFftSize,
-                                                     highDisplayBinRange.firstBin,
-                                                     highDisplayBinRange.lastBin,
-                                                     highDisplayBinRange.leftBin,
-                                                     highDisplayBinRange.rightBin);
-
-                    binPowerStats = blendDisplayBinPowerStats (
-                        binPowerStats,
-                        highBinPowerStats,
-                        highBlend);
-                }
-            }
-        }
+        const auto& mainBinPowerStats = binStats.mainStats;
+        const auto& binPowerStats = binStats.compositeStats;
 
         auto liveVisualBinPowerStats = binPowerStats;
         const auto peakHoldVisualBinPowerStats = binPowerStats;
         auto assistAmount = 0.0f;
 
-        if (currentFrequencyDependentResolutionEnabled
-            && displayBinCenterFrequenciesHz.size() == static_cast<size_t> (displayBinCount))
+        if (currentFrequencyDependentResolutionEnabled)
         {
-            const auto centerFrequency = displayBinCenterFrequenciesHz[index];
+            const auto centerFrequency = binStats.centerFrequencyHz;
             auto& storedAssistAmount = frequencyDependentTransientAssistAmounts[index];
 
-            if (centerFrequency > 0.0f
+            if (binStats.hasCenterFrequency
                 && centerFrequency <= frequencyDependentTransientAssistMaxHz)
             {
                 const auto frequencyDependentDisplayDb =
