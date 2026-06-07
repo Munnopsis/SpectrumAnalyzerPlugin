@@ -118,6 +118,13 @@ private:
         bool hasTransientReferenceStats = false;
     };
 
+    struct FrequencyDependentLiveAssistResult
+    {
+        DisplayBinPowerStats liveVisualStats;
+        float assistAmount = 0.0f;
+        bool lowBassTailSuppressionActive = false;
+    };
+
     enum class FrequencyDependentSourceRole
     {
         bass,
@@ -188,6 +195,14 @@ private:
         const DisplayBinPowerStats& mainStats,
         float centerFrequencyHz,
         float assistAmount) const noexcept;
+    FrequencyDependentLiveAssistResult applyFrequencyDependentLiveAssistForDisplayBin (
+        const DisplayBinPowerStats& compositeStats,
+        const DisplayBinPowerStats& transientReferenceStats,
+        float centerFrequencyHz,
+        bool hasCenterFrequency,
+        float& storedAssistAmount,
+        float frameAdvanceSeconds,
+        float transientAssistReleaseSmoothing) const noexcept;
     void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
     void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();

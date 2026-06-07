@@ -167,6 +167,17 @@ namespace
 
         return meanPower + peakWeight * (peakPower - meanPower);
     }
+
+    float displayBinPowerStatsToDb (const DisplayBinPowerStats& stats) noexcept
+    {
+        const auto displayPower = getPeakPreservingDisplayPower (stats);
+        const auto displayMagnitude = std::sqrt (displayPower);
+
+        return juce::jlimit (
+            -100.0f,
+            0.0f,
+            juce::Decibels::gainToDecibels (displayMagnitude, -100.0f));
+    }
 }
 
 AnalyzerEngine::AnalyzerEngine()
@@ -1005,9 +1016,16 @@ AnalyzerEngine::getFrequencyDependentBinStatsForDisplayBin (
 
             if (midBassBinPowerStats.numBinsUsed > 0)
             {
-                if (result.centerFrequencyHz <= frequencyDependentBassOnlyMaxHz)
+                if (result.centerFrequencyHz <= frequencyDependentMainOnlyMinHz)
                 {
-                    result.transientReferenceStats = midBassBinPowerStats;
+                    const auto transientReferenceMainBlend =
+                        getFrequencyDependentMainBlendForFrequency (
+                            result.centerFrequencyHz);
+
+                    result.transientReferenceStats =
+                        blendDisplayBinPowerStats (midBassBinPowerStats,
+                                                   result.mainStats,
+                                                   transientReferenceMainBlend);
                     result.hasTransientReferenceStats = true;
                 }
 
@@ -1141,6 +1159,98 @@ AnalyzerEngine::DisplayBinPowerStats AnalyzerEngine::applyFrequencyDependentTran
     return blendDisplayBinPowerStats (frequencyDependentStats,
                                       mainStats,
                                       assistBlend);
+}
+
+AnalyzerEngine::FrequencyDependentLiveAssistResult
+AnalyzerEngine::applyFrequencyDependentLiveAssistForDisplayBin (
+    const DisplayBinPowerStats& compositeStats,
+    const DisplayBinPowerStats& transientReferenceStats,
+    float centerFrequencyHz,
+    bool hasCenterFrequency,
+    float& storedAssistAmount,
+    float frameAdvanceSeconds,
+    float transientAssistReleaseSmoothing) const noexcept
+{
+    FrequencyDependentLiveAssistResult result;
+    result.liveVisualStats = compositeStats;
+
+    if (! hasCenterFrequency
+        || centerFrequencyHz > frequencyDependentTransientAssistMaxHz)
+    {
+        storedAssistAmount = 0.0f;
+        return result;
+    }
+
+    const auto frequencyDependentDisplayDb =
+        displayBinPowerStatsToDb (compositeStats);
+
+    const auto referenceDisplayDb =
+        displayBinPowerStatsToDb (transientReferenceStats);
+
+    const auto referenceAboveFrequencyDependentDb =
+        referenceDisplayDb - frequencyDependentDisplayDb;
+
+    const auto frequencyDependentAboveReferenceDb =
+        frequencyDependentDisplayDb - referenceDisplayDb;
+
+    auto desiredAssistAmount = 0.0f;
+
+    if (referenceAboveFrequencyDependentDb >= frequencyDependentTransientAssistMinRiseDb)
+    {
+        desiredAssistAmount = frequencyDependentTransientAttackBlend;
+    }
+    else if (frequencyDependentAboveReferenceDb
+            >= frequencyDependentTransientTailSuppressMinExcessDb)
+    {
+        desiredAssistAmount = frequencyDependentTransientTailSuppressBlend;
+        result.lowBassTailSuppressionActive =
+            centerFrequencyHz <= frequencyDependentBassOnlyMaxHz;
+    }
+
+    desiredAssistAmount =
+        juce::jlimit (0.0f,
+                      1.0f,
+                      std::isfinite (desiredAssistAmount)
+                          ? desiredAssistAmount
+                          : 0.0f);
+
+    storedAssistAmount =
+        std::isfinite (storedAssistAmount) ? storedAssistAmount : 0.0f;
+
+    if (desiredAssistAmount > storedAssistAmount)
+    {
+        storedAssistAmount = desiredAssistAmount;
+    }
+    else if (frameAdvanceSeconds > 0.0f)
+    {
+        storedAssistAmount +=
+            transientAssistReleaseSmoothing
+                * (desiredAssistAmount - storedAssistAmount);
+    }
+
+    storedAssistAmount =
+        juce::jlimit (0.0f,
+                      1.0f,
+                      std::isfinite (storedAssistAmount)
+                          ? storedAssistAmount
+                          : 0.0f);
+
+    result.assistAmount = storedAssistAmount;
+
+    if (centerFrequencyHz <= frequencyDependentBassOnlyMaxHz
+        && storedAssistAmount > 0.001f
+        && frequencyDependentAboveReferenceDb > 0.0f)
+    {
+        result.lowBassTailSuppressionActive = true;
+    }
+
+    result.liveVisualStats =
+        applyFrequencyDependentTransientAssist (compositeStats,
+                                                transientReferenceStats,
+                                                centerFrequencyHz,
+                                                result.assistAmount);
+
+    return result;
 }
 
 int AnalyzerEngine::getFftHopSize() const noexcept
@@ -1461,17 +1571,6 @@ void AnalyzerEngine::processOneFftBlock()
             frameAdvanceSeconds,
             frequencyDependentTransientAssistReleaseSeconds);
 
-    const auto displayStatsToDb = [] (const DisplayBinPowerStats& stats) noexcept
-    {
-        const auto displayPower = getPeakPreservingDisplayPower (stats);
-        const auto displayMagnitude = std::sqrt (displayPower);
-
-        return juce::jlimit (
-            -100.0f,
-            0.0f,
-            juce::Decibels::gainToDecibels (displayMagnitude, -100.0f));
-    };
-
     auto energyFramePeakPower = 0.0f;
     const auto canUseFrequencyDependentBassPath =
         currentFrequencyDependentResolutionEnabled
@@ -1506,94 +1605,30 @@ void AnalyzerEngine::processOneFftBlock()
 
         auto liveVisualBinPowerStats = binPowerStats;
         const auto peakHoldVisualBinPowerStats = binPowerStats;
-        auto assistAmount = 0.0f;
         auto lowBassTailSuppressionActive = false;
 
         if (currentFrequencyDependentResolutionEnabled)
         {
-            const auto centerFrequency = binStats.centerFrequencyHz;
             auto& storedAssistAmount = frequencyDependentTransientAssistAmounts[index];
 
-            if (binStats.hasCenterFrequency
-                && centerFrequency <= frequencyDependentTransientAssistMaxHz)
-            {
-                const auto frequencyDependentDisplayDb =
-                    displayStatsToDb (binPowerStats);
+            const auto assistResult =
+                applyFrequencyDependentLiveAssistForDisplayBin (
+                    binPowerStats,
+                    transientReferenceBinPowerStats,
+                    binStats.centerFrequencyHz,
+                    binStats.hasCenterFrequency,
+                    storedAssistAmount,
+                    frameAdvanceSeconds,
+                    transientAssistReleaseSmoothing);
 
-                const auto referenceDisplayDb =
-                    displayStatsToDb (transientReferenceBinPowerStats);
-
-                const auto referenceAboveFrequencyDependentDb =
-                    referenceDisplayDb - frequencyDependentDisplayDb;
-
-                const auto frequencyDependentAboveReferenceDb =
-                    frequencyDependentDisplayDb - referenceDisplayDb;
-
-                auto desiredAssistAmount = 0.0f;
-
-                if (referenceAboveFrequencyDependentDb >= frequencyDependentTransientAssistMinRiseDb)
-                {
-                    desiredAssistAmount = frequencyDependentTransientAttackBlend;
-                }
-                else if (frequencyDependentAboveReferenceDb
-                        >= frequencyDependentTransientTailSuppressMinExcessDb)
-                {
-                    desiredAssistAmount = frequencyDependentTransientTailSuppressBlend;
-                    lowBassTailSuppressionActive =
-                        centerFrequency <= frequencyDependentBassOnlyMaxHz;
-                }
-
-                desiredAssistAmount =
-                    juce::jlimit (0.0f,
-                                  1.0f,
-                                  std::isfinite (desiredAssistAmount)
-                                      ? desiredAssistAmount
-                                      : 0.0f);
-
-                storedAssistAmount =
-                    std::isfinite (storedAssistAmount) ? storedAssistAmount : 0.0f;
-
-                if (desiredAssistAmount > storedAssistAmount)
-                {
-                    storedAssistAmount = desiredAssistAmount;
-                }
-                else if (frameAdvanceSeconds > 0.0f)
-                {
-                    storedAssistAmount +=
-                        transientAssistReleaseSmoothing
-                            * (desiredAssistAmount - storedAssistAmount);
-                }
-
-                storedAssistAmount =
-                    juce::jlimit (0.0f,
-                                  1.0f,
-                                  std::isfinite (storedAssistAmount)
-                                      ? storedAssistAmount
-                                      : 0.0f);
-
-                assistAmount = storedAssistAmount;
-
-                if (centerFrequency <= frequencyDependentBassOnlyMaxHz
-                    && storedAssistAmount > 0.001f
-                    && frequencyDependentAboveReferenceDb > 0.0f)
-                {
-                    lowBassTailSuppressionActive = true;
-                }
-            }
-            else
-            {
-                storedAssistAmount = 0.0f;
-            }
-
-            liveVisualBinPowerStats = applyFrequencyDependentTransientAssist (
-                binPowerStats,
-                transientReferenceBinPowerStats,
-                centerFrequency,
-                assistAmount);
+            liveVisualBinPowerStats = assistResult.liveVisualStats;
+            lowBassTailSuppressionActive =
+                assistResult.lowBassTailSuppressionActive;
         }
 
-        const auto liveTargetDb = displayStatsToDb (liveVisualBinPowerStats);
-        const auto peakHoldTargetDb = displayStatsToDb (peakHoldVisualBinPowerStats);
+        const auto liveTargetDb = displayBinPowerStatsToDb (liveVisualBinPowerStats);
+        const auto peakHoldTargetDb =
+            displayBinPowerStatsToDb (peakHoldVisualBinPowerStats);
 
         energyFrameMeanPower[index] = binPowerStats.meanPower;
         energyFramePeakPower = juce::jmax (energyFramePeakPower, binPowerStats.meanPower);
