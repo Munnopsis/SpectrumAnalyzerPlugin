@@ -3,15 +3,15 @@
 
 //==============================================================================
 PluginProcessor::PluginProcessor()
-     : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
-                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                     #endif
-                       ),
-       parameters (*this, nullptr, "Parameters", createParameterLayout())
+    : AudioProcessor (BusesProperties()
+#if !JucePlugin_IsMidiEffect
+    #if !JucePlugin_IsSynth
+              .withInput ("Input", juce::AudioChannelSet::stereo(), true)
+    #endif
+              .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+#endif
+              ),
+      parameters (*this, nullptr, "Parameters", createParameterLayout())
 {
     inputModeParameter = parameters.getRawParameterValue (inputModeParamId);
     fftSizeParameter = parameters.getRawParameterValue (fftSizeParamId);
@@ -32,57 +32,57 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
-    params.push_back (std::make_unique<juce::AudioParameterBool>(
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { showLiveCurveParamId, 1 },
         "Show Live Curve",
         true));
 
-    params.push_back (std::make_unique<juce::AudioParameterBool>(
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { showRmsCurveParamId, 1 },
         "Show RMS Curve",
         true));
 
-    params.push_back (std::make_unique<juce::AudioParameterBool>(
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { showPeakHoldCurveParamId, 1 },
         "Show Peak Hold Curve",
         true));
 
-    params.push_back (std::make_unique<juce::AudioParameterBool>(
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { showEnergyCurveParamId, 1 },
         "Show Energy Curve",
         true));
 
-    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { inputModeParamId, 1 },
         "Input Mode",
         getAnalyzerInputModeChoices(),
         0));
 
-    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { fftSizeParamId, 1 },
         "FFT Size",
         getAnalyzerFftSizeChoices(),
         1));
 
-    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { peakHoldDecayParamId, 1 },
         "Peak Hold Decay",
         getAnalyzerPeakHoldDecayChoices(),
         3));
 
-    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { rmsTimeParamId, 1 },
         "RMS Time",
         getAnalyzerRmsTimeChoices(),
         1));
 
-    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { dbRangeParamId, 1 },
         "dB Range",
         getAnalyzerDbRangeChoices(),
         2));
 
-    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { slopeParamId, 1 },
         "Slope",
         getAnalyzerSlopeChoices(),
@@ -104,29 +104,29 @@ const juce::String PluginProcessor::getName() const
 
 bool PluginProcessor::acceptsMidi() const
 {
-   #if JucePlugin_WantsMidiInput
+#if JucePlugin_WantsMidiInput
     return true;
-   #else
+#else
     return false;
-   #endif
+#endif
 }
 
 bool PluginProcessor::producesMidi() const
 {
-   #if JucePlugin_ProducesMidiOutput
+#if JucePlugin_ProducesMidiOutput
     return true;
-   #else
+#else
     return false;
-   #endif
+#endif
 }
 
 bool PluginProcessor::isMidiEffect() const
 {
-   #if JucePlugin_IsMidiEffect
+#if JucePlugin_IsMidiEffect
     return true;
-   #else
+#else
     return false;
-   #endif
+#endif
 }
 
 double PluginProcessor::getTailLengthSeconds() const
@@ -136,8 +136,8 @@ double PluginProcessor::getTailLengthSeconds() const
 
 int PluginProcessor::getNumPrograms()
 {
-    return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
-                // so this should be at least 1, even if you're not really implementing programs.
+    return 1; // NB: some hosts don't cope very well if you tell them there are 0 programs,
+    // so this should be at least 1, even if you're not really implementing programs.
 }
 
 int PluginProcessor::getCurrentProgram()
@@ -215,6 +215,13 @@ bool PluginProcessor::isFrequencyDependentAnalyzerResolution() const noexcept
         fftSizeParameter->load (std::memory_order_relaxed));
 }
 
+bool PluginProcessor::isFrequencyDependentAnalyzerResolutionTuned() const noexcept
+{
+    if (fftSizeParameter == nullptr)
+        return false;
+    return analyzerFftSizeIsFrequencyDependentTuned (fftSizeParameter->load (std::memory_order_relaxed));
+}
+
 //==============================================================================
 
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -226,6 +233,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     analyzerEngine.setRequestedFftOrder (getAnalyzerFftOrder());
     analyzerEngine.setFrequencyDependentResolutionEnabled (
         isFrequencyDependentAnalyzerResolution());
+    analyzerEngine.setFrequencyDependentTunedResolutionEnabled ( isFrequencyDependentAnalyzerResolutionTuned());
     analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
     analyzerEngine.setRmsTimeSeconds (getRmsTimeSeconds());
 
@@ -243,33 +251,33 @@ void PluginProcessor::releaseResources()
 
 bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-  #if JucePlugin_IsMidiEffect
+#if JucePlugin_IsMidiEffect
     juce::ignoreUnused (layouts);
     return true;
-  #else
+#else
     // This is the place where you check if the layout is supported.
     // In this template code we only support mono or stereo.
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
 
     // This checks if the input layout matches the output layout
-   #if ! JucePlugin_IsSynth
+    #if !JucePlugin_IsSynth
     if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
         return false;
-   #endif
+    #endif
 
     return true;
-  #endif
+#endif
 }
 
 void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
-                                    juce::MidiBuffer& midiMessages)
+    juce::MidiBuffer& midiMessages)
 {
     juce::ignoreUnused (midiMessages);
 
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
+    auto totalNumInputChannels = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
@@ -284,8 +292,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     {
         maxSample = juce::jmax (
             maxSample,
-            buffer.getMagnitude (channel, 0, buffer.getNumSamples())
-        );
+            buffer.getMagnitude (channel, 0, buffer.getNumSamples()));
     }
 
     const auto levelDb = juce::Decibels::gainToDecibels (maxSample, -100.0f);
@@ -294,6 +301,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     analyzerEngine.setRequestedFftOrder (getAnalyzerFftOrder());
     analyzerEngine.setFrequencyDependentResolutionEnabled (
         isFrequencyDependentAnalyzerResolution());
+    analyzerEngine.setFrequencyDependentTunedResolutionEnabled ( isFrequencyDependentAnalyzerResolutionTuned());
     analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
     analyzerEngine.setRmsTimeSeconds (getRmsTimeSeconds());
 
@@ -326,7 +334,6 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 
     copyXmlToBinary (*xml, destData);
 }
-
 
 void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
 {

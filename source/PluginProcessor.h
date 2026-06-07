@@ -107,6 +107,7 @@ public:
     float getAnalyzerMinimumDecibels() const noexcept;
     float getAnalyzerSlopeDbPerOctave() const noexcept;
     bool isFrequencyDependentAnalyzerResolution() const noexcept;
+    bool isFrequencyDependentAnalyzerResolutionTuned() const noexcept;
 
     bool copyLatestAnalyzerFrame (AnalyzerEngine::Frame& destination)
     {

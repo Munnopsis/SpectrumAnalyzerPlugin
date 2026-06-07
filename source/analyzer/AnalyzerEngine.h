@@ -8,14 +8,14 @@
 
 #include <array>
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <vector>
 #include "AnalyzerFftSize.h"
-#include <memory>
 
 class AnalyzerEngine : private juce::Thread
 {
-public:
+   public:
     AnalyzerEngine();
     ~AnalyzerEngine() override;
 
@@ -45,7 +45,7 @@ public:
         std::vector<NotePeak> notePeaks;
     };
 
-    void prepare (double sampleRate, AnalyzerFifo& fifoToReadFrom);
+    void prepare(double sampleRate, AnalyzerFifo& fifoToReadFrom);
     void reset();
 
     void start();
@@ -53,20 +53,21 @@ public:
 
     void requestClearPeakHold() noexcept;
     void requestClearEnergy() noexcept;
-    void setRmsTimeSeconds (float newRmsTimeSeconds) noexcept;
+    void setRmsTimeSeconds(float newRmsTimeSeconds) noexcept;
 
-    void setRequestedFftOrder (int newFftOrder) noexcept;
-    void setFrequencyDependentResolutionEnabled (
+    void setRequestedFftOrder(int newFftOrder) noexcept;
+    void setFrequencyDependentResolutionEnabled(
         bool shouldUseFrequencyDependentResolution) noexcept;
-    void setPeakHoldDecayDbPerSecond (float newDecayDbPerSecond) noexcept;
-    void setDisplayFrequencyRange (float minimumHz, float maximumHz) noexcept;
+    void setFrequencyDependentTunedResolutionEnabled(bool shouldUseFrequencyDependentTunedResolution) noexcept;
+    void setPeakHoldDecayDbPerSecond(float newDecayDbPerSecond) noexcept;
+    void setDisplayFrequencyRange(float minimumHz, float maximumHz) noexcept;
 
-    bool copyLatestSpectrumDb (std::vector<float>& destination);
-    bool copyLatestPeakHoldSpectrumDb (std::vector<float>& destination);
-    bool copyLatestRmsSpectrumDb (std::vector<float>& destination);
-    bool copyLatestFrame (Frame& destination);
+    bool copyLatestSpectrumDb(std::vector<float>& destination);
+    bool copyLatestPeakHoldSpectrumDb(std::vector<float>& destination);
+    bool copyLatestRmsSpectrumDb(std::vector<float>& destination);
+    bool copyLatestFrame(Frame& destination);
 
-private:
+   private:
     struct TrackedNotePeak
     {
         float frequencyHz = 0.0f;
@@ -264,64 +265,64 @@ private:
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
     std::array<FrequencyDependentSourceDescriptor, 4>
-        getFrequencyDependentSourceDescriptors() noexcept;
-    bool canUseFrequencyDependentSource (const FrequencyDependentFftSource& source,
-        int fftSize) const noexcept;
+    getFrequencyDependentSourceDescriptors() noexcept;
+    bool canUseFrequencyDependentSource(const FrequencyDependentFftSource& source,
+                                        int fftSize) const noexcept;
     FrequencyDependentSourceAvailability
-        getFrequencyDependentSourceAvailability() const noexcept;
+    getFrequencyDependentSourceAvailability() const noexcept;
 
-    DisplayBinPowerStats getFrequencyDependentSourceStatsForDisplayBin (
+    DisplayBinPowerStats getFrequencyDependentSourceStatsForDisplayBin(
         const FrequencyDependentFftSource& source,
         int fftSize,
         size_t displayBinIndex) const noexcept;
 
-    void configureFft (int newFftOrder);
+    void configureFft(int newFftOrder);
     void resetOverlapBuffer();
-    void configureFrequencyDependentFftSource (FrequencyDependentFftSource& source,
-                                               int fftOrder,
-                                               int fftSize);
-    void resetFrequencyDependentFftSource (FrequencyDependentFftSource& source);
-    void appendSamplesToFrequencyDependentFftSource (FrequencyDependentFftSource& source,
-                                                     const float* samples,
-                                                     int numSamples,
-                                                     int fftSize);
-    void processFrequencyDependentFftSourceIfReady (FrequencyDependentFftSource& source,
+    void configureFrequencyDependentFftSource(FrequencyDependentFftSource& source,
+                                              int fftOrder,
+                                              int fftSize);
+    void resetFrequencyDependentFftSource(FrequencyDependentFftSource& source);
+    void appendSamplesToFrequencyDependentFftSource(FrequencyDependentFftSource& source,
+                                                    const float* samples,
+                                                    int numSamples,
                                                     int fftSize);
-    void updateFrequencyDependentSourceBinFftRangesIfNeeded (
+    void processFrequencyDependentFftSourceIfReady(FrequencyDependentFftSource& source,
+                                                   int fftSize);
+    void updateFrequencyDependentSourceBinFftRangesIfNeeded(
         FrequencyDependentFftSource& source,
         int fftSize);
-    float getFrequencyDependentMidBassBlendForFrequency (float frequencyHz) const noexcept;
-    float getFrequencyDependentMainBlendForFrequency (float frequencyHz) const noexcept;
-    float getFrequencyDependentHighBlendForFrequency (float frequencyHz) const noexcept;
-    float getFrequencyDependentVeryHighBlendForFrequency (
+    float getFrequencyDependentMidBassBlendForFrequency(float frequencyHz) const noexcept;
+    float getFrequencyDependentMainBlendForFrequency(float frequencyHz) const noexcept;
+    float getFrequencyDependentHighBlendForFrequency(float frequencyHz) const noexcept;
+    float getFrequencyDependentVeryHighBlendForFrequency(
         float frequencyHz) const noexcept;
-    FrequencyDependentBlendWeights getFrequencyDependentBlendWeightsForFrequency (
+    FrequencyDependentBlendWeights getFrequencyDependentBlendWeightsForFrequency(
         float frequencyHz) const noexcept;
-    FrequencyDependentLowCompositeResult getFrequencyDependentLowCompositeForDisplayBin (
+    FrequencyDependentLowCompositeResult getFrequencyDependentLowCompositeForDisplayBin(
         size_t displayBinIndex,
         float centerFrequencyHz,
         const DisplayBinPowerStats& mainStats,
         const FrequencyDependentSourceAvailability& sourceAvailability,
         const FrequencyDependentBlendWeights& blendWeights) const;
-    FrequencyDependentHighCompositeResult applyFrequencyDependentHighBlendForDisplayBin (
+    FrequencyDependentHighCompositeResult applyFrequencyDependentHighBlendForDisplayBin(
         size_t displayBinIndex,
         float centerFrequencyHz,
         const DisplayBinPowerStats& baseStats,
         const FrequencyDependentSourceAvailability& sourceAvailability,
         const FrequencyDependentBlendWeights& blendWeights) const;
-    FrequencyDependentBinStats getFrequencyDependentBinStatsForDisplayBin (
+    FrequencyDependentBinStats getFrequencyDependentBinStatsForDisplayBin(
         int displayBinIndex,
         int fftSizeForBlock,
         const FrequencyDependentSourceAvailability& sourceAvailability) const;
-    DisplayBinPowerStats blendDisplayBinPowerStats (const DisplayBinPowerStats& bassStats,
-                                                    const DisplayBinPowerStats& mainStats,
-                                                    float mainBlend) const noexcept;
-    DisplayBinPowerStats applyFrequencyDependentTransientAssist (
+    DisplayBinPowerStats blendDisplayBinPowerStats(const DisplayBinPowerStats& bassStats,
+                                                   const DisplayBinPowerStats& mainStats,
+                                                   float mainBlend) const noexcept;
+    DisplayBinPowerStats applyFrequencyDependentTransientAssist(
         const DisplayBinPowerStats& frequencyDependentStats,
         const DisplayBinPowerStats& mainStats,
         float centerFrequencyHz,
         float assistAmount) const noexcept;
-    FrequencyDependentLiveAssistResult applyFrequencyDependentLiveAssistForDisplayBin (
+    FrequencyDependentLiveAssistResult applyFrequencyDependentLiveAssistForDisplayBin(
         const DisplayBinPowerStats& compositeStats,
         const DisplayBinPowerStats& transientReferenceStats,
         float centerFrequencyHz,
@@ -331,16 +332,16 @@ private:
         float frameAdvanceSeconds,
         float transientAssistReleaseSmoothing) const noexcept;
     FrequencyDependentLiveReleaseBlendWeights
-        getFrequencyDependentLiveReleaseBlendWeightsForDisplayBin (
-            const FrequencyDependentBinStats& binStats,
-            const FrequencyDependentLiveAssistResult& assistResult) const noexcept;
-    FrequencyDependentBinPolicySnapshot getFrequencyDependentBinPolicySnapshot (
+    getFrequencyDependentLiveReleaseBlendWeightsForDisplayBin(
+        const FrequencyDependentBinStats& binStats,
+        const FrequencyDependentLiveAssistResult& assistResult) const noexcept;
+    FrequencyDependentBinPolicySnapshot getFrequencyDependentBinPolicySnapshot(
         const FrequencyDependentBinStats& binStats,
         const FrequencyDependentLiveReleaseBlendWeights& liveReleaseBlendWeights) const noexcept;
-    FrequencyDependentPolicyBand getFrequencyDependentPolicyBandForSnapshot (
+    FrequencyDependentPolicyBand getFrequencyDependentPolicyBandForSnapshot(
         const FrequencyDependentBinPolicySnapshot& snapshot) const noexcept;
     void resetFrequencyDependentPolicyFrameSummary() noexcept;
-    void accumulateFrequencyDependentPolicyFrameSummary (
+    void accumulateFrequencyDependentPolicyFrameSummary(
         const FrequencyDependentBinPolicySnapshot& snapshot) noexcept;
     void finalizeFrequencyDependentPolicyFrameSummary() noexcept;
     void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
@@ -349,13 +350,13 @@ private:
     void handleClearPeakHoldRequest();
     void handleClearEnergyRequest();
     int getFftHopSize() const noexcept;
-    int frequencyToMidiNote (float frequencyHz) const noexcept;
-    int midiNoteToPitchClass (int midiNote) const noexcept;
-    void extractInstantaneousNotePeaksFromFftData (int fftSizeForBlock);
-    void updateTrackedNotePeaks (float frameDurationSeconds,
-                             float peakHoldDecayDbPerSecondForFrame);
-    static float smoothingCoefficientForTimeConstant (float frameDurationSeconds,
-                                                      float timeConstantSeconds) noexcept;
+    int frequencyToMidiNote(float frequencyHz) const noexcept;
+    int midiNoteToPitchClass(int midiNote) const noexcept;
+    void extractInstantaneousNotePeaksFromFftData(int fftSizeForBlock);
+    void updateTrackedNotePeaks(float frameDurationSeconds,
+                                float peakHoldDecayDbPerSecondForFrame);
+    static float smoothingCoefficientForTimeConstant(float frameDurationSeconds,
+                                                     float timeConstantSeconds) noexcept;
     void publishStableNotePeaks();
 
     static constexpr int minFftOrder = 10;
@@ -427,13 +428,15 @@ private:
     float currentDisplayMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
 
     int currentFftOrder = defaultFftOrder;
-    int currentFftSize = analyzerFftSizeFromOrder (defaultFftOrder);
+    int currentFftSize = analyzerFftSizeFromOrder(defaultFftOrder);
     bool currentFrequencyDependentResolutionEnabled = false;
+    bool currentFrequencyDependentTunedResolutionEnabled = false;
 
-    std::atomic<int> requestedFftOrder { defaultFftOrder };
-    std::atomic<bool> requestedFrequencyDependentResolutionEnabled { false };
-    std::atomic<float> requestedDisplayMinFrequencyHz { AnalyzerFrequencyRange::minimumHz };
-    std::atomic<float> requestedDisplayMaxFrequencyHz { AnalyzerFrequencyRange::maximumHz };
+    std::atomic<int> requestedFftOrder{defaultFftOrder};
+    std::atomic<bool> requestedFrequencyDependentResolutionEnabled{false};
+    std::atomic<bool> requestedFrequencyDependentTunedResolutionEnabled { false };
+    std::atomic<float> requestedDisplayMinFrequencyHz{AnalyzerFrequencyRange::minimumHz};
+    std::atomic<float> requestedDisplayMaxFrequencyHz{AnalyzerFrequencyRange::maximumHz};
 
     std::unique_ptr<juce::dsp::FFT> forwardFFT;
     std::unique_ptr<juce::dsp::WindowingFunction<float>> window;
@@ -481,11 +484,11 @@ private:
     std::vector<NotePeak> latestNotePeaks;
 
     std::mutex latestSpectrumMutex;
-    std::atomic<bool> hasFrame { false };
-    std::atomic<bool> clearPeakHoldRequested { false };
-    std::atomic<bool> clearEnergyRequested { false };
-    std::atomic<float> peakHoldDecayDbPerSecond { defaultPeakHoldDecayDbPerSecond };
-    std::atomic<float> rmsTimeSeconds { defaultRmsTimeSeconds };
+    std::atomic<bool> hasFrame{false};
+    std::atomic<bool> clearPeakHoldRequested{false};
+    std::atomic<bool> clearEnergyRequested{false};
+    std::atomic<float> peakHoldDecayDbPerSecond{defaultPeakHoldDecayDbPerSecond};
+    std::atomic<float> rmsTimeSeconds{defaultRmsTimeSeconds};
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AnalyzerEngine)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AnalyzerEngine)
 };
