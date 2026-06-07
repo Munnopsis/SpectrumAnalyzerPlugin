@@ -179,6 +179,7 @@ AnalyzerEngine::AnalyzerEngine()
     energyPowerSpectrum.resize (displayBinCount, 0.0f);
     energyFrameMeanPower.resize (displayBinCount, 0.0f);
     displayBinCenterFrequenciesHz.resize (displayBinCount, 0.0f);
+    frequencyDependentTransientAssistAmounts.resize (displayBinCount, 0.0f);
     instantaneousNotePeaks.reserve (maxInstantaneousNotePeaks);
     trackedNotePeaks.reserve (maxInstantaneousNotePeaks);
     currentNotePeaks.reserve (maxPublishedNotePeaks);
@@ -251,6 +252,17 @@ void AnalyzerEngine::reset()
     std::fill (rmsPowerSpectrum.begin(), rmsPowerSpectrum.end(), 0.0f);
     std::fill (energyPowerSpectrum.begin(), energyPowerSpectrum.end(), 0.0f);
     std::fill (energyFrameMeanPower.begin(), energyFrameMeanPower.end(), 0.0f);
+    if (frequencyDependentTransientAssistAmounts.size() != static_cast<size_t> (displayBinCount))
+    {
+        frequencyDependentTransientAssistAmounts.assign (static_cast<size_t> (displayBinCount),
+                                                         0.0f);
+    }
+    else
+    {
+        std::fill (frequencyDependentTransientAssistAmounts.begin(),
+                   frequencyDependentTransientAssistAmounts.end(),
+                   0.0f);
+    }
     energyAccumulatedActiveSeconds = 0.0f;
     displayAccumulationWarmStartRequested = false;
     instantaneousNotePeaks.clear();
@@ -1045,7 +1057,8 @@ AnalyzerEngine::DisplayBinPowerStats AnalyzerEngine::blendDisplayBinPowerStats (
 AnalyzerEngine::DisplayBinPowerStats AnalyzerEngine::applyFrequencyDependentTransientAssist (
     const DisplayBinPowerStats& frequencyDependentStats,
     const DisplayBinPowerStats& mainStats,
-    float centerFrequencyHz) const noexcept
+    float centerFrequencyHz,
+    float assistAmount) const noexcept
 {
     if (centerFrequencyHz <= 0.0f
         || centerFrequencyHz > frequencyDependentTransientAssistMaxHz)
@@ -1065,32 +1078,16 @@ AnalyzerEngine::DisplayBinPowerStats AnalyzerEngine::applyFrequencyDependentTran
     if (! mainHasBins)
         return frequencyDependentStats;
 
-    const auto sanitizePower = [] (float power) noexcept
-    {
-        return std::isfinite (power) ? juce::jmax (0.0f, power) : 0.0f;
-    };
-
-    const auto frequencyDependentPeakMagnitude =
-        std::sqrt (sanitizePower (frequencyDependentStats.peakPower));
-
-    const auto mainPeakMagnitude =
-        std::sqrt (sanitizePower (mainStats.peakPower));
-
-    const auto frequencyDependentPeakDb =
-        juce::Decibels::gainToDecibels (frequencyDependentPeakMagnitude, -100.0f);
-
-    const auto mainPeakDb =
-        juce::Decibels::gainToDecibels (mainPeakMagnitude, -100.0f);
-
-    if (mainPeakDb - frequencyDependentPeakDb
-        < frequencyDependentTransientAssistMinRiseDb)
-    {
+    if (! std::isfinite (assistAmount) || assistAmount <= 0.0f)
         return frequencyDependentStats;
-    }
+
+    const auto assistBlend =
+        juce::jlimit (0.0f, 1.0f, assistAmount)
+        * frequencyDependentTransientAssistStrength;
 
     return blendDisplayBinPowerStats (frequencyDependentStats,
                                       mainStats,
-                                      frequencyDependentTransientAssistStrength);
+                                      assistBlend);
 }
 
 int AnalyzerEngine::getFftHopSize() const noexcept
@@ -1344,10 +1341,23 @@ void AnalyzerEngine::processOneFftBlock()
         return;
     }
 
+    if (frequencyDependentTransientAssistAmounts.size()
+        != static_cast<size_t> (displayBinCount))
+    {
+        return;
+    }
+
     const auto shouldWarmStartDisplayAccumulation =
         displayAccumulationWarmStartRequested;
 
     displayAccumulationWarmStartRequested = false;
+
+    if (shouldWarmStartDisplayAccumulation)
+    {
+        std::fill (frequencyDependentTransientAssistAmounts.begin(),
+                   frequencyDependentTransientAssistAmounts.end(),
+                   0.0f);
+    }
 
     const auto decayPerFrame =
         currentPeakHoldDecayDbPerSecond * frameAdvanceSeconds;
@@ -1363,6 +1373,19 @@ void AnalyzerEngine::processOneFftBlock()
 
     const auto liveReleaseSmoothing =
         smoothingCoefficientForTimeConstant (frameAdvanceSeconds, liveReleaseTimeSeconds);
+
+    const auto transientAssistReleaseSmoothing =
+        smoothingCoefficientForTimeConstant (
+            frameAdvanceSeconds,
+            frequencyDependentTransientAssistReleaseSeconds);
+
+    const auto peakPowerToDb = [] (float power) noexcept
+    {
+        const auto sanitizedPower =
+            std::isfinite (power) ? juce::jmax (0.0f, power) : 0.0f;
+
+        return juce::Decibels::gainToDecibels (std::sqrt (sanitizedPower), -100.0f);
+    };
 
     auto energyFramePeakPower = 0.0f;
     const auto canUseFrequencyDependentBassPath =
@@ -1465,14 +1488,53 @@ void AnalyzerEngine::processOneFftBlock()
         }
 
         auto visualBinPowerStats = binPowerStats;
+        auto assistAmount = 0.0f;
 
         if (currentFrequencyDependentResolutionEnabled
             && displayBinCenterFrequenciesHz.size() == static_cast<size_t> (displayBinCount))
         {
+            const auto centerFrequency = displayBinCenterFrequenciesHz[index];
+            auto& storedAssistAmount = frequencyDependentTransientAssistAmounts[index];
+
+            if (centerFrequency > 0.0f
+                && centerFrequency <= frequencyDependentTransientAssistMaxHz)
+            {
+                const auto frequencyDependentPeakDb =
+                    peakPowerToDb (binPowerStats.peakPower);
+
+                const auto mainPeakDb =
+                    peakPowerToDb (mainBinPowerStats.peakPower);
+
+                if (mainPeakDb - frequencyDependentPeakDb
+                    >= frequencyDependentTransientAssistMinRiseDb)
+                {
+                    storedAssistAmount = 1.0f;
+                }
+                else if (frameAdvanceSeconds > 0.0f)
+                {
+                    storedAssistAmount +=
+                        transientAssistReleaseSmoothing * (0.0f - storedAssistAmount);
+                }
+
+                storedAssistAmount =
+                    juce::jlimit (0.0f,
+                                  1.0f,
+                                  std::isfinite (storedAssistAmount)
+                                      ? storedAssistAmount
+                                      : 0.0f);
+
+                assistAmount = storedAssistAmount;
+            }
+            else
+            {
+                storedAssistAmount = 0.0f;
+            }
+
             visualBinPowerStats = applyFrequencyDependentTransientAssist (
                 binPowerStats,
                 mainBinPowerStats,
-                displayBinCenterFrequenciesHz[index]);
+                centerFrequency,
+                assistAmount);
         }
 
         const auto displayPower =

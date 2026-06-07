@@ -141,7 +141,8 @@ private:
     DisplayBinPowerStats applyFrequencyDependentTransientAssist (
         const DisplayBinPowerStats& frequencyDependentStats,
         const DisplayBinPowerStats& mainStats,
-        float centerFrequencyHz) const noexcept;
+        float centerFrequencyHz,
+        float assistAmount) const noexcept;
     void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
     void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();
@@ -178,6 +179,7 @@ private:
     static constexpr float frequencyDependentTransientAssistMaxHz = 320.0f;
     static constexpr float frequencyDependentTransientAssistMinRiseDb = 4.0f;
     static constexpr float frequencyDependentTransientAssistStrength = 0.75f;
+    static constexpr float frequencyDependentTransientAssistReleaseSeconds = 0.220f;
 
     static constexpr float liveAttackTimeSeconds = 0.100f;
     static constexpr float liveReleaseTimeSeconds = 0.500f;
@@ -242,6 +244,7 @@ private:
     float secondsSinceLastFramePublish = 0.0f;
     bool displayAccumulationWarmStartRequested = false;
     float energyAccumulatedActiveSeconds = 0.0f;
+    std::vector<float> frequencyDependentTransientAssistAmounts;
 
     std::vector<float> rawSpectrumDb;
     std::vector<float> smoothedSpectrumDb;
