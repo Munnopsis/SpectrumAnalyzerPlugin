@@ -138,6 +138,10 @@ private:
     DisplayBinPowerStats blendDisplayBinPowerStats (const DisplayBinPowerStats& bassStats,
                                                     const DisplayBinPowerStats& mainStats,
                                                     float mainBlend) const noexcept;
+    DisplayBinPowerStats applyFrequencyDependentTransientAssist (
+        const DisplayBinPowerStats& frequencyDependentStats,
+        const DisplayBinPowerStats& mainStats,
+        float centerFrequencyHz) const noexcept;
     void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
     void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();
@@ -171,6 +175,9 @@ private:
     static constexpr float frequencyDependentMainOnlyMinHz = 320.0f;
     static constexpr float frequencyDependentMainOnlyMaxHz = 3000.0f;
     static constexpr float frequencyDependentHighOnlyMinHz = 6000.0f;
+    static constexpr float frequencyDependentTransientAssistMaxHz = 320.0f;
+    static constexpr float frequencyDependentTransientAssistMinRiseDb = 4.0f;
+    static constexpr float frequencyDependentTransientAssistStrength = 0.75f;
 
     static constexpr float liveAttackTimeSeconds = 0.100f;
     static constexpr float liveReleaseTimeSeconds = 0.500f;

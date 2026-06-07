@@ -1042,6 +1042,57 @@ AnalyzerEngine::DisplayBinPowerStats AnalyzerEngine::blendDisplayBinPowerStats (
     };
 }
 
+AnalyzerEngine::DisplayBinPowerStats AnalyzerEngine::applyFrequencyDependentTransientAssist (
+    const DisplayBinPowerStats& frequencyDependentStats,
+    const DisplayBinPowerStats& mainStats,
+    float centerFrequencyHz) const noexcept
+{
+    if (centerFrequencyHz <= 0.0f
+        || centerFrequencyHz > frequencyDependentTransientAssistMaxHz)
+    {
+        return frequencyDependentStats;
+    }
+
+    const auto frequencyDependentHasBins = frequencyDependentStats.numBinsUsed > 0;
+    const auto mainHasBins = mainStats.numBinsUsed > 0;
+
+    if (! frequencyDependentHasBins)
+        return mainHasBins ? blendDisplayBinPowerStats (frequencyDependentStats,
+                                                        mainStats,
+                                                        1.0f)
+                           : frequencyDependentStats;
+
+    if (! mainHasBins)
+        return frequencyDependentStats;
+
+    const auto sanitizePower = [] (float power) noexcept
+    {
+        return std::isfinite (power) ? juce::jmax (0.0f, power) : 0.0f;
+    };
+
+    const auto frequencyDependentPeakMagnitude =
+        std::sqrt (sanitizePower (frequencyDependentStats.peakPower));
+
+    const auto mainPeakMagnitude =
+        std::sqrt (sanitizePower (mainStats.peakPower));
+
+    const auto frequencyDependentPeakDb =
+        juce::Decibels::gainToDecibels (frequencyDependentPeakMagnitude, -100.0f);
+
+    const auto mainPeakDb =
+        juce::Decibels::gainToDecibels (mainPeakMagnitude, -100.0f);
+
+    if (mainPeakDb - frequencyDependentPeakDb
+        < frequencyDependentTransientAssistMinRiseDb)
+    {
+        return frequencyDependentStats;
+    }
+
+    return blendDisplayBinPowerStats (frequencyDependentStats,
+                                      mainStats,
+                                      frequencyDependentTransientAssistStrength);
+}
+
 int AnalyzerEngine::getFftHopSize() const noexcept
 {
     return juce::jmax (1,
@@ -1413,8 +1464,19 @@ void AnalyzerEngine::processOneFftBlock()
             }
         }
 
+        auto visualBinPowerStats = binPowerStats;
+
+        if (currentFrequencyDependentResolutionEnabled
+            && displayBinCenterFrequenciesHz.size() == static_cast<size_t> (displayBinCount))
+        {
+            visualBinPowerStats = applyFrequencyDependentTransientAssist (
+                binPowerStats,
+                mainBinPowerStats,
+                displayBinCenterFrequenciesHz[index]);
+        }
+
         const auto displayPower =
-            getPeakPreservingDisplayPower (binPowerStats);
+            getPeakPreservingDisplayPower (visualBinPowerStats);
 
         const auto displayMagnitude = std::sqrt (displayPower);
 
