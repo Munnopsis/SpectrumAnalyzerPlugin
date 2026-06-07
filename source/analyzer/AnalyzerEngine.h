@@ -18,6 +18,13 @@ public:
     AnalyzerEngine();
     ~AnalyzerEngine() override;
 
+    struct DisplayBinPowerStats
+    {
+        float meanPower = 0.0f;
+        float peakPower = 0.0f;
+        int numBinsUsed = 0;
+    };
+
     struct NotePeak
     {
         float frequencyHz = 0.0f;
@@ -83,11 +90,34 @@ private:
         int lastBin = 1;
     };
 
+    struct FrequencyDependentBassPath
+    {
+        std::unique_ptr<juce::dsp::FFT> fft;
+        std::unique_ptr<juce::dsp::WindowingFunction<float>> window;
+        std::vector<float> timeDomainBlock;
+        std::vector<float> fftData;
+        std::vector<DisplayBinFftRange> displayBinFftRanges;
+        float rangeSampleRate = 0.0f;
+        float rangeMinFrequencyHz = 0.0f;
+        float rangeMaxFrequencyHz = 0.0f;
+        int samplesCollected = 0;
+        bool hasValidFftData = false;
+    };
+
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
     void configureFft (int newFftOrder);
     void resetOverlapBuffer();
+    void configureFrequencyDependentBassPath();
+    void resetFrequencyDependentBassPath();
+    void appendSamplesToFrequencyDependentBassPath (const float* samples, int numSamples);
+    void processFrequencyDependentBassPathIfReady();
+    void updateFrequencyDependentBassBinFftRangesIfNeeded();
+    float getFrequencyDependentMainBlendForFrequency (float frequencyHz) const noexcept;
+    DisplayBinPowerStats blendDisplayBinPowerStats (const DisplayBinPowerStats& bassStats,
+                                                    const DisplayBinPowerStats& mainStats,
+                                                    float mainBlend) const noexcept;
     void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
     void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();
@@ -110,7 +140,11 @@ private:
     static constexpr int displayBinCount = 256;
     static constexpr int fftOverlapFactor = 4; // 4 = 75% overlap, hop size = fftSize / 4
     static constexpr int maximumFftHopSizeSamples = 2048;
+    static constexpr int frequencyDependentBassFftOrder = 15;
+    static constexpr int frequencyDependentBassFftSize = 1 << frequencyDependentBassFftOrder;
     static constexpr float defaultPeakHoldDecayDbPerSecond = 8.0f;
+    static constexpr float frequencyDependentBassOnlyMaxHz = 160.0f;
+    static constexpr float frequencyDependentMainOnlyMinHz = 320.0f;
 
     static constexpr float liveAttackTimeSeconds = 0.100f;
     static constexpr float liveReleaseTimeSeconds = 0.500f;
@@ -163,10 +197,12 @@ private:
     std::vector<float> fftData;
 
     std::vector<DisplayBinFftRange> displayBinFftRanges;
+    std::vector<float> displayBinCenterFrequenciesHz;
     float displayBinRangeSampleRate = 0.0f;
     float displayBinRangeMinFrequencyHz = 0.0f;
     float displayBinRangeMaxFrequencyHz = 0.0f;
     int displayBinRangeFftSize = 0;
+    FrequencyDependentBassPath frequencyDependentBassPath;
 
     bool overlapBufferPrimed = false;
     float secondsSinceLastFramePublish = 0.0f;
