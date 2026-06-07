@@ -122,8 +122,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     fftSizeBox.addItemList (getAnalyzerFftSizeChoices(), 1);
     fftSizeBox.setJustificationType (juce::Justification::centred);
-    fftSizeBox.setTextWhenNothingSelected ("FFT");
-    fftSizeBox.setTooltip ("Select FFT size: smaller is faster, larger gives better bass resolution");
+    fftSizeBox.setTextWhenNothingSelected ("Resolution");
+    fftSizeBox.setTooltip ("Select fixed FFT size or frequency-dependent analyzer resolution");
 
     fftSizeAttachment = std::make_unique<ComboBoxAttachment> (
         state,

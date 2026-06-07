@@ -206,6 +206,15 @@ float PluginProcessor::getAnalyzerSlopeDbPerOctave() const noexcept
         slopeParameter->load (std::memory_order_relaxed));
 }
 
+bool PluginProcessor::isFrequencyDependentAnalyzerResolution() const noexcept
+{
+    if (fftSizeParameter == nullptr)
+        return false;
+
+    return analyzerFftSizeIsFrequencyDependent (
+        fftSizeParameter->load (std::memory_order_relaxed));
+}
+
 //==============================================================================
 
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
