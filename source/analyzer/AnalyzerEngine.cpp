@@ -2033,6 +2033,9 @@ void AnalyzerEngine::resetVqtLikeFilterbankState() noexcept
         band.z2 = 0.0f;
         band.power = 0.0f;
         band.lastFramePower = 0.0f;
+        band.peakPower = 0.0f;
+        band.lastFramePeakPower = 0.0f;
+        band.noiseFloorPower = 0.0f;
     }
 }
 
@@ -2147,6 +2150,9 @@ void AnalyzerEngine::configureVqtLikeFilterBand (
     band.b2 = -alpha / a0;
     band.a1 = (-2.0f * cosOmega) / a0;
     band.a2 = (1.0f - alpha) / a0;
+    // Prototype calibration: RBJ bandpass level depends on Q and input frequency.
+    // Keep this conservative until per-band FFT/sine calibration is added.
+    band.calibrationGain = 1.0f;
     band.isConfigured =
         std::isfinite (band.b0)
         && std::isfinite (band.b1)
@@ -2169,13 +2175,17 @@ void AnalyzerEngine::processVqtLikeFilterbankSamples (
 
     juce::ScopedNoDenormals noDenormals;
 
-    const auto attackSmoothing =
+    const auto meanAttackSmoothing =
         smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
             vqtLikeEnvelopeAttackSeconds);
 
-    const auto releaseSmoothing =
+    const auto meanReleaseSmoothing =
         smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
             vqtLikeEnvelopeReleaseSeconds);
+
+    const auto peakReleaseSmoothing =
+        smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
+            vqtLikePeakEnvelopeReleaseSeconds);
 
     const auto inverseNumSamples =
         1.0f / static_cast<float> (numSamples);
@@ -2186,10 +2196,13 @@ void AnalyzerEngine::processVqtLikeFilterbankSamples (
         {
             band.power = 0.0f;
             band.lastFramePower = 0.0f;
+            band.peakPower = 0.0f;
+            band.lastFramePeakPower = 0.0f;
             continue;
         }
 
-        auto framePower = 0.0f;
+        auto frameMeanPower = 0.0f;
+        auto framePeakPower = 0.0f;
         auto z1 = band.z1;
         auto z2 = band.z2;
 
@@ -2203,26 +2216,69 @@ void AnalyzerEngine::processVqtLikeFilterbankSamples (
             z1 = band.b1 * x - band.a1 * y + z2;
             z2 = band.b2 * x - band.a2 * y;
 
-            framePower += y * y;
+            const auto samplePower = y * y;
+
+            frameMeanPower += samplePower;
+            framePeakPower = juce::jmax (framePeakPower, samplePower);
         }
 
         band.z1 = std::isfinite (z1) ? z1 : 0.0f;
         band.z2 = std::isfinite (z2) ? z2 : 0.0f;
 
-        framePower =
-            juce::jmax (0.0f,
-                std::isfinite (framePower)
-                    ? framePower * inverseNumSamples * 2.0f
-                    : 0.0f);
+        const auto calibrationPowerGain =
+            std::isfinite (band.calibrationGain)
+                ? band.calibrationGain * band.calibrationGain
+                : 1.0f;
 
-        band.lastFramePower = framePower;
+        frameMeanPower =
+            std::isfinite (frameMeanPower)
+                ? frameMeanPower
+                      * inverseNumSamples
+                      * vqtLikeMeanPowerScale
+                      * calibrationPowerGain
+                : 0.0f;
 
-        auto power = std::isfinite (band.power) ? band.power : 0.0f;
-        const auto smoothing =
-            framePower > power ? attackSmoothing : releaseSmoothing;
+        framePeakPower =
+            std::isfinite (framePeakPower)
+                ? framePeakPower
+                      * vqtLikePeakPowerScale
+                      * calibrationPowerGain
+                : 0.0f;
 
-        power += smoothing * (framePower - power);
-        band.power = juce::jmax (0.0f, std::isfinite (power) ? power : 0.0f);
+        frameMeanPower =
+            juce::jlimit (0.0f,
+                vqtLikeMaxDisplayPower,
+                std::isfinite (frameMeanPower) ? frameMeanPower : 0.0f);
+
+        framePeakPower =
+            juce::jlimit (0.0f,
+                vqtLikeMaxDisplayPower,
+                std::isfinite (framePeakPower) ? framePeakPower : 0.0f);
+
+        band.lastFramePower = frameMeanPower;
+        band.lastFramePeakPower = framePeakPower;
+
+        auto meanPower = std::isfinite (band.power) ? band.power : 0.0f;
+        const auto meanSmoothing =
+            frameMeanPower > meanPower ? meanAttackSmoothing : meanReleaseSmoothing;
+
+        meanPower += meanSmoothing * (frameMeanPower - meanPower);
+        band.power =
+            juce::jlimit (0.0f,
+                vqtLikeMaxDisplayPower,
+                std::isfinite (meanPower) ? meanPower : 0.0f);
+
+        auto peakPower = std::isfinite (band.peakPower) ? band.peakPower : 0.0f;
+
+        if (framePeakPower > peakPower)
+            peakPower = framePeakPower;
+        else
+            peakPower += peakReleaseSmoothing * (framePeakPower - peakPower);
+
+        band.peakPower =
+            juce::jlimit (0.0f,
+                vqtLikeMaxDisplayPower,
+                std::isfinite (peakPower) ? peakPower : 0.0f);
     }
 }
 
@@ -2238,14 +2294,18 @@ AnalyzerEngine::DisplayBinPowerStats
     if (!band.isConfigured)
         return {};
 
-    const auto power =
+    const auto meanPower =
         juce::jmax (0.0f,
             std::isfinite (band.power) ? band.power : 0.0f);
 
-    if (power <= 0.0f)
+    const auto peakPower =
+        juce::jmax (meanPower,
+            std::isfinite (band.peakPower) ? band.peakPower : 0.0f);
+
+    if (meanPower <= 0.0f && peakPower <= 0.0f)
         return {};
 
-    return { power, power, 1 };
+    return { meanPower, peakPower, 1 };
 }
 
 int AnalyzerEngine::getFftHopSize() const noexcept
@@ -2463,7 +2523,7 @@ void AnalyzerEngine::processOneFftBlock()
             timeDomainBlock.begin() + (fftSizeForBlock - hopSize));
     }
 
-    if (currentFrequencyDependentResolutionEnabled)
+    if (currentFrequencyDependentResolutionEnabled && !currentVqtLikeFilterbankEnabled)
     {
         const auto frequencyDependentSourceDescriptors =
             getFrequencyDependentSourceDescriptors();
@@ -2506,11 +2566,15 @@ void AnalyzerEngine::processOneFftBlock()
     const auto currentPeakHoldDecayDbPerSecond =
         peakHoldDecayDbPerSecond.load (std::memory_order_relaxed);
 
+    // VQT-like prototype keeps NotePeaks on the existing FFT path for now.
     extractInstantaneousNotePeaksFromFftData (fftSizeForBlock);
     updateTrackedNotePeaks (frameAdvanceSeconds, currentPeakHoldDecayDbPerSecond);
     publishStableNotePeaks();
 
     updateDisplayBinFftRangesIfNeeded();
+
+    if (currentVqtLikeFilterbankEnabled && displayAccumulationWarmStartRequested)
+        resetVqtLikeFilterbankState();
 
     if (currentVqtLikeFilterbankEnabled)
     {
@@ -2520,7 +2584,7 @@ void AnalyzerEngine::processOneFftBlock()
             frameAdvanceSeconds);
     }
 
-    if (currentFrequencyDependentResolutionEnabled)
+    if (currentFrequencyDependentResolutionEnabled && !currentVqtLikeFilterbankEnabled)
     {
         for (const auto& descriptor : getFrequencyDependentSourceDescriptors())
         {
@@ -2587,9 +2651,6 @@ void AnalyzerEngine::processOneFftBlock()
         std::fill (frequencyDependentTunedLowBandPreviousReferenceDb.begin(),
             frequencyDependentTunedLowBandPreviousReferenceDb.end(),
             -100.0f);
-
-        if (currentVqtLikeFilterbankEnabled)
-            resetVqtLikeFilterbankState();
     }
 
     const auto decayPerFrame =

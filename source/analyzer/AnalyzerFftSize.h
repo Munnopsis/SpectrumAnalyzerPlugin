@@ -58,7 +58,7 @@ inline int analyzerFftOrderFromIndex(int index) noexcept
         case static_cast<int>(AnalyzerFftSize::frequencyDependentTuned):
             return 13;
         case static_cast<int>(AnalyzerFftSize::vqtLike):
-            return 13;
+            return 11;
         default:
             return 11;
     }

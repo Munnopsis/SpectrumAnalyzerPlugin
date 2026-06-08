@@ -294,6 +294,10 @@ class AnalyzerEngine : private juce::Thread
         float z2 = 0.0f;
         float power = 0.0f;
         float lastFramePower = 0.0f;
+        float peakPower = 0.0f;
+        float lastFramePeakPower = 0.0f;
+        float calibrationGain = 1.0f;
+        float noiseFloorPower = 0.0f;
         bool isConfigured = false;
     };
 
@@ -482,10 +486,14 @@ class AnalyzerEngine : private juce::Thread
     static constexpr float vqtLikeGammaFadeEndHz = 1800.0f;
     static constexpr float vqtLikeMinBandwidthHz = 18.0f;
     static constexpr float vqtLikeMaxBandwidthFractionOfCenter = 1.25f;
-    static constexpr float vqtLikeEnvelopeAttackSeconds = 0.012f;
-    static constexpr float vqtLikeEnvelopeReleaseSeconds = 0.090f;
-    static constexpr float vqtLikeLiveAttackTimeSeconds = 0.030f;
-    static constexpr float vqtLikeLiveReleaseTimeSeconds = 0.260f;
+    static constexpr float vqtLikeEnvelopeAttackSeconds = 0.018f;
+    static constexpr float vqtLikeEnvelopeReleaseSeconds = 0.160f;
+    static constexpr float vqtLikePeakEnvelopeReleaseSeconds = 0.075f;
+    static constexpr float vqtLikeLiveAttackTimeSeconds = 0.025f;
+    static constexpr float vqtLikeLiveReleaseTimeSeconds = 0.220f;
+    static constexpr float vqtLikeMeanPowerScale = 2.0f;
+    static constexpr float vqtLikePeakPowerScale = 1.0f;
+    static constexpr float vqtLikeMaxDisplayPower = 4.0f;
     static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
     static constexpr float energyAveragingWindowSeconds = 20.0f;
