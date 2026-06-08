@@ -2465,7 +2465,6 @@ float AnalyzerEngine::getVqtLikeTonalCalibrationTrimForFrequency (
         smoothLogFrequencyBlend (frequencyHz, 2500.0f, 10000.0f);
 
     trimDb += highLift * 1.20f;  // vorher 1.10f
-
     trimDb = juce::jlimit (-1.0f, 3.45f, trimDb);
 
     return juce::Decibels::decibelsToGain (trimDb);
