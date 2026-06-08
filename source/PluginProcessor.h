@@ -11,6 +11,7 @@
 #include "analyzer/AnalyzerRmsTime.h"
 #include "analyzer/AnalyzerDbRange.h"
 #include "analyzer/AnalyzerSlope.h"
+#include "analyzer/AnalyzerVqtLiveCurveProfile.h"
 
 #if (MSVC)
 #include "ipps.h"
@@ -78,6 +79,7 @@ public:
     static inline const juce::String rmsTimeParamId { "rmsTime" };
     static inline const juce::String dbRangeParamId { "dbRange" };
     static inline const juce::String slopeParamId { "slope" };
+    static inline const juce::String vqtLiveCurveProfileParamId { "vqtLiveCurveProfile" };
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept
     {
@@ -137,6 +139,7 @@ private:
     int getAnalyzerFftOrder() const noexcept;
     float getPeakHoldDecayDbPerSecond() const noexcept;
     float getRmsTimeSeconds() const noexcept;
+    AnalyzerVqtLiveCurveProfile getVqtLiveCurveProfile() const noexcept;
 
     // cached parameters
     std::atomic<float> inputLevelDb { -100.0f };
@@ -146,6 +149,7 @@ private:
     std::atomic<float>* rmsTimeParameter = nullptr;
     std::atomic<float>* dbRangeParameter = nullptr;
     std::atomic<float>* slopeParameter = nullptr;
+    std::atomic<float>* vqtLiveCurveProfileParameter = nullptr;
 
     AnalyzerFifo analyzerFifo;
     AnalyzerEngine analyzerEngine;

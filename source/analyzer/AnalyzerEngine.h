@@ -2,6 +2,7 @@
 
 #include "AnalyzerFifo.h"
 #include "AnalyzerFrequencyRange.h"
+#include "AnalyzerVqtLiveCurveProfile.h"
 
 #include <juce_core/juce_core.h>
 #include <juce_dsp/juce_dsp.h>
@@ -61,6 +62,7 @@ class AnalyzerEngine : private juce::Thread
         bool shouldUseFrequencyDependentResolution) noexcept;
     void setFrequencyDependentTunedResolutionEnabled(bool shouldUseFrequencyDependentTunedResolution) noexcept;
     void setVqtLikeFilterbankEnabled(bool shouldUseVqtLikeFilterbank) noexcept;
+    void setVqtLikeLiveCurveProfile (AnalyzerVqtLiveCurveProfile profile) noexcept;
     void setPeakHoldDecayDbPerSecond(float newDecayDbPerSecond) noexcept;
     void setDisplayFrequencyRange(float minimumHz, float maximumHz) noexcept;
 
@@ -641,6 +643,22 @@ class AnalyzerEngine : private juce::Thread
         float frequencyHz) const noexcept;
     float getVqtLikeAggregationPeakShapeBlendForFrequency(
         float frequencyHz) const noexcept;
+    AnalyzerVqtLiveCurveProfile getCurrentVqtLikeLiveCurveProfile() const noexcept;
+    float getVqtLikeLiveFastBlendForFrequency(
+        float frequencyHz,
+        AnalyzerVqtLiveCurveProfile profile) const noexcept;
+    float getVqtLikeLiveAttackSecondsForFrequency(
+        float frequencyHz,
+        AnalyzerVqtLiveCurveProfile profile) const noexcept;
+    float getVqtLikeLiveReleaseSecondsForFrequency(
+        float frequencyHz,
+        AnalyzerVqtLiveCurveProfile profile) const noexcept;
+    float getVqtLikeLiveNeighbourSmoothingAmountForFrequency(
+        float frequencyHz,
+        AnalyzerVqtLiveCurveProfile profile) const noexcept;
+    void applyVqtLikeLiveNeighbourSmoothing(
+        std::vector<float>& valuesDb,
+        AnalyzerVqtLiveCurveProfile profile) const;
     float limitPowerLiftDb(float basePower,
                            float candidatePower,
                            float maxLiftDb) const noexcept;
@@ -826,6 +844,9 @@ class AnalyzerEngine : private juce::Thread
     std::atomic<bool> requestedFrequencyDependentResolutionEnabled{false};
     std::atomic<bool> requestedFrequencyDependentTunedResolutionEnabled { false };
     std::atomic<bool> requestedVqtLikeFilterbankEnabled { false };
+    std::atomic<int> requestedVqtLikeLiveCurveProfile {
+        static_cast<int> (AnalyzerVqtLiveCurveProfile::balanced)
+    };
     std::atomic<float> requestedDisplayMinFrequencyHz{AnalyzerFrequencyRange::minimumHz};
     std::atomic<float> requestedDisplayMaxFrequencyHz{AnalyzerFrequencyRange::maximumHz};
 
@@ -867,6 +888,7 @@ class AnalyzerEngine : private juce::Thread
 
     std::vector<float> rawSpectrumDb;
     std::vector<float> smoothedSpectrumDb;
+    mutable std::vector<float> vqtLikeLivePresentationScratchDb;
     std::vector<float> peakHoldSpectrumDb;
     std::vector<float> rmsPowerSpectrum;
     std::vector<float> energyPowerSpectrum;

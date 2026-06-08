@@ -269,6 +269,7 @@ AnalyzerEngine::AnalyzerEngine()
 {
     rawSpectrumDb.resize (displayBinCount, -100.0f);
     smoothedSpectrumDb.resize (displayBinCount, -100.0f);
+    vqtLikeLivePresentationScratchDb.resize (displayBinCount, -100.0f);
     peakHoldSpectrumDb.resize (displayBinCount, -100.0f);
     rmsPowerSpectrum.resize (displayBinCount, 0.0f);
     energyPowerSpectrum.resize (displayBinCount, 0.0f);
@@ -359,6 +360,19 @@ void AnalyzerEngine::reset()
     std::fill (fftData.begin(), fftData.end(), 0.0f);
     std::fill (rawSpectrumDb.begin(), rawSpectrumDb.end(), -100.0f);
     std::fill (smoothedSpectrumDb.begin(), smoothedSpectrumDb.end(), -100.0f);
+    if (vqtLikeLivePresentationScratchDb.size() != static_cast<size_t> (displayBinCount))
+    {
+        vqtLikeLivePresentationScratchDb.assign (
+            static_cast<size_t> (displayBinCount),
+            -100.0f);
+    }
+    else
+    {
+        std::fill (vqtLikeLivePresentationScratchDb.begin(),
+            vqtLikeLivePresentationScratchDb.end(),
+            -100.0f);
+    }
+
     std::fill (peakHoldSpectrumDb.begin(), peakHoldSpectrumDb.end(), -100.0f);
     std::fill (rmsPowerSpectrum.begin(), rmsPowerSpectrum.end(), 0.0f);
     std::fill (energyPowerSpectrum.begin(), energyPowerSpectrum.end(), 0.0f);
@@ -508,6 +522,14 @@ void AnalyzerEngine::setVqtLikeFilterbankEnabled (bool shouldUseVqtLikeFilterban
 {
     requestedVqtLikeFilterbankEnabled.store (
         shouldUseVqtLikeFilterbank,
+        std::memory_order_relaxed);
+}
+
+void AnalyzerEngine::setVqtLikeLiveCurveProfile (
+    AnalyzerVqtLiveCurveProfile profile) noexcept
+{
+    requestedVqtLikeLiveCurveProfile.store (
+        analyzerVqtLiveCurveProfileToIndex (profile),
         std::memory_order_relaxed);
 }
 
@@ -2981,6 +3003,237 @@ float AnalyzerEngine::getVqtLikeAggregationPeakShapeBlendForFrequency (
         vqtLikeAggregationPeakShapeBlendHigh);
 }
 
+AnalyzerVqtLiveCurveProfile AnalyzerEngine::getCurrentVqtLikeLiveCurveProfile() const noexcept
+{
+    return analyzerVqtLiveCurveProfileFromIndex (
+        requestedVqtLikeLiveCurveProfile.load (std::memory_order_relaxed));
+}
+
+float AnalyzerEngine::getVqtLikeLiveFastBlendForFrequency (
+    float frequencyHz,
+    AnalyzerVqtLiveCurveProfile profile) const noexcept
+{
+    auto lowBlend = 0.16f;
+    auto midBlend = 0.34f;
+    auto highBlend = 0.52f;
+
+    switch (profile)
+    {
+        case AnalyzerVqtLiveCurveProfile::smooth:
+            lowBlend = 0.10f;
+            midBlend = 0.22f;
+            highBlend = 0.34f;
+            break;
+
+        case AnalyzerVqtLiveCurveProfile::balanced:
+            break;
+
+        case AnalyzerVqtLiveCurveProfile::detailed:
+            lowBlend = 0.24f;
+            midBlend = 0.48f;
+            highBlend = 0.70f;
+            break;
+
+        case AnalyzerVqtLiveCurveProfile::count:
+            break;
+    }
+
+    if (!std::isfinite (frequencyHz) || frequencyHz <= 0.0f)
+        frequencyHz = AnalyzerFrequencyRange::minimumHz;
+
+    const auto lowToMid =
+        smoothLogFrequencyBlend (frequencyHz, 90.0f, 450.0f);
+
+    auto blend = lowBlend + lowToMid * (midBlend - lowBlend);
+
+    const auto midToHigh =
+        smoothLogFrequencyBlend (frequencyHz, 2200.0f, 9000.0f);
+
+    blend += midToHigh * (highBlend - blend);
+
+    return juce::jlimit (0.0f, 1.0f, std::isfinite (blend) ? blend : 0.0f);
+}
+
+float AnalyzerEngine::getVqtLikeLiveAttackSecondsForFrequency (
+    float frequencyHz,
+    AnalyzerVqtLiveCurveProfile profile) const noexcept
+{
+    auto lowSeconds = 0.085f;
+    auto midSeconds = 0.050f;
+    auto highSeconds = 0.025f;
+
+    switch (profile)
+    {
+        case AnalyzerVqtLiveCurveProfile::smooth:
+            lowSeconds = 0.110f;
+            midSeconds = 0.075f;
+            highSeconds = 0.040f;
+            break;
+
+        case AnalyzerVqtLiveCurveProfile::balanced:
+            break;
+
+        case AnalyzerVqtLiveCurveProfile::detailed:
+            lowSeconds = 0.060f;
+            midSeconds = 0.035f;
+            highSeconds = 0.016f;
+            break;
+
+        case AnalyzerVqtLiveCurveProfile::count:
+            break;
+    }
+
+    if (!std::isfinite (frequencyHz) || frequencyHz <= 0.0f)
+        frequencyHz = AnalyzerFrequencyRange::minimumHz;
+
+    const auto lowToMid =
+        smoothLogFrequencyBlend (frequencyHz, 80.0f, 300.0f);
+
+    auto seconds = lowSeconds + lowToMid * (midSeconds - lowSeconds);
+
+    const auto midToHigh =
+        smoothLogFrequencyBlend (frequencyHz, 2500.0f, 10000.0f);
+
+    seconds += midToHigh * (highSeconds - seconds);
+
+    return juce::jlimit (0.001f, 1.0f, std::isfinite (seconds) ? seconds : midSeconds);
+}
+
+float AnalyzerEngine::getVqtLikeLiveReleaseSecondsForFrequency (
+    float frequencyHz,
+    AnalyzerVqtLiveCurveProfile profile) const noexcept
+{
+    auto lowSeconds = 0.280f;
+    auto midSeconds = 0.210f;
+    auto highSeconds = 0.125f;
+
+    switch (profile)
+    {
+        case AnalyzerVqtLiveCurveProfile::smooth:
+            lowSeconds = 0.360f;
+            midSeconds = 0.260f;
+            highSeconds = 0.180f;
+            break;
+
+        case AnalyzerVqtLiveCurveProfile::balanced:
+            break;
+
+        case AnalyzerVqtLiveCurveProfile::detailed:
+            lowSeconds = 0.220f;
+            midSeconds = 0.155f;
+            highSeconds = 0.085f;
+            break;
+
+        case AnalyzerVqtLiveCurveProfile::count:
+            break;
+    }
+
+    if (!std::isfinite (frequencyHz) || frequencyHz <= 0.0f)
+        frequencyHz = AnalyzerFrequencyRange::minimumHz;
+
+    const auto lowToMid =
+        smoothLogFrequencyBlend (frequencyHz, 80.0f, 300.0f);
+
+    auto seconds = lowSeconds + lowToMid * (midSeconds - lowSeconds);
+
+    const auto midToHigh =
+        smoothLogFrequencyBlend (frequencyHz, 2500.0f, 10000.0f);
+
+    seconds += midToHigh * (highSeconds - seconds);
+
+    return juce::jlimit (0.001f, 2.0f, std::isfinite (seconds) ? seconds : midSeconds);
+}
+
+float AnalyzerEngine::getVqtLikeLiveNeighbourSmoothingAmountForFrequency (
+    float frequencyHz,
+    AnalyzerVqtLiveCurveProfile profile) const noexcept
+{
+    auto lowAmount = 0.05f;
+    auto midAmount = 0.13f;
+    auto highAmount = 0.17f;
+
+    switch (profile)
+    {
+        case AnalyzerVqtLiveCurveProfile::smooth:
+            lowAmount = 0.10f;
+            midAmount = 0.22f;
+            highAmount = 0.26f;
+            break;
+
+        case AnalyzerVqtLiveCurveProfile::balanced:
+            break;
+
+        case AnalyzerVqtLiveCurveProfile::detailed:
+            lowAmount = 0.00f;
+            midAmount = 0.06f;
+            highAmount = 0.08f;
+            break;
+
+        case AnalyzerVqtLiveCurveProfile::count:
+            break;
+    }
+
+    if (!std::isfinite (frequencyHz) || frequencyHz <= 0.0f)
+        frequencyHz = AnalyzerFrequencyRange::minimumHz;
+
+    const auto lowToMid =
+        smoothLogFrequencyBlend (frequencyHz, 90.0f, 450.0f);
+
+    auto amount = lowAmount + lowToMid * (midAmount - lowAmount);
+
+    const auto midToHigh =
+        smoothLogFrequencyBlend (frequencyHz, 2200.0f, 9000.0f);
+
+    amount += midToHigh * (highAmount - amount);
+
+    return juce::jlimit (0.0f, 0.35f, std::isfinite (amount) ? amount : 0.0f);
+}
+
+void AnalyzerEngine::applyVqtLikeLiveNeighbourSmoothing (
+    std::vector<float>& valuesDb,
+    AnalyzerVqtLiveCurveProfile profile) const
+{
+    const auto requiredSize = static_cast<size_t> (displayBinCount);
+
+    if (valuesDb.size() != requiredSize
+        || vqtLikeLivePresentationScratchDb.size() != requiredSize
+        || displayBinCenterFrequenciesHz.size() != requiredSize)
+    {
+        return;
+    }
+
+    for (auto i = size_t { 0 }; i < requiredSize; ++i)
+    {
+        const auto center = clampAnalyzerDisplayDb (valuesDb[i]);
+        const auto frequencyHz = displayBinCenterFrequenciesHz[i];
+        const auto amount =
+            getVqtLikeLiveNeighbourSmoothingAmountForFrequency (frequencyHz, profile);
+
+        if (amount <= 0.0f)
+        {
+            vqtLikeLivePresentationScratchDb[i] = center;
+            continue;
+        }
+
+        const auto left =
+            i > 0 ? clampAnalyzerDisplayDb (valuesDb[i - 1]) : center;
+
+        const auto right =
+            i + 1 < requiredSize ? clampAnalyzerDisplayDb (valuesDb[i + 1]) : center;
+
+        const auto neighbourAverage =
+            0.25f * left + 0.5f * center + 0.25f * right;
+
+        vqtLikeLivePresentationScratchDb[i] =
+            clampAnalyzerDisplayDb (
+                center + amount * (neighbourAverage - center));
+    }
+
+    std::copy (vqtLikeLivePresentationScratchDb.begin(),
+        vqtLikeLivePresentationScratchDb.end(),
+        valuesDb.begin());
+}
+
 float AnalyzerEngine::limitPowerLiftDb (
     float basePower,
     float candidatePower,
@@ -4275,14 +4528,6 @@ void AnalyzerEngine::processOneFftBlock()
     const auto liveReleaseSmoothing =
         smoothingCoefficientForTimeConstant (frameAdvanceSeconds, liveReleaseTimeSeconds);
 
-    const auto vqtLikeLiveAttackSmoothing =
-        smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
-            vqtLikeLiveAttackTimeSeconds);
-
-    const auto vqtLikeLiveReleaseSmoothing =
-        smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
-            vqtLikeLiveReleaseTimeSeconds);
-
     const auto lowBassTailReleaseSmoothing =
         smoothingCoefficientForTimeConstant (
             frameAdvanceSeconds,
@@ -4308,6 +4553,7 @@ void AnalyzerEngine::processOneFftBlock()
     if (currentVqtLikeFilterbankEnabled)
         resetVqtLikeFrameSummary();
 
+    const auto vqtLiveProfile = getCurrentVqtLikeLiveCurveProfile();
     auto energyFramePeakPower = 0.0f;
     const auto frequencyDependentSourceAvailability =
         getFrequencyDependentSourceAvailability();
@@ -4355,8 +4601,26 @@ void AnalyzerEngine::processOneFftBlock()
 
             accumulateVqtLikeFrameSummary (vqtBinStats);
 
-            const auto liveTargetDb =
+            const auto liveBodyDb =
+                powerToAnalyzerDb (vqtBinStats.metricStats.meanPower);
+
+            const auto liveFastDb =
                 displayBinPowerStatsToDb (vqtBinStats.liveVisualStats);
+
+            const auto centerFrequencyHz =
+                vqtBinStats.centerFrequencyHz > 0.0f
+                    ? vqtBinStats.centerFrequencyHz
+                    : displayBinCenterFrequenciesHz[index];
+
+            const auto fastBlend =
+                getVqtLikeLiveFastBlendForFrequency (centerFrequencyHz,
+                    vqtLiveProfile);
+
+            const auto liveTargetDb =
+                liveBodyDb + fastBlend * (liveFastDb - liveBodyDb);
+
+            const auto clampedLiveTargetDb =
+                clampAnalyzerDisplayDb (liveTargetDb);
 
             const auto peakHoldTargetDb =
                 displayBinPowerStatsToDb (vqtBinStats.peakHoldVisualStats);
@@ -4370,24 +4634,40 @@ void AnalyzerEngine::processOneFftBlock()
             energyFramePeakPower =
                 juce::jmax (energyFramePeakPower, metricMeanPower);
 
-            rawSpectrumDb[index] = liveTargetDb;
+            rawSpectrumDb[index] = clampedLiveTargetDb;
 
             if (shouldWarmStartDisplayAccumulation)
             {
-                smoothedSpectrumDb[index] = liveTargetDb;
+                smoothedSpectrumDb[index] = clampedLiveTargetDb;
                 peakHoldSpectrumDb[index] = peakHoldTargetDb;
                 rmsPowerSpectrum[index] = metricMeanPower;
                 continue;
             }
 
+            const auto attackSeconds =
+                getVqtLikeLiveAttackSecondsForFrequency (centerFrequencyHz,
+                    vqtLiveProfile);
+
+            const auto releaseSeconds =
+                getVqtLikeLiveReleaseSecondsForFrequency (centerFrequencyHz,
+                    vqtLiveProfile);
+
+            const auto attackSmoothing =
+                smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
+                    attackSeconds);
+
+            const auto releaseSmoothing =
+                smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
+                    releaseSeconds);
+
             const auto previousDb = smoothedSpectrumDb[index];
             const auto smoothing =
-                liveTargetDb > previousDb
-                    ? vqtLikeLiveAttackSmoothing
-                    : vqtLikeLiveReleaseSmoothing;
+                clampedLiveTargetDb > previousDb
+                    ? attackSmoothing
+                    : releaseSmoothing;
 
             smoothedSpectrumDb[index] =
-                previousDb + smoothing * (liveTargetDb - previousDb);
+                previousDb + smoothing * (clampedLiveTargetDb - previousDb);
 
             if (peakHoldTargetDb > peakHoldSpectrumDb[index])
                 peakHoldSpectrumDb[index] = peakHoldTargetDb;
@@ -4545,6 +4825,9 @@ void AnalyzerEngine::processOneFftBlock()
 
     if (currentVqtLikeFilterbankEnabled)
         finalizeVqtLikeFrameSummary();
+
+    if (currentVqtLikeFilterbankEnabled && ! shouldWarmStartDisplayAccumulation)
+        applyVqtLikeLiveNeighbourSmoothing (smoothedSpectrumDb, vqtLiveProfile);
 
     const auto activityThresholdGain =
         juce::Decibels::decibelsToGain (energyActivityThresholdDb);

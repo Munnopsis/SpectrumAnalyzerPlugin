@@ -912,7 +912,8 @@ void SpectrumDisplay::drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int>
                        bounds,
                        spectrumDb,
                        juce::Colour::fromRGB (90, 220, 255),
-                       2.0f);
+                       2.0f,
+                       CurveRenderMode::pixelResampled);
 }
 
 void SpectrumDisplay::drawFrozenReferenceCurve (juce::Graphics& g,
@@ -961,7 +962,8 @@ void SpectrumDisplay::drawCurveFromData (juce::Graphics& g,
                                          juce::Rectangle<int> bounds,
                                          const std::vector<float>& values,
                                          juce::Colour colour,
-                                         float strokeWidth)
+                                         float strokeWidth,
+                                         CurveRenderMode renderMode)
 {
     drawCurveFromDataRange (g,
                             bounds,
@@ -969,7 +971,8 @@ void SpectrumDisplay::drawCurveFromData (juce::Graphics& g,
                             dataMinFrequencyHz,
                             dataMaxFrequencyHz,
                             colour,
-                            strokeWidth);
+                            strokeWidth,
+                            renderMode);
 }
 
 void SpectrumDisplay::drawCurveFromDataRange (juce::Graphics& g,
@@ -978,7 +981,8 @@ void SpectrumDisplay::drawCurveFromDataRange (juce::Graphics& g,
                                               float sourceMinFrequencyHz,
                                               float sourceMaxFrequencyHz,
                                               juce::Colour colour,
-                                              float strokeWidth)
+                                              float strokeWidth,
+                                              CurveRenderMode renderMode)
 {
     if (values.size() < 2)
         return;
@@ -991,39 +995,83 @@ void SpectrumDisplay::drawCurveFromDataRange (juce::Graphics& g,
     juce::Path curve;
     auto hasStartedPath = false;
 
-    for (size_t i = 0; i < values.size(); ++i)
+    if (renderMode == CurveRenderMode::dataPoints)
     {
-        const auto normalisedX =
-            static_cast<float> (i) / static_cast<float> (values.size() - 1);
-
-        const auto frequency =
-            visibleMinFrequencyHz
-            * std::pow (visibleMaxFrequencyHz / visibleMinFrequencyHz, normalisedX);
-
-        float valueDb = 0.0f;
-
-        if (! getInterpolatedCurveValueDbForDataRange (values,
-                                                       frequency,
-                                                       sourceMinFrequencyHz,
-                                                       sourceMaxFrequencyHz,
-                                                       valueDb))
-            continue;
-
-        const auto x = area.getX() + normalisedX * area.getWidth();
-
-        const auto db =
-            juce::jlimit (minDecibels, maxDecibels, valueDb);
-
-        const auto y = decibelsToY (db, area);
-
-        if (! hasStartedPath)
+        for (size_t i = 0; i < values.size(); ++i)
         {
-            curve.startNewSubPath (x, y);
-            hasStartedPath = true;
+            const auto normalisedX =
+                static_cast<float> (i) / static_cast<float> (values.size() - 1);
+
+            const auto frequency =
+                visibleMinFrequencyHz
+                * std::pow (visibleMaxFrequencyHz / visibleMinFrequencyHz, normalisedX);
+
+            float valueDb = 0.0f;
+
+            if (! getInterpolatedCurveValueDbForDataRange (values,
+                                                           frequency,
+                                                           sourceMinFrequencyHz,
+                                                           sourceMaxFrequencyHz,
+                                                           valueDb))
+                continue;
+
+            const auto x = area.getX() + normalisedX * area.getWidth();
+
+            const auto db =
+                juce::jlimit (minDecibels, maxDecibels, valueDb);
+
+            const auto y = decibelsToY (db, area);
+
+            if (! hasStartedPath)
+            {
+                curve.startNewSubPath (x, y);
+                hasStartedPath = true;
+            }
+            else
+            {
+                curve.lineTo (x, y);
+            }
         }
-        else
+    }
+    else
+    {
+        const auto pixelCount =
+            juce::jmax (2, juce::roundToInt (area.getWidth()));
+
+        for (int px = 0; px <= pixelCount; ++px)
         {
-            curve.lineTo (x, y);
+            const auto normalisedX =
+                static_cast<float> (px) / static_cast<float> (pixelCount);
+
+            const auto frequency =
+                visibleMinFrequencyHz
+                * std::pow (visibleMaxFrequencyHz / visibleMinFrequencyHz, normalisedX);
+
+            float valueDb = 0.0f;
+
+            if (! getInterpolatedCurveValueDbForDataRange (values,
+                                                           frequency,
+                                                           sourceMinFrequencyHz,
+                                                           sourceMaxFrequencyHz,
+                                                           valueDb))
+                continue;
+
+            const auto x = area.getX() + normalisedX * area.getWidth();
+
+            const auto db =
+                juce::jlimit (minDecibels, maxDecibels, valueDb);
+
+            const auto y = decibelsToY (db, area);
+
+            if (! hasStartedPath)
+            {
+                curve.startNewSubPath (x, y);
+                hasStartedPath = true;
+            }
+            else
+            {
+                curve.lineTo (x, y);
+            }
         }
     }
 

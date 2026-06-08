@@ -6,6 +6,7 @@
 #include "analyzer/AnalyzerRmsTime.h"
 #include "analyzer/AnalyzerDbRange.h"
 #include "analyzer/AnalyzerSlope.h"
+#include "analyzer/AnalyzerVqtLiveCurveProfile.h"
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p)
@@ -32,6 +33,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (rmsTimeBox);
     addAndMakeVisible (dbRangeBox);
     addAndMakeVisible (slopeBox);
+    addAndMakeVisible (vqtLiveCurveBox);
 
     inspectButton.setName ("InspectButton");
     liveButton.setName ("LiveButton");
@@ -48,6 +50,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     rmsTimeBox.setName ("RmsTimeBox");
     dbRangeBox.setName ("DbRangeBox");
     slopeBox.setName ("SlopeBox");
+    vqtLiveCurveBox.setName ("VqtLiveCurveBox");
 
     inspectButton.setWantsKeyboardFocus (true);
     liveButton.setWantsKeyboardFocus (true);
@@ -64,6 +67,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     rmsTimeBox.setWantsKeyboardFocus (true);
     dbRangeBox.setWantsKeyboardFocus (true);
     slopeBox.setWantsKeyboardFocus (true);
+    vqtLiveCurveBox.setWantsKeyboardFocus (true);
 
     inspectButton.setTooltip ("Open the Melatonin UI inspector");
     liveButton.setTooltip ("Show or hide the live spectrum curve");
@@ -170,6 +174,17 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         PluginProcessor::slopeParamId,
         slopeBox);
 
+    vqtLiveCurveBox.addItemList (getAnalyzerVqtLiveCurveProfileChoices(), 1);
+    vqtLiveCurveBox.setJustificationType (juce::Justification::centred);
+    vqtLiveCurveBox.setTextWhenNothingSelected ("VQT Live");
+    vqtLiveCurveBox.setTooltip (
+        "Select VQT-like live curve response: smoother, balanced, or more detailed");
+
+    vqtLiveCurveAttachment = std::make_unique<ComboBoxAttachment> (
+        state,
+        PluginProcessor::vqtLiveCurveProfileParamId,
+        vqtLiveCurveBox);
+
     liveButtonAttachment = std::make_unique<ButtonAttachment> (
         state,
         PluginProcessor::showLiveCurveParamId,
@@ -261,6 +276,9 @@ void PluginEditor::resized()
     addGap (firstRow, 8);
 
     slopeBox.setBounds (firstRow.removeFromLeft (100));
+    addGap (firstRow, 8);
+
+    vqtLiveCurveBox.setBounds (firstRow.removeFromLeft (128));
 
     liveButton.setBounds (secondRow.removeFromLeft (64));
     addGap (secondRow, 6);

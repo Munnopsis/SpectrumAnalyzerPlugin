@@ -70,6 +70,12 @@ private:
         juce::String noteName;
     };
 
+    enum class CurveRenderMode
+    {
+        dataPoints,
+        pixelResampled
+    };
+
     void drawBackground (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawFrequencyGrid (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawDecibelGrid (juce::Graphics& g, juce::Rectangle<int> bounds);
@@ -84,14 +90,16 @@ private:
                             juce::Rectangle<int> bounds,
                             const std::vector<float>& values,
                             juce::Colour colour,
-                            float strokeWidth);
+                            float strokeWidth,
+                            CurveRenderMode renderMode = CurveRenderMode::dataPoints);
     void drawCurveFromDataRange (juce::Graphics& g,
                                  juce::Rectangle<int> bounds,
                                  const std::vector<float>& values,
                                  float sourceMinFrequencyHz,
                                  float sourceMaxFrequencyHz,
                                  juce::Colour colour,
-                                 float strokeWidth);
+                                 float strokeWidth,
+                                 CurveRenderMode renderMode = CurveRenderMode::dataPoints);
     void drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawVisibleFrequencyRangeIndicator (juce::Graphics& g,
                                              juce::Rectangle<int> bounds);

@@ -87,6 +87,7 @@ private:
     juce::ComboBox rmsTimeBox;
     juce::ComboBox dbRangeBox;
     juce::ComboBox slopeBox;
+    juce::ComboBox vqtLiveCurveBox;
 
     // Attachments
     std::unique_ptr<ButtonAttachment> liveButtonAttachment;
@@ -99,6 +100,7 @@ private:
     std::unique_ptr<ComboBoxAttachment> rmsTimeAttachment;
     std::unique_ptr<ComboBoxAttachment> dbRangeAttachment;
     std::unique_ptr<ComboBoxAttachment> slopeAttachment;
+    std::unique_ptr<ComboBoxAttachment> vqtLiveCurveAttachment;
 
     SpectrumDisplay spectrumDisplay;
     AnalyzerEngine::Frame analyzerFrame;

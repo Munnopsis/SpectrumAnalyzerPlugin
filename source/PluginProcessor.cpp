@@ -19,6 +19,8 @@ PluginProcessor::PluginProcessor()
     rmsTimeParameter = parameters.getRawParameterValue (rmsTimeParamId);
     dbRangeParameter = parameters.getRawParameterValue (dbRangeParamId);
     slopeParameter = parameters.getRawParameterValue (slopeParamId);
+    vqtLiveCurveProfileParameter =
+        parameters.getRawParameterValue (vqtLiveCurveProfileParamId);
 
     jassert (inputModeParameter != nullptr);
     jassert (fftSizeParameter != nullptr);
@@ -26,6 +28,7 @@ PluginProcessor::PluginProcessor()
     jassert (rmsTimeParameter != nullptr);
     jassert (dbRangeParameter != nullptr);
     jassert (slopeParameter != nullptr);
+    jassert (vqtLiveCurveProfileParameter != nullptr);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
@@ -87,6 +90,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         "Slope",
         getAnalyzerSlopeChoices(),
         0));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { vqtLiveCurveProfileParamId, 1 },
+        "VQT Live Curve",
+        getAnalyzerVqtLiveCurveProfileChoices(),
+        analyzerVqtLiveCurveProfileToIndex (AnalyzerVqtLiveCurveProfile::balanced)));
 
     return { params.begin(), params.end() };
 }
@@ -188,6 +197,15 @@ float PluginProcessor::getRmsTimeSeconds() const noexcept
         rmsTimeParameter->load (std::memory_order_relaxed));
 }
 
+AnalyzerVqtLiveCurveProfile PluginProcessor::getVqtLiveCurveProfile() const noexcept
+{
+    if (vqtLiveCurveProfileParameter == nullptr)
+        return AnalyzerVqtLiveCurveProfile::balanced;
+
+    return analyzerVqtLiveCurveProfileFromParameterValue (
+        vqtLiveCurveProfileParameter->load (std::memory_order_relaxed));
+}
+
 float PluginProcessor::getAnalyzerMinimumDecibels() const noexcept
 {
     if (dbRangeParameter == nullptr)
@@ -247,6 +265,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
         isFrequencyDependentAnalyzerResolution());
     analyzerEngine.setFrequencyDependentTunedResolutionEnabled ( isFrequencyDependentAnalyzerResolutionTuned());
     analyzerEngine.setVqtLikeFilterbankEnabled (isVqtLikeAnalyzerFilterbank());
+    analyzerEngine.setVqtLikeLiveCurveProfile (getVqtLiveCurveProfile());
     analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
     analyzerEngine.setRmsTimeSeconds (getRmsTimeSeconds());
 
@@ -316,6 +335,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         isFrequencyDependentAnalyzerResolution());
     analyzerEngine.setFrequencyDependentTunedResolutionEnabled ( isFrequencyDependentAnalyzerResolutionTuned());
     analyzerEngine.setVqtLikeFilterbankEnabled (isVqtLikeAnalyzerFilterbank());
+    analyzerEngine.setVqtLikeLiveCurveProfile (getVqtLiveCurveProfile());
     analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
     analyzerEngine.setRmsTimeSeconds (getRmsTimeSeconds());
 
