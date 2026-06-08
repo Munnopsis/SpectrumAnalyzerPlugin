@@ -2451,15 +2451,22 @@ float AnalyzerEngine::getVqtLikeTonalCalibrationTrimForFrequency (
 
     auto trimDb = 0.0f;
 
-    const auto subBassFadeOut =
-        1.0f - smoothLogFrequencyBlend (frequencyHz, 35.0f, 120.0f);
-    trimDb += subBassFadeOut * 1.0f;
+    const auto subBassReduction =
+        smoothLogFrequencyBlend (frequencyHz, 45.0f, 80.0f);
 
-    const auto highFadeIn =
-        smoothLogFrequencyBlend (frequencyHz, 8000.0f, 16000.0f);
-    trimDb += highFadeIn * -0.75f;
+    trimDb += (1.0f - subBassReduction) * -0.50f;
 
-    trimDb = juce::jlimit (-1.5f, 1.5f, std::isfinite (trimDb) ? trimDb : 0.0f);
+    const auto midLift =
+        smoothLogFrequencyBlend (frequencyHz, 250.0f, 1200.0f);
+
+    trimDb += midLift * 2.45f;   // vorher 2.10f
+
+    const auto highLift =
+        smoothLogFrequencyBlend (frequencyHz, 2500.0f, 10000.0f);
+
+    trimDb += highLift * 1.20f;  // vorher 1.10f
+
+    trimDb = juce::jlimit (-1.0f, 3.45f, trimDb);
 
     return juce::Decibels::decibelsToGain (trimDb);
 }
@@ -2472,15 +2479,17 @@ float AnalyzerEngine::getVqtLikeFastCalibrationTrimForFrequency (
 
     auto trimDb = 0.0f;
 
-    const auto lowFadeOut =
-        1.0f - smoothLogFrequencyBlend (frequencyHz, 60.0f, 180.0f);
-    trimDb += lowFadeOut * -1.0f;
+    const auto lowReductionFade =
+        smoothLogFrequencyBlend (frequencyHz, 90.0f, 250.0f);
 
-    const auto highFadeIn =
-        smoothLogFrequencyBlend (frequencyHz, 6000.0f, 14000.0f);
-    trimDb += highFadeIn * 0.5f;
+    trimDb += (1.0f - lowReductionFade) * -1.0f;
 
-    trimDb = juce::jlimit (-2.0f, 1.0f, std::isfinite (trimDb) ? trimDb : 0.0f);
+    const auto highPresence =
+        smoothLogFrequencyBlend (frequencyHz, 5000.0f, 12000.0f);
+
+    trimDb += highPresence * 0.20f;
+
+    trimDb = juce::jlimit (-1.5f, 0.50f, trimDb);
 
     return juce::Decibels::decibelsToGain (trimDb);
 }
