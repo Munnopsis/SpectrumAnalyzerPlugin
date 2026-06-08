@@ -2031,12 +2031,70 @@ void AnalyzerEngine::resetVqtLikeFilterbankState() noexcept
     {
         band.z1 = 0.0f;
         band.z2 = 0.0f;
+        band.fastZ1 = 0.0f;
+        band.fastZ2 = 0.0f;
         band.power = 0.0f;
         band.lastFramePower = 0.0f;
         band.peakPower = 0.0f;
         band.lastFramePeakPower = 0.0f;
+        band.fastPower = 0.0f;
+        band.fastPeakPower = 0.0f;
+        band.lastFrameFastPower = 0.0f;
+        band.lastFrameFastPeakPower = 0.0f;
         band.noiseFloorPower = 0.0f;
     }
+}
+
+void AnalyzerEngine::resetVqtLikeFrameSummary() noexcept
+{
+    vqtLikeFrameSummary = {};
+
+    for (const auto& band : vqtLikeFilterBands)
+    {
+        if (band.isConfigured)
+            ++vqtLikeFrameSummary.configuredAnalysisBands;
+    }
+}
+
+void AnalyzerEngine::accumulateVqtLikeFrameSummary (
+    const VqtLikeDisplayBinStats& stats) noexcept
+{
+    if (!stats.isConfigured)
+        return;
+
+    ++vqtLikeFrameSummary.displayBinsConfigured;
+    vqtLikeFrameSummary.averageAnalysisBandsUsed +=
+        static_cast<float> (stats.analysisBandsUsed);
+    vqtLikeFrameSummary.averageTonalBandwidthHz += stats.tonalBandwidthHz;
+    vqtLikeFrameSummary.averageFastBandwidthHz += stats.fastBandwidthHz;
+    vqtLikeFrameSummary.averageTonalEffectiveQ += stats.tonalEffectiveQ;
+    vqtLikeFrameSummary.averageFastEffectiveQ += stats.fastEffectiveQ;
+}
+
+void AnalyzerEngine::finalizeVqtLikeFrameSummary() noexcept
+{
+    const auto analysisBandCount =
+        static_cast<float> (juce::jmax (1, vqtLikeAnalysisBandCount));
+
+    vqtLikeFrameSummary.configuredAnalysisBandRatio =
+        static_cast<float> (vqtLikeFrameSummary.configuredAnalysisBands)
+        / analysisBandCount;
+
+    vqtLikeFrameSummary.displayBinConfiguredRatio =
+        static_cast<float> (vqtLikeFrameSummary.displayBinsConfigured)
+        / static_cast<float> (juce::jmax (1, displayBinCount));
+
+    if (vqtLikeFrameSummary.displayBinsConfigured <= 0)
+        return;
+
+    const auto inverseConfiguredDisplayBins =
+        1.0f / static_cast<float> (vqtLikeFrameSummary.displayBinsConfigured);
+
+    vqtLikeFrameSummary.averageAnalysisBandsUsed *= inverseConfiguredDisplayBins;
+    vqtLikeFrameSummary.averageTonalBandwidthHz *= inverseConfiguredDisplayBins;
+    vqtLikeFrameSummary.averageFastBandwidthHz *= inverseConfiguredDisplayBins;
+    vqtLikeFrameSummary.averageTonalEffectiveQ *= inverseConfiguredDisplayBins;
+    vqtLikeFrameSummary.averageFastEffectiveQ *= inverseConfiguredDisplayBins;
 }
 
 void AnalyzerEngine::configureVqtLikeFilterbankIfNeeded()
@@ -2101,54 +2159,173 @@ void AnalyzerEngine::configureVqtLikeFilterbankIfNeeded()
     resetVqtLikeFilterbankState();
 }
 
-void AnalyzerEngine::configureVqtLikeFilterBand (
-    VqtLikeFilterBand& band,
-    float centerFrequencyHz,
-    float sampleRate) noexcept
+float AnalyzerEngine::getBiquadMagnitudeAtFrequency (
+    float b0,
+    float b1,
+    float b2,
+    float a1,
+    float a2,
+    float frequencyHz,
+    float sampleRate) const noexcept
 {
-    band = {};
+    if (!std::isfinite (b0)
+        || !std::isfinite (b1)
+        || !std::isfinite (b2)
+        || !std::isfinite (a1)
+        || !std::isfinite (a2)
+        || !std::isfinite (frequencyHz)
+        || !std::isfinite (sampleRate)
+        || frequencyHz < 0.0f
+        || sampleRate <= 0.0f)
+    {
+        return 1.0f;
+    }
+
+    const auto nyquist = sampleRate * 0.5f;
+    const auto safeFrequencyHz =
+        juce::jlimit (0.0f, nyquist * 0.999f, frequencyHz);
+
+    const auto omega =
+        juce::MathConstants<float>::twoPi * safeFrequencyHz / sampleRate;
+
+    const auto z1Real = std::cos (omega);
+    const auto z1Imag = -std::sin (omega);
+    const auto z2Real = std::cos (2.0f * omega);
+    const auto z2Imag = -std::sin (2.0f * omega);
+
+    const auto numeratorReal = b0 + b1 * z1Real + b2 * z2Real;
+    const auto numeratorImag = b1 * z1Imag + b2 * z2Imag;
+    const auto denominatorReal = 1.0f + a1 * z1Real + a2 * z2Real;
+    const auto denominatorImag = a1 * z1Imag + a2 * z2Imag;
+
+    const auto numeratorMagnitudeSquared =
+        numeratorReal * numeratorReal + numeratorImag * numeratorImag;
+
+    const auto denominatorMagnitudeSquared =
+        denominatorReal * denominatorReal + denominatorImag * denominatorImag;
+
+    if (!std::isfinite (numeratorMagnitudeSquared)
+        || !std::isfinite (denominatorMagnitudeSquared)
+        || denominatorMagnitudeSquared <= 1.0e-12f)
+    {
+        return 1.0f;
+    }
+
+    const auto magnitude =
+        std::sqrt (numeratorMagnitudeSquared / denominatorMagnitudeSquared);
+
+    return juce::jlimit (1.0e-6f,
+        64.0f,
+        std::isfinite (magnitude) ? magnitude : 1.0f);
+}
+
+float AnalyzerEngine::getVqtLikeLayerCalibrationPowerGain (
+    float centerGain,
+    float trim) const noexcept
+{
+    const auto safeCenterGain =
+        juce::jlimit (1.0e-6f,
+            64.0f,
+            std::isfinite (centerGain) ? centerGain : 1.0f);
+
+    auto amplitudeGain = 1.0f / safeCenterGain;
+
+    amplitudeGain =
+        juce::jlimit (vqtLikeCalibrationMinGain,
+            vqtLikeCalibrationMaxGain,
+            std::isfinite (amplitudeGain) ? amplitudeGain : 1.0f);
+
+    amplitudeGain *= std::isfinite (trim) ? trim : 1.0f;
+
+    const auto powerGain = amplitudeGain * amplitudeGain;
+
+    return std::isfinite (powerGain) ? powerGain : 1.0f;
+}
+
+bool AnalyzerEngine::configureVqtLikeBandpassLayer (
+    float centerFrequencyHz,
+    float sampleRate,
+    float baseQ,
+    float minEffectiveQ,
+    float maxEffectiveQ,
+    float lowBandGammaHz,
+    float gammaFadeStartHz,
+    float gammaFadeEndHz,
+    float minBandwidthHz,
+    float maxBandwidthFractionOfCenter,
+    float calibrationTrim,
+    float& outBandwidthHz,
+    float& outEffectiveQ,
+    float& outB0,
+    float& outB1,
+    float& outB2,
+    float& outA1,
+    float& outA2,
+    float& outCenterGain,
+    float& outEquivalentBandwidthHz,
+    float& outCalibrationPowerGain) const noexcept
+{
+    outBandwidthHz = 0.0f;
+    outEffectiveQ = 0.0f;
+    outB0 = 0.0f;
+    outB1 = 0.0f;
+    outB2 = 0.0f;
+    outA1 = 0.0f;
+    outA2 = 0.0f;
+    outCenterGain = 1.0f;
+    outEquivalentBandwidthHz = 0.0f;
+    outCalibrationPowerGain = 1.0f;
 
     if (!std::isfinite (centerFrequencyHz)
         || !std::isfinite (sampleRate)
+        || !std::isfinite (baseQ)
+        || !std::isfinite (minEffectiveQ)
+        || !std::isfinite (maxEffectiveQ)
+        || !std::isfinite (lowBandGammaHz)
+        || !std::isfinite (minBandwidthHz)
+        || !std::isfinite (maxBandwidthFractionOfCenter)
         || centerFrequencyHz <= 0.0f
-        || sampleRate <= 0.0f)
+        || sampleRate <= 0.0f
+        || baseQ <= 0.0f
+        || minEffectiveQ <= 0.0f
+        || maxEffectiveQ < minEffectiveQ
+        || minBandwidthHz <= 0.0f
+        || maxBandwidthFractionOfCenter <= 0.0f)
     {
-        return;
+        return false;
     }
 
     const auto nyquist = sampleRate * 0.5f;
     const auto maxCenterFrequency = nyquist * 0.98f;
 
     if (centerFrequencyHz >= maxCenterFrequency)
-        return;
+        return false;
 
     const auto gammaFade =
         smoothLogFrequencyBlend (centerFrequencyHz,
-            vqtLikeResolutionGammaFadeStartHz,
-            vqtLikeResolutionGammaFadeEndHz);
+            gammaFadeStartHz,
+            gammaFadeEndHz);
 
-    const auto gammaHz =
-        vqtLikeResolutionLowBandGammaHz * (1.0f - gammaFade);
+    const auto gammaHz = lowBandGammaHz * (1.0f - gammaFade);
 
-    auto bandwidthHz =
-        (centerFrequencyHz / vqtLikeResolutionBaseQ) + gammaHz;
+    auto bandwidthHz = (centerFrequencyHz / baseQ) + gammaHz;
 
     const auto maxBandwidthHz =
-        juce::jmax (vqtLikeResolutionMinBandwidthHz,
-            juce::jmin (centerFrequencyHz * vqtLikeResolutionMaxBandwidthFractionOfCenter,
+        juce::jmax (minBandwidthHz,
+            juce::jmin (centerFrequencyHz * maxBandwidthFractionOfCenter,
                 nyquist * 0.45f));
 
     bandwidthHz =
-        juce::jlimit (vqtLikeResolutionMinBandwidthHz,
+        juce::jlimit (minBandwidthHz,
             maxBandwidthHz,
-            std::isfinite (bandwidthHz) ? bandwidthHz : vqtLikeResolutionMinBandwidthHz);
+            std::isfinite (bandwidthHz) ? bandwidthHz : minBandwidthHz);
 
     auto effectiveQ = centerFrequencyHz / bandwidthHz;
 
     effectiveQ =
-        juce::jlimit (vqtLikeResolutionMinEffectiveQ,
-            vqtLikeResolutionMaxEffectiveQ,
-            std::isfinite (effectiveQ) ? effectiveQ : vqtLikeResolutionMinEffectiveQ);
+        juce::jlimit (minEffectiveQ,
+            maxEffectiveQ,
+            std::isfinite (effectiveQ) ? effectiveQ : minEffectiveQ);
 
     bandwidthHz = centerFrequencyHz / effectiveQ;
 
@@ -2160,26 +2337,110 @@ void AnalyzerEngine::configureVqtLikeFilterBand (
     const auto alpha = sinOmega / (2.0f * effectiveQ);
     const auto a0 = 1.0f + alpha;
 
-    if (!std::isfinite (alpha) || !std::isfinite (a0) || a0 <= 0.0f)
-        return;
+    if (!std::isfinite (alpha)
+        || !std::isfinite (a0)
+        || a0 <= 0.0f)
+    {
+        return false;
+    }
+
+    outBandwidthHz = bandwidthHz;
+    outEffectiveQ = effectiveQ;
+    outB0 = alpha / a0;
+    outB1 = 0.0f;
+    outB2 = -alpha / a0;
+    outA1 = (-2.0f * cosOmega) / a0;
+    outA2 = (1.0f - alpha) / a0;
+    outCenterGain =
+        getBiquadMagnitudeAtFrequency (outB0,
+            outB1,
+            outB2,
+            outA1,
+            outA2,
+            centerFrequencyHz,
+            sampleRate);
+    outEquivalentBandwidthHz =
+        juce::jmax (vqtLikeCalibrationReferenceBandwidthHz, bandwidthHz);
+    outCalibrationPowerGain =
+        getVqtLikeLayerCalibrationPowerGain (outCenterGain, calibrationTrim);
+
+    return std::isfinite (outBandwidthHz)
+        && std::isfinite (outEffectiveQ)
+        && outEffectiveQ > 0.0f
+        && std::isfinite (outB0)
+        && std::isfinite (outB1)
+        && std::isfinite (outB2)
+        && std::isfinite (outA1)
+        && std::isfinite (outA2)
+        && std::abs (outA2) < 1.0f
+        && std::isfinite (outCenterGain)
+        && std::isfinite (outEquivalentBandwidthHz)
+        && std::isfinite (outCalibrationPowerGain);
+}
+
+void AnalyzerEngine::configureVqtLikeFilterBand (
+    VqtLikeFilterBand& band,
+    float centerFrequencyHz,
+    float sampleRate) noexcept
+{
+    band = {};
 
     band.centerFrequencyHz = centerFrequencyHz;
-    band.bandwidthHz = bandwidthHz;
-    band.effectiveQ = effectiveQ;
-    band.b0 = alpha / a0;
-    band.b1 = 0.0f;
-    band.b2 = -alpha / a0;
-    band.a1 = (-2.0f * cosOmega) / a0;
-    band.a2 = (1.0f - alpha) / a0;
-    // Prototype calibration: RBJ bandpass level depends on Q and input frequency.
-    // Keep this conservative until per-band FFT/sine calibration is added.
-    band.calibrationGain = 1.0f;
-    band.isConfigured =
-        std::isfinite (band.b0)
-        && std::isfinite (band.b1)
-        && std::isfinite (band.b2)
-        && std::isfinite (band.a1)
-        && std::isfinite (band.a2);
+
+    const auto tonalLayerConfigured =
+        configureVqtLikeBandpassLayer (
+            centerFrequencyHz,
+            sampleRate,
+            vqtLikeResolutionBaseQ,
+            vqtLikeResolutionMinEffectiveQ,
+            vqtLikeResolutionMaxEffectiveQ,
+            vqtLikeResolutionLowBandGammaHz,
+            vqtLikeResolutionGammaFadeStartHz,
+            vqtLikeResolutionGammaFadeEndHz,
+            vqtLikeResolutionMinBandwidthHz,
+            vqtLikeResolutionMaxBandwidthFractionOfCenter,
+            vqtLikeTonalSineCalibrationTrim,
+            band.bandwidthHz,
+            band.effectiveQ,
+            band.b0,
+            band.b1,
+            band.b2,
+            band.a1,
+            band.a2,
+            band.tonalCenterGain,
+            band.tonalEquivalentBandwidthHz,
+            band.tonalCalibrationPowerGain);
+
+    const auto fastLayerConfigured =
+        configureVqtLikeBandpassLayer (
+            centerFrequencyHz,
+            sampleRate,
+            vqtLikeFastBaseQ,
+            vqtLikeFastMinEffectiveQ,
+            vqtLikeFastMaxEffectiveQ,
+            vqtLikeFastLowBandGammaHz,
+            vqtLikeFastGammaFadeStartHz,
+            vqtLikeFastGammaFadeEndHz,
+            vqtLikeFastMinBandwidthHz,
+            vqtLikeFastMaxBandwidthFractionOfCenter,
+            vqtLikeFastSineCalibrationTrim,
+            band.fastBandwidthHz,
+            band.fastEffectiveQ,
+            band.fastB0,
+            band.fastB1,
+            band.fastB2,
+            band.fastA1,
+            band.fastA2,
+            band.fastCenterGain,
+            band.fastEquivalentBandwidthHz,
+            band.fastCalibrationPowerGain);
+
+    band.isConfigured = tonalLayerConfigured;
+    band.hasFastLayer = tonalLayerConfigured && fastLayerConfigured;
+    band.calibrationGain =
+        std::sqrt (juce::jmax (0.0f, band.tonalCalibrationPowerGain));
+    band.fastCalibrationGain =
+        std::sqrt (juce::jmax (0.0f, band.fastCalibrationPowerGain));
 }
 
 void AnalyzerEngine::processVqtLikeFilterbankSamples (
@@ -2208,98 +2469,199 @@ void AnalyzerEngine::processVqtLikeFilterbankSamples (
         smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
             vqtLikePeakEnvelopeReleaseSeconds);
 
+    const auto fastMeanAttackSmoothing =
+        smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
+            vqtLikeFastEnvelopeAttackSeconds);
+
+    const auto fastMeanReleaseSmoothing =
+        smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
+            vqtLikeFastEnvelopeReleaseSeconds);
+
+    const auto fastPeakReleaseSmoothing =
+        smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
+            vqtLikeFastPeakEnvelopeReleaseSeconds);
+
     const auto inverseNumSamples =
         1.0f / static_cast<float> (numSamples);
+
+    const auto processLayer =
+        [samples, numSamples, inverseNumSamples] (
+            float b0,
+            float b1,
+            float b2,
+            float a1,
+            float a2,
+            float calibrationPowerGain,
+            float meanAttackSmoothingForLayer,
+            float meanReleaseSmoothingForLayer,
+            float peakReleaseSmoothingForLayer,
+            float& z1State,
+            float& z2State,
+            float& powerState,
+            float& peakPowerState,
+            float& lastFramePowerState,
+            float& lastFramePeakPowerState) noexcept
+        {
+            if (!std::isfinite (b0)
+                || !std::isfinite (b1)
+                || !std::isfinite (b2)
+                || !std::isfinite (a1)
+                || !std::isfinite (a2))
+            {
+                z1State = 0.0f;
+                z2State = 0.0f;
+                powerState = 0.0f;
+                peakPowerState = 0.0f;
+                lastFramePowerState = 0.0f;
+                lastFramePeakPowerState = 0.0f;
+                return;
+            }
+
+            auto frameMeanPower = 0.0f;
+            auto framePeakPower = 0.0f;
+            auto z1 = z1State;
+            auto z2 = z2State;
+
+            for (int sampleIndex = 0; sampleIndex < numSamples; ++sampleIndex)
+            {
+                const auto inputSample = samples[sampleIndex];
+                const auto x = std::isfinite (inputSample) ? inputSample : 0.0f;
+
+                const auto y = b0 * x + z1;
+
+                z1 = b1 * x - a1 * y + z2;
+                z2 = b2 * x - a2 * y;
+
+                const auto samplePower = y * y;
+
+                frameMeanPower += samplePower;
+                framePeakPower = juce::jmax (framePeakPower, samplePower);
+            }
+
+            z1State = std::isfinite (z1) ? z1 : 0.0f;
+            z2State = std::isfinite (z2) ? z2 : 0.0f;
+
+            const auto safeCalibrationPowerGain =
+                std::isfinite (calibrationPowerGain)
+                    ? calibrationPowerGain
+                    : 1.0f;
+
+            frameMeanPower =
+                std::isfinite (frameMeanPower)
+                    ? frameMeanPower
+                          * inverseNumSamples
+                          * vqtLikeMeanPowerScale
+                          * safeCalibrationPowerGain
+                    : 0.0f;
+
+            framePeakPower =
+                std::isfinite (framePeakPower)
+                    ? framePeakPower
+                          * vqtLikePeakPowerScale
+                          * safeCalibrationPowerGain
+                    : 0.0f;
+
+            frameMeanPower =
+                juce::jlimit (0.0f,
+                    vqtLikeMaxDisplayPower,
+                    std::isfinite (frameMeanPower) ? frameMeanPower : 0.0f);
+
+            framePeakPower =
+                juce::jlimit (0.0f,
+                    vqtLikeMaxDisplayPower,
+                    std::isfinite (framePeakPower) ? framePeakPower : 0.0f);
+
+            lastFramePowerState = frameMeanPower;
+            lastFramePeakPowerState = framePeakPower;
+
+            auto meanPower = std::isfinite (powerState) ? powerState : 0.0f;
+            const auto meanSmoothing =
+                frameMeanPower > meanPower
+                    ? meanAttackSmoothingForLayer
+                    : meanReleaseSmoothingForLayer;
+
+            meanPower += meanSmoothing * (frameMeanPower - meanPower);
+            powerState =
+                juce::jlimit (0.0f,
+                    vqtLikeMaxDisplayPower,
+                    std::isfinite (meanPower) ? meanPower : 0.0f);
+
+            auto peakPower =
+                std::isfinite (peakPowerState) ? peakPowerState : 0.0f;
+
+            if (framePeakPower > peakPower)
+                peakPower = framePeakPower;
+            else
+                peakPower += peakReleaseSmoothingForLayer * (framePeakPower - peakPower);
+
+            peakPowerState =
+                juce::jlimit (0.0f,
+                    vqtLikeMaxDisplayPower,
+                    std::isfinite (peakPower) ? peakPower : 0.0f);
+        };
 
     for (auto& band : vqtLikeFilterBands)
     {
         if (!band.isConfigured)
         {
+            band.z1 = 0.0f;
+            band.z2 = 0.0f;
+            band.fastZ1 = 0.0f;
+            band.fastZ2 = 0.0f;
             band.power = 0.0f;
             band.lastFramePower = 0.0f;
             band.peakPower = 0.0f;
             band.lastFramePeakPower = 0.0f;
+            band.fastPower = 0.0f;
+            band.fastPeakPower = 0.0f;
+            band.lastFrameFastPower = 0.0f;
+            band.lastFrameFastPeakPower = 0.0f;
             continue;
         }
 
-        auto frameMeanPower = 0.0f;
-        auto framePeakPower = 0.0f;
-        auto z1 = band.z1;
-        auto z2 = band.z2;
+        processLayer (band.b0,
+            band.b1,
+            band.b2,
+            band.a1,
+            band.a2,
+            band.tonalCalibrationPowerGain,
+            meanAttackSmoothing,
+            meanReleaseSmoothing,
+            peakReleaseSmoothing,
+            band.z1,
+            band.z2,
+            band.power,
+            band.peakPower,
+            band.lastFramePower,
+            band.lastFramePeakPower);
 
-        for (int sampleIndex = 0; sampleIndex < numSamples; ++sampleIndex)
+        if (band.hasFastLayer)
         {
-            const auto inputSample = samples[sampleIndex];
-            const auto x = std::isfinite (inputSample) ? inputSample : 0.0f;
-
-            const auto y = band.b0 * x + z1;
-
-            z1 = band.b1 * x - band.a1 * y + z2;
-            z2 = band.b2 * x - band.a2 * y;
-
-            const auto samplePower = y * y;
-
-            frameMeanPower += samplePower;
-            framePeakPower = juce::jmax (framePeakPower, samplePower);
+            processLayer (band.fastB0,
+                band.fastB1,
+                band.fastB2,
+                band.fastA1,
+                band.fastA2,
+                band.fastCalibrationPowerGain,
+                fastMeanAttackSmoothing,
+                fastMeanReleaseSmoothing,
+                fastPeakReleaseSmoothing,
+                band.fastZ1,
+                band.fastZ2,
+                band.fastPower,
+                band.fastPeakPower,
+                band.lastFrameFastPower,
+                band.lastFrameFastPeakPower);
         }
-
-        band.z1 = std::isfinite (z1) ? z1 : 0.0f;
-        band.z2 = std::isfinite (z2) ? z2 : 0.0f;
-
-        const auto calibrationPowerGain =
-            std::isfinite (band.calibrationGain)
-                ? band.calibrationGain * band.calibrationGain
-                : 1.0f;
-
-        frameMeanPower =
-            std::isfinite (frameMeanPower)
-                ? frameMeanPower
-                      * inverseNumSamples
-                      * vqtLikeMeanPowerScale
-                      * calibrationPowerGain
-                : 0.0f;
-
-        framePeakPower =
-            std::isfinite (framePeakPower)
-                ? framePeakPower
-                      * vqtLikePeakPowerScale
-                      * calibrationPowerGain
-                : 0.0f;
-
-        frameMeanPower =
-            juce::jlimit (0.0f,
-                vqtLikeMaxDisplayPower,
-                std::isfinite (frameMeanPower) ? frameMeanPower : 0.0f);
-
-        framePeakPower =
-            juce::jlimit (0.0f,
-                vqtLikeMaxDisplayPower,
-                std::isfinite (framePeakPower) ? framePeakPower : 0.0f);
-
-        band.lastFramePower = frameMeanPower;
-        band.lastFramePeakPower = framePeakPower;
-
-        auto meanPower = std::isfinite (band.power) ? band.power : 0.0f;
-        const auto meanSmoothing =
-            frameMeanPower > meanPower ? meanAttackSmoothing : meanReleaseSmoothing;
-
-        meanPower += meanSmoothing * (frameMeanPower - meanPower);
-        band.power =
-            juce::jlimit (0.0f,
-                vqtLikeMaxDisplayPower,
-                std::isfinite (meanPower) ? meanPower : 0.0f);
-
-        auto peakPower = std::isfinite (band.peakPower) ? band.peakPower : 0.0f;
-
-        if (framePeakPower > peakPower)
-            peakPower = framePeakPower;
         else
-            peakPower += peakReleaseSmoothing * (framePeakPower - peakPower);
-
-        band.peakPower =
-            juce::jlimit (0.0f,
-                vqtLikeMaxDisplayPower,
-                std::isfinite (peakPower) ? peakPower : 0.0f);
+        {
+            band.fastZ1 = 0.0f;
+            band.fastZ2 = 0.0f;
+            band.fastPower = 0.0f;
+            band.fastPeakPower = 0.0f;
+            band.lastFrameFastPower = 0.0f;
+            band.lastFrameFastPeakPower = 0.0f;
+        }
     }
 }
 
@@ -2340,6 +2702,114 @@ float AnalyzerEngine::getVqtLikePeakBlendForFrequency (
     return juce::jlimit (0.0f, 1.0f, std::isfinite (blend) ? blend : 0.0f);
 }
 
+float AnalyzerEngine::getVqtLikeTransientDetailBlendForFrequency (
+    float frequencyHz) const noexcept
+{
+    if (!std::isfinite (frequencyHz) || frequencyHz <= 0.0f)
+        return 0.0f;
+
+    const auto lowToMid =
+        smoothLogFrequencyBlend (frequencyHz,
+            vqtLikeTransientDetailLowToMidStartHz,
+            vqtLikeTransientDetailLowToMidEndHz);
+
+    auto blend =
+        vqtLikeTransientDetailBlendLow
+        + lowToMid * (vqtLikeTransientDetailBlendMid - vqtLikeTransientDetailBlendLow);
+
+    const auto midToHigh =
+        smoothLogFrequencyBlend (frequencyHz,
+            vqtLikeTransientDetailMidToHighStartHz,
+            vqtLikeTransientDetailMidToHighEndHz);
+
+    blend += midToHigh * (vqtLikeTransientDetailBlendHigh - blend);
+
+    return juce::jlimit (0.0f, 1.0f, std::isfinite (blend) ? blend : 0.0f);
+}
+
+float AnalyzerEngine::getVqtLikeTransientDetailMaxLiftDbForFrequency (
+    float frequencyHz) const noexcept
+{
+    if (!std::isfinite (frequencyHz) || frequencyHz <= 0.0f)
+        return 0.0f;
+
+    const auto lowToMid =
+        smoothLogFrequencyBlend (frequencyHz,
+            vqtLikeTransientDetailLowToMidStartHz,
+            vqtLikeTransientDetailLowToMidEndHz);
+
+    auto maxLiftDb =
+        vqtLikeTransientDetailMaxLiftDbLow
+        + lowToMid
+              * (vqtLikeTransientDetailMaxLiftDbMid
+                  - vqtLikeTransientDetailMaxLiftDbLow);
+
+    const auto midToHigh =
+        smoothLogFrequencyBlend (frequencyHz,
+            vqtLikeTransientDetailMidToHighStartHz,
+            vqtLikeTransientDetailMidToHighEndHz);
+
+    maxLiftDb +=
+        midToHigh * (vqtLikeTransientDetailMaxLiftDbHigh - maxLiftDb);
+
+    return juce::jlimit (0.0f, 10.0f, std::isfinite (maxLiftDb) ? maxLiftDb : 0.0f);
+}
+
+float AnalyzerEngine::getVqtLikeAggregationPeakShapeBlendForFrequency (
+    float frequencyHz) const noexcept
+{
+    return getVqtLikePeakBlendForFrequency (frequencyHz,
+        vqtLikeAggregationPeakShapeBlendLow,
+        vqtLikeAggregationPeakShapeBlendMid,
+        vqtLikeAggregationPeakShapeBlendHigh);
+}
+
+float AnalyzerEngine::limitPowerLiftDb (
+    float basePower,
+    float candidatePower,
+    float maxLiftDb) const noexcept
+{
+    const auto safeBasePower =
+        juce::jlimit (0.0f,
+            vqtLikeMaxDisplayPower,
+            std::isfinite (basePower) ? basePower : 0.0f);
+
+    const auto safeCandidatePower =
+        juce::jlimit (0.0f,
+            vqtLikeMaxDisplayPower,
+            std::isfinite (candidatePower) ? candidatePower : safeBasePower);
+
+    if (safeCandidatePower <= safeBasePower)
+        return safeBasePower;
+
+    const auto safeMaxLiftDb =
+        juce::jlimit (0.0f, 10.0f, std::isfinite (maxLiftDb) ? maxLiftDb : 0.0f);
+
+    if (safeMaxLiftDb <= 0.0f)
+        return safeBasePower;
+
+    const auto baseMagnitude = std::sqrt (safeBasePower);
+    const auto candidateMagnitude = std::sqrt (safeCandidatePower);
+
+    const auto baseDb =
+        juce::Decibels::gainToDecibels (baseMagnitude, -100.0f);
+
+    const auto candidateDb =
+        juce::Decibels::gainToDecibels (candidateMagnitude, -100.0f);
+
+    const auto limitedDb =
+        juce::jmin (candidateDb, baseDb + safeMaxLiftDb);
+
+    const auto limitedMagnitude =
+        juce::Decibels::decibelsToGain (limitedDb);
+
+    const auto limitedPower = limitedMagnitude * limitedMagnitude;
+
+    return juce::jlimit (safeBasePower,
+        vqtLikeMaxDisplayPower,
+        std::isfinite (limitedPower) ? limitedPower : safeBasePower);
+}
+
 AnalyzerEngine::VqtLikeDisplayBinStats
     AnalyzerEngine::getVqtLikeDisplayBinStats (
         size_t displayBinIndex) const noexcept
@@ -2359,9 +2829,18 @@ AnalyzerEngine::VqtLikeDisplayBinStats
     const auto displayBinWidth =
         1.0f / displayDenominator;
 
-    auto weightedMeanPower = 0.0f;
-    auto weightedPeakPower = 0.0f;
-    auto weightSum = 0.0f;
+    auto weightedTonalMeanPower = 0.0f;
+    auto weightedTonalPeakPower = 0.0f;
+    auto tonalWeightedMaxPower = 0.0f;
+    auto weightedTonalBandwidthHz = 0.0f;
+    auto weightedTonalEffectiveQ = 0.0f;
+    auto tonalWeightSum = 0.0f;
+    auto weightedFastMeanPower = 0.0f;
+    auto weightedFastPeakPower = 0.0f;
+    auto fastWeightedMaxPower = 0.0f;
+    auto weightedFastBandwidthHz = 0.0f;
+    auto weightedFastEffectiveQ = 0.0f;
+    auto fastWeightSum = 0.0f;
     auto analysisBandsUsed = 0;
 
     for (const auto& band : vqtLikeFilterBands)
@@ -2390,41 +2869,104 @@ AnalyzerEngine::VqtLikeDisplayBinStats
         if (!std::isfinite (weight) || weight <= 0.0f)
             continue;
 
-        const auto bandMeanPower =
+        const auto bandTonalMeanPower =
             juce::jlimit (0.0f,
                 vqtLikeMaxDisplayPower,
                 std::isfinite (band.power) ? band.power : 0.0f);
 
-        const auto bandPeakPower =
+        const auto bandTonalPeakPower =
             juce::jlimit (0.0f,
                 vqtLikeMaxDisplayPower,
-                std::isfinite (band.peakPower) ? band.peakPower : bandMeanPower);
+                std::isfinite (band.peakPower) ? band.peakPower : bandTonalMeanPower);
 
-        weightedMeanPower += bandMeanPower * weight;
-        weightedPeakPower += bandPeakPower * weight;
-        weightSum += weight;
+        weightedTonalMeanPower += bandTonalMeanPower * weight;
+        weightedTonalPeakPower += bandTonalPeakPower * weight;
+        tonalWeightedMaxPower =
+            juce::jmax (tonalWeightedMaxPower, bandTonalPeakPower * weight);
+        weightedTonalBandwidthHz +=
+            (std::isfinite (band.tonalEquivalentBandwidthHz)
+                    ? band.tonalEquivalentBandwidthHz
+                    : band.bandwidthHz)
+            * weight;
+        weightedTonalEffectiveQ +=
+            (std::isfinite (band.effectiveQ) ? band.effectiveQ : 0.0f) * weight;
+        tonalWeightSum += weight;
+
+        if (band.hasFastLayer)
+        {
+            const auto bandFastMeanPower =
+                juce::jlimit (0.0f,
+                    vqtLikeMaxDisplayPower,
+                    std::isfinite (band.fastPower) ? band.fastPower : 0.0f);
+
+            const auto bandFastPeakPower =
+                juce::jlimit (0.0f,
+                    vqtLikeMaxDisplayPower,
+                    std::isfinite (band.fastPeakPower)
+                        ? band.fastPeakPower
+                        : bandFastMeanPower);
+
+            weightedFastMeanPower += bandFastMeanPower * weight;
+            weightedFastPeakPower += bandFastPeakPower * weight;
+            fastWeightedMaxPower =
+                juce::jmax (fastWeightedMaxPower, bandFastPeakPower * weight);
+            weightedFastBandwidthHz +=
+                (std::isfinite (band.fastEquivalentBandwidthHz)
+                        ? band.fastEquivalentBandwidthHz
+                        : band.fastBandwidthHz)
+                * weight;
+            weightedFastEffectiveQ +=
+                (std::isfinite (band.fastEffectiveQ) ? band.fastEffectiveQ : 0.0f)
+                * weight;
+            fastWeightSum += weight;
+        }
+
         ++analysisBandsUsed;
     }
 
-    if (weightSum <= 0.0f || analysisBandsUsed <= 0)
+    if (tonalWeightSum <= 0.0f || analysisBandsUsed <= 0)
         return result;
 
-    auto meanPower =
+    auto tonalMeanPower =
         juce::jlimit (0.0f,
             vqtLikeMaxDisplayPower,
-            weightedMeanPower / weightSum);
+            weightedTonalMeanPower / tonalWeightSum);
 
-    auto peakPower =
+    auto tonalPeakPower =
         juce::jlimit (0.0f,
             vqtLikeMaxDisplayPower,
-            weightedPeakPower / weightSum);
+            weightedTonalPeakPower / tonalWeightSum);
 
-    peakPower = juce::jmax (peakPower, meanPower);
+    tonalPeakPower = juce::jmax (tonalPeakPower, tonalMeanPower);
 
-    if (meanPower < vqtLikeMinimumUsefulPower
-        && peakPower < vqtLikeMinimumUsefulPower)
+    auto tonalBandwidthHz =
+        juce::jmax (0.0f, weightedTonalBandwidthHz / tonalWeightSum);
+
+    auto tonalEffectiveQ =
+        juce::jmax (0.0f, weightedTonalEffectiveQ / tonalWeightSum);
+
+    auto fastMeanPower = tonalMeanPower;
+    auto fastPeakPower = tonalPeakPower;
+    auto fastBandwidthHz = tonalBandwidthHz;
+    auto fastEffectiveQ = tonalEffectiveQ;
+
+    if (fastWeightSum > 0.0f)
     {
-        return result;
+        fastMeanPower =
+            juce::jlimit (0.0f,
+                vqtLikeMaxDisplayPower,
+                weightedFastMeanPower / fastWeightSum);
+
+        fastPeakPower =
+            juce::jlimit (0.0f,
+                vqtLikeMaxDisplayPower,
+                weightedFastPeakPower / fastWeightSum);
+
+        fastPeakPower = juce::jmax (fastPeakPower, fastMeanPower);
+        fastBandwidthHz =
+            juce::jmax (0.0f, weightedFastBandwidthHz / fastWeightSum);
+        fastEffectiveQ =
+            juce::jmax (0.0f, weightedFastEffectiveQ / fastWeightSum);
     }
 
     auto centerFrequencyHz =
@@ -2441,6 +2983,33 @@ AnalyzerEngine::VqtLikeDisplayBinStats
             centerFrequencyHz = displayCenterFrequencyHz;
     }
 
+    const auto peakShapeBlend =
+        getVqtLikeAggregationPeakShapeBlendForFrequency (centerFrequencyHz);
+
+    tonalPeakPower =
+        juce::jlimit (tonalMeanPower,
+            vqtLikeMaxDisplayPower,
+            tonalPeakPower
+                + peakShapeBlend
+                      * (juce::jmax (tonalPeakPower, tonalWeightedMaxPower)
+                          - tonalPeakPower));
+
+    fastPeakPower =
+        juce::jlimit (fastMeanPower,
+            vqtLikeMaxDisplayPower,
+            fastPeakPower
+                + peakShapeBlend
+                      * (juce::jmax (fastPeakPower, fastWeightedMaxPower)
+                          - fastPeakPower));
+
+    if (tonalMeanPower < vqtLikeMinimumUsefulPower
+        && tonalPeakPower < vqtLikeMinimumUsefulPower
+        && fastMeanPower < vqtLikeMinimumUsefulPower
+        && fastPeakPower < vqtLikeMinimumUsefulPower)
+    {
+        return result;
+    }
+
     const auto livePeakBlend =
         getVqtLikePeakBlendForFrequency (centerFrequencyHz,
             vqtLikeLivePeakBlendLow,
@@ -2453,24 +3022,73 @@ AnalyzerEngine::VqtLikeDisplayBinStats
             vqtLikePeakHoldPeakBlendMid,
             vqtLikePeakHoldPeakBlendHigh);
 
+    const auto transientDetailBlend =
+        getVqtLikeTransientDetailBlendForFrequency (centerFrequencyHz);
+
+    const auto transientDetailMaxLiftDb =
+        getVqtLikeTransientDetailMaxLiftDbForFrequency (centerFrequencyHz);
+
+    const auto tonalLivePower =
+        juce::jlimit (0.0f,
+            vqtLikeMaxDisplayPower,
+            tonalMeanPower + livePeakBlend * (tonalPeakPower - tonalMeanPower));
+
+    const auto fastDetailPower = juce::jmax (fastPeakPower, fastMeanPower);
+
+    const auto liveCandidatePower =
+        juce::jmax (tonalLivePower,
+            tonalLivePower
+                + transientDetailBlend * (fastDetailPower - tonalLivePower));
+
     const auto livePower =
         juce::jlimit (0.0f,
             vqtLikeMaxDisplayPower,
-            meanPower + livePeakBlend * (peakPower - meanPower));
+            limitPowerLiftDb (tonalLivePower,
+                liveCandidatePower,
+                transientDetailMaxLiftDb));
+
+    const auto peakHoldPowerBase =
+        juce::jlimit (0.0f,
+            vqtLikeMaxDisplayPower,
+            tonalMeanPower + peakHoldPeakBlend * (tonalPeakPower - tonalMeanPower));
+
+    const auto peakHoldTransientBlend =
+        juce::jlimit (0.0f, 1.0f, transientDetailBlend * 1.25f);
+
+    const auto peakHoldTransientMaxLiftDb =
+        juce::jlimit (0.0f, 10.0f, transientDetailMaxLiftDb + 2.0f);
+
+    const auto peakHoldCandidatePower =
+        juce::jmax (peakHoldPowerBase,
+            peakHoldPowerBase
+                + peakHoldTransientBlend * (fastPeakPower - peakHoldPowerBase));
 
     const auto peakHoldPower =
         juce::jlimit (0.0f,
             vqtLikeMaxDisplayPower,
-            meanPower + peakHoldPeakBlend * (peakPower - meanPower));
+            limitPowerLiftDb (peakHoldPowerBase,
+                peakHoldCandidatePower,
+                peakHoldTransientMaxLiftDb));
 
-    result.metricStats = { meanPower, meanPower, 1 };
+    result.metricStats = { tonalMeanPower, tonalMeanPower, 1 };
     result.liveVisualStats = { livePower, livePower, 1 };
     result.peakHoldVisualStats = { peakHoldPower, peakHoldPower, 1 };
     result.centerFrequencyHz = centerFrequencyHz;
     result.peakBlend = livePeakBlend;
     result.peakHoldBlend = peakHoldPeakBlend;
     result.analysisBandsUsed = analysisBandsUsed;
-    result.analysisWeightSum = weightSum;
+    result.analysisWeightSum = tonalWeightSum;
+    result.tonalMeanPower = tonalMeanPower;
+    result.tonalPeakPower = tonalPeakPower;
+    result.fastMeanPower = fastMeanPower;
+    result.fastPeakPower = fastPeakPower;
+    result.transientDetailBlend = transientDetailBlend;
+    result.transientDetailMaxLiftDb = transientDetailMaxLiftDb;
+    result.tonalBandwidthHz = tonalBandwidthHz;
+    result.fastBandwidthHz = fastBandwidthHz;
+    result.tonalEffectiveQ = tonalEffectiveQ;
+    result.fastEffectiveQ = fastEffectiveQ;
+    result.peakShapeBlend = peakShapeBlend;
     result.isConfigured = true;
 
     return result;
@@ -2866,6 +3484,9 @@ void AnalyzerEngine::processOneFftBlock()
 
     resetFrequencyDependentPolicyFrameSummary();
 
+    if (currentVqtLikeFilterbankEnabled)
+        resetVqtLikeFrameSummary();
+
     auto energyFramePeakPower = 0.0f;
     const auto frequencyDependentSourceAvailability =
         getFrequencyDependentSourceAvailability();
@@ -2878,6 +3499,8 @@ void AnalyzerEngine::processOneFftBlock()
         {
             const auto vqtBinStats =
                 getVqtLikeDisplayBinStats (index);
+
+            accumulateVqtLikeFrameSummary (vqtBinStats);
 
             const auto liveTargetDb =
                 displayBinPowerStatsToDb (vqtBinStats.liveVisualStats);
@@ -3066,6 +3689,9 @@ void AnalyzerEngine::processOneFftBlock()
     }
 
     finalizeFrequencyDependentPolicyFrameSummary();
+
+    if (currentVqtLikeFilterbankEnabled)
+        finalizeVqtLikeFrameSummary();
 
     const auto activityThresholdGain =
         juce::Decibels::decibelsToGain (energyActivityThresholdDb);

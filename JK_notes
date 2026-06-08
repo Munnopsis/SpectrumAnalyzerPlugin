@@ -1,11 +1,36 @@
 Command to build changes and make standalone app: cmake --build Builds --config Debug --target FullSpectrum_Standalone
 
+Wir bauen verschiedene verfahren um folgendes zu testen und zu optimieren:
+    1. hohe Frequenzauflösung für stabile Tonalität
+    2. schnelle Zeitreaktion für Transienten
+
 Aktueller Stand FFT - Verfahren:
     Frequency Dependent = Referenz / konservativ
     Frequency Dependent Tuned = Experimentierpfad
     Onset-gated LowBand Alignment = safety layer
     Fast Transient Visual Prefill = nächster Layer für noch besseren ausgleich der latentz bei breitem frame
     => leichte welle hat die kurve noch aber ist einigermaßen ok momentan! (Live Kurve)
+
+VQT:
+    Dual-layer VQT analysis:
+    High-resolution tonal layer + fast transient layer
+    Also pro Analyseband zwei parallele Filterpfade:
+
+    Tonal Layer:
+    schmaler, stabiler, hohe Frequenzauflösung
+
+    Transient Layer:
+    breiter, schneller, bessere Zeitkohärenz
+
+    Danach fusionieren wir diese Layer kontrolliert:
+
+    RMS / Energy: tonal mean
+    Live: tonal body + kontrollierter transient detail
+    PeakHold: tonal peak + kontrollierter transient peak
+
+    Das ist der nächste Schritt, der wirklich in Richtung hochwertiger Analyzer-Core geht.
+
+
 
 TODO:
     - test peak note label detection with test signals, peak note label detection looks to hectic at the moment

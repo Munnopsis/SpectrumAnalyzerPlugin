@@ -301,7 +301,28 @@ class AnalyzerEngine : private juce::Thread
         float lastFramePeakPower = 0.0f;
         float calibrationGain = 1.0f;
         float noiseFloorPower = 0.0f;
+        float tonalCenterGain = 1.0f;
+        float fastCenterGain = 1.0f;
+        float tonalEquivalentBandwidthHz = 0.0f;
+        float fastEquivalentBandwidthHz = 0.0f;
+        float tonalCalibrationPowerGain = 1.0f;
+        float fastCalibrationPowerGain = 1.0f;
+        float fastBandwidthHz = 0.0f;
+        float fastEffectiveQ = 0.0f;
+        float fastB0 = 0.0f;
+        float fastB1 = 0.0f;
+        float fastB2 = 0.0f;
+        float fastA1 = 0.0f;
+        float fastA2 = 0.0f;
+        float fastZ1 = 0.0f;
+        float fastZ2 = 0.0f;
+        float fastPower = 0.0f;
+        float fastPeakPower = 0.0f;
+        float lastFrameFastPower = 0.0f;
+        float lastFrameFastPeakPower = 0.0f;
+        float fastCalibrationGain = 1.0f;
         bool isConfigured = false;
+        bool hasFastLayer = false;
     };
 
     struct VqtLikeDisplayBinStats
@@ -315,8 +336,34 @@ class AnalyzerEngine : private juce::Thread
         float peakHoldBlend = 0.0f;
         int analysisBandsUsed = 0;
         float analysisWeightSum = 0.0f;
+        float tonalMeanPower = 0.0f;
+        float tonalPeakPower = 0.0f;
+        float fastMeanPower = 0.0f;
+        float fastPeakPower = 0.0f;
+        float transientDetailBlend = 0.0f;
+        float transientDetailMaxLiftDb = 0.0f;
+        float tonalBandwidthHz = 0.0f;
+        float fastBandwidthHz = 0.0f;
+        float tonalEffectiveQ = 0.0f;
+        float fastEffectiveQ = 0.0f;
+        float peakShapeBlend = 0.0f;
 
         bool isConfigured = false;
+    };
+
+    struct VqtLikeFrameSummary
+    {
+        int configuredAnalysisBands = 0;
+        int displayBinsConfigured = 0;
+
+        float configuredAnalysisBandRatio = 0.0f;
+        float displayBinConfiguredRatio = 0.0f;
+
+        float averageAnalysisBandsUsed = 0.0f;
+        float averageTonalBandwidthHz = 0.0f;
+        float averageFastBandwidthHz = 0.0f;
+        float averageTonalEffectiveQ = 0.0f;
+        float averageFastEffectiveQ = 0.0f;
     };
 
     void run() override;
@@ -422,10 +469,45 @@ class AnalyzerEngine : private juce::Thread
         const FrequencyDependentBinPolicySnapshot& snapshot) noexcept;
     void finalizeFrequencyDependentPolicyFrameSummary() noexcept;
     void resetVqtLikeFilterbankState() noexcept;
+    void resetVqtLikeFrameSummary() noexcept;
+    void accumulateVqtLikeFrameSummary(
+        const VqtLikeDisplayBinStats& stats) noexcept;
+    void finalizeVqtLikeFrameSummary() noexcept;
     void configureVqtLikeFilterbankIfNeeded();
     void configureVqtLikeFilterBand(VqtLikeFilterBand& band,
                                     float centerFrequencyHz,
                                     float sampleRate) noexcept;
+    float getBiquadMagnitudeAtFrequency(float b0,
+                                        float b1,
+                                        float b2,
+                                        float a1,
+                                        float a2,
+                                        float frequencyHz,
+                                        float sampleRate) const noexcept;
+    float getVqtLikeLayerCalibrationPowerGain(float centerGain,
+                                              float trim) const noexcept;
+    bool configureVqtLikeBandpassLayer(
+        float centerFrequencyHz,
+        float sampleRate,
+        float baseQ,
+        float minEffectiveQ,
+        float maxEffectiveQ,
+        float lowBandGammaHz,
+        float gammaFadeStartHz,
+        float gammaFadeEndHz,
+        float minBandwidthHz,
+        float maxBandwidthFractionOfCenter,
+        float calibrationTrim,
+        float& outBandwidthHz,
+        float& outEffectiveQ,
+        float& outB0,
+        float& outB1,
+        float& outB2,
+        float& outA1,
+        float& outA2,
+        float& outCenterGain,
+        float& outEquivalentBandwidthHz,
+        float& outCalibrationPowerGain) const noexcept;
     void processVqtLikeFilterbankSamples(const float* samples,
                                          int numSamples,
                                          float frameAdvanceSeconds) noexcept;
@@ -433,6 +515,15 @@ class AnalyzerEngine : private juce::Thread
                                           float lowBlend,
                                           float midBlend,
                                           float highBlend) const noexcept;
+    float getVqtLikeTransientDetailBlendForFrequency(
+        float frequencyHz) const noexcept;
+    float getVqtLikeTransientDetailMaxLiftDbForFrequency(
+        float frequencyHz) const noexcept;
+    float getVqtLikeAggregationPeakShapeBlendForFrequency(
+        float frequencyHz) const noexcept;
+    float limitPowerLiftDb(float basePower,
+                           float candidatePower,
+                           float maxLiftDb) const noexcept;
     VqtLikeDisplayBinStats getVqtLikeDisplayBinStats(
         size_t displayBinIndex) const noexcept;
     void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
@@ -512,9 +603,28 @@ class AnalyzerEngine : private juce::Thread
     static constexpr float vqtLikeResolutionMinBandwidthHz = 3.5f;
     static constexpr float vqtLikeResolutionMaxBandwidthFractionOfCenter = 0.75f;
     static constexpr float vqtLikeAggregationRadiusDisplayBins = 1.25f;
+    static constexpr float vqtLikeCalibrationMinGain = 0.125f;
+    static constexpr float vqtLikeCalibrationMaxGain = 8.0f;
+    static constexpr float vqtLikeCalibrationReferenceBandwidthHz = 1.0f;
+    static constexpr float vqtLikeTonalSineCalibrationTrim = 1.0f;
+    static constexpr float vqtLikeFastSineCalibrationTrim = 1.0f;
+    static constexpr float vqtLikeAggregationPeakShapeBlendLow = 0.18f;
+    static constexpr float vqtLikeAggregationPeakShapeBlendMid = 0.32f;
+    static constexpr float vqtLikeAggregationPeakShapeBlendHigh = 0.46f;
+    static constexpr float vqtLikeFastBaseQ = 10.0f;
+    static constexpr float vqtLikeFastMinEffectiveQ = 0.85f;
+    static constexpr float vqtLikeFastMaxEffectiveQ = 28.0f;
+    static constexpr float vqtLikeFastLowBandGammaHz = 12.0f;
+    static constexpr float vqtLikeFastGammaFadeStartHz = 120.0f;
+    static constexpr float vqtLikeFastGammaFadeEndHz = 1600.0f;
+    static constexpr float vqtLikeFastMinBandwidthHz = 12.0f;
+    static constexpr float vqtLikeFastMaxBandwidthFractionOfCenter = 1.15f;
     static constexpr float vqtLikeEnvelopeAttackSeconds = 0.018f;
     static constexpr float vqtLikeEnvelopeReleaseSeconds = 0.160f;
     static constexpr float vqtLikePeakEnvelopeReleaseSeconds = 0.075f;
+    static constexpr float vqtLikeFastEnvelopeAttackSeconds = 0.006f;
+    static constexpr float vqtLikeFastEnvelopeReleaseSeconds = 0.060f;
+    static constexpr float vqtLikeFastPeakEnvelopeReleaseSeconds = 0.040f;
     static constexpr float vqtLikeLiveAttackTimeSeconds = 0.025f;
     static constexpr float vqtLikeLiveReleaseTimeSeconds = 0.220f;
     static constexpr float vqtLikeMeanPowerScale = 2.0f;
@@ -530,6 +640,16 @@ class AnalyzerEngine : private juce::Thread
     static constexpr float vqtLikePeakBlendLowToMidEndHz = 420.0f;
     static constexpr float vqtLikePeakBlendMidToHighStartHz = 2500.0f;
     static constexpr float vqtLikePeakBlendMidToHighEndHz = 9000.0f;
+    static constexpr float vqtLikeTransientDetailBlendLow = 0.22f;
+    static constexpr float vqtLikeTransientDetailBlendMid = 0.38f;
+    static constexpr float vqtLikeTransientDetailBlendHigh = 0.62f;
+    static constexpr float vqtLikeTransientDetailLowToMidStartHz = 90.0f;
+    static constexpr float vqtLikeTransientDetailLowToMidEndHz = 450.0f;
+    static constexpr float vqtLikeTransientDetailMidToHighStartHz = 2200.0f;
+    static constexpr float vqtLikeTransientDetailMidToHighEndHz = 9000.0f;
+    static constexpr float vqtLikeTransientDetailMaxLiftDbLow = 3.0f;
+    static constexpr float vqtLikeTransientDetailMaxLiftDbMid = 5.0f;
+    static constexpr float vqtLikeTransientDetailMaxLiftDbHigh = 8.0f;
     static constexpr float vqtLikeMinimumUsefulPower = 1.0e-12f;
     static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
@@ -609,6 +729,7 @@ class AnalyzerEngine : private juce::Thread
     std::vector<float> frequencyDependentTunedLowBandPreviousReferenceDb;
     std::vector<FrequencyDependentBinPolicySnapshot> frequencyDependentBinPolicySnapshots;
     FrequencyDependentPolicyFrameSummary frequencyDependentPolicyFrameSummary;
+    VqtLikeFrameSummary vqtLikeFrameSummary;
 
     std::vector<float> rawSpectrumDb;
     std::vector<float> smoothedSpectrumDb;
