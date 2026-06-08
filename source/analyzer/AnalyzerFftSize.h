@@ -12,12 +12,13 @@ enum class AnalyzerFftSize
     size32768,
     frequencyDependent,
     frequencyDependentTuned,
+    vqtLike,
     count
 };
 
 inline juce::StringArray getAnalyzerFftSizeChoices()
 {
-    return {"1024", "2048", "4096", "8192", "16384", "32768", "Frequency Dependent", "Frequency Dependent Tuned"};
+    return {"1024", "2048", "4096", "8192", "16384", "32768", "Frequency Dependent", "Frequency Dependent Tuned", "VQT-like"};
 }
 
 inline bool analyzerFftSizeIsFrequencyDependent(float value) noexcept
@@ -29,6 +30,11 @@ inline bool analyzerFftSizeIsFrequencyDependent(float value) noexcept
 inline bool analyzerFftSizeIsFrequencyDependentTuned(float value) noexcept
 {
     return juce::roundToInt(value) == static_cast<int>(AnalyzerFftSize::frequencyDependentTuned);
+}
+
+inline bool analyzerFftSizeIsVqtLike(float value) noexcept
+{
+    return juce::roundToInt(value) == static_cast<int>(AnalyzerFftSize::vqtLike);
 }
 
 inline int analyzerFftOrderFromIndex(int index) noexcept
@@ -50,6 +56,8 @@ inline int analyzerFftOrderFromIndex(int index) noexcept
         case static_cast<int>(AnalyzerFftSize::frequencyDependent):
             return 13;
         case static_cast<int>(AnalyzerFftSize::frequencyDependentTuned):
+            return 13;
+        case static_cast<int>(AnalyzerFftSize::vqtLike):
             return 13;
         default:
             return 11;

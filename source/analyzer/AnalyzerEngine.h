@@ -59,6 +59,7 @@ class AnalyzerEngine : private juce::Thread
     void setFrequencyDependentResolutionEnabled(
         bool shouldUseFrequencyDependentResolution) noexcept;
     void setFrequencyDependentTunedResolutionEnabled(bool shouldUseFrequencyDependentTunedResolution) noexcept;
+    void setVqtLikeFilterbankEnabled(bool shouldUseVqtLikeFilterbank) noexcept;
     void setPeakHoldDecayDbPerSecond(float newDecayDbPerSecond) noexcept;
     void setDisplayFrequencyRange(float minimumHz, float maximumHz) noexcept;
 
@@ -279,6 +280,23 @@ class AnalyzerEngine : private juce::Thread
         bool canUseVeryHigh = false;
     };
 
+    struct VqtLikeFilterBand
+    {
+        float centerFrequencyHz = 0.0f;
+        float bandwidthHz = 0.0f;
+        float effectiveQ = 0.0f;
+        float b0 = 0.0f;
+        float b1 = 0.0f;
+        float b2 = 0.0f;
+        float a1 = 0.0f;
+        float a2 = 0.0f;
+        float z1 = 0.0f;
+        float z2 = 0.0f;
+        float power = 0.0f;
+        float lastFramePower = 0.0f;
+        bool isConfigured = false;
+    };
+
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
@@ -381,6 +399,16 @@ class AnalyzerEngine : private juce::Thread
     void accumulateFrequencyDependentPolicyFrameSummary(
         const FrequencyDependentBinPolicySnapshot& snapshot) noexcept;
     void finalizeFrequencyDependentPolicyFrameSummary() noexcept;
+    void resetVqtLikeFilterbankState() noexcept;
+    void configureVqtLikeFilterbankIfNeeded();
+    void configureVqtLikeFilterBand(VqtLikeFilterBand& band,
+                                    float centerFrequencyHz,
+                                    float sampleRate) noexcept;
+    void processVqtLikeFilterbankSamples(const float* samples,
+                                         int numSamples,
+                                         float frameAdvanceSeconds) noexcept;
+    DisplayBinPowerStats getVqtLikePowerStatsForDisplayBin(
+        size_t displayBinIndex) const noexcept;
     void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
     void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();
@@ -446,6 +474,18 @@ class AnalyzerEngine : private juce::Thread
     static constexpr float frequencyDependentTunedLowBandAlignmentMaxLiftDb = 4.5f;
     static constexpr float frequencyDependentTunedLowBandAlignmentMinEnergyDb = -82.0f;
     static constexpr float frequencyDependentTunedLowBandAlignmentFullEnergyDb = -58.0f;
+    static constexpr float vqtLikeBaseQ = 18.0f;
+    static constexpr float vqtLikeMinEffectiveQ = 1.2f;
+    static constexpr float vqtLikeMaxEffectiveQ = 36.0f;
+    static constexpr float vqtLikeLowBandGammaHz = 22.0f;
+    static constexpr float vqtLikeGammaFadeStartHz = 180.0f;
+    static constexpr float vqtLikeGammaFadeEndHz = 1800.0f;
+    static constexpr float vqtLikeMinBandwidthHz = 18.0f;
+    static constexpr float vqtLikeMaxBandwidthFractionOfCenter = 1.25f;
+    static constexpr float vqtLikeEnvelopeAttackSeconds = 0.012f;
+    static constexpr float vqtLikeEnvelopeReleaseSeconds = 0.090f;
+    static constexpr float vqtLikeLiveAttackTimeSeconds = 0.030f;
+    static constexpr float vqtLikeLiveReleaseTimeSeconds = 0.260f;
     static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
     static constexpr float energyAveragingWindowSeconds = 20.0f;
@@ -482,10 +522,12 @@ class AnalyzerEngine : private juce::Thread
     int currentFftSize = analyzerFftSizeFromOrder(defaultFftOrder);
     bool currentFrequencyDependentResolutionEnabled = false;
     bool currentFrequencyDependentTunedResolutionEnabled = false;
+    bool currentVqtLikeFilterbankEnabled = false;
 
     std::atomic<int> requestedFftOrder{defaultFftOrder};
     std::atomic<bool> requestedFrequencyDependentResolutionEnabled{false};
     std::atomic<bool> requestedFrequencyDependentTunedResolutionEnabled { false };
+    std::atomic<bool> requestedVqtLikeFilterbankEnabled { false };
     std::atomic<float> requestedDisplayMinFrequencyHz{AnalyzerFrequencyRange::minimumHz};
     std::atomic<float> requestedDisplayMaxFrequencyHz{AnalyzerFrequencyRange::maximumHz};
 
@@ -506,6 +548,11 @@ class AnalyzerEngine : private juce::Thread
     FrequencyDependentFftSource frequencyDependentMidBassPath;
     FrequencyDependentFftSource frequencyDependentHighPath;
     FrequencyDependentFftSource frequencyDependentVeryHighPath;
+    std::vector<VqtLikeFilterBand> vqtLikeFilterBands;
+    float vqtLikeFilterbankSampleRate = 0.0f;
+    float vqtLikeFilterbankMinFrequencyHz = 0.0f;
+    float vqtLikeFilterbankMaxFrequencyHz = 0.0f;
+    bool vqtLikeFilterbankNeedsReset = true;
 
     bool overlapBufferPrimed = false;
     float secondsSinceLastFramePublish = 0.0f;

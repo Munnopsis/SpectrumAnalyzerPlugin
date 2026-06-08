@@ -4,7 +4,8 @@ Aktueller Stand FFT - Verfahren:
     Frequency Dependent = Referenz / konservativ
     Frequency Dependent Tuned = Experimentierpfad
     Onset-gated LowBand Alignment = safety layer
-    Fast Transient Visual Prefill = nächster nötiger Layer
+    Fast Transient Visual Prefill = nächster Layer für noch besseren ausgleich der latentz bei breitem frame
+    => leichte welle hat die kurve noch aber ist einigermaßen ok momentan! (Live Kurve)
 
 TODO:
     - test peak note label detection with test signals, peak note label detection looks to hectic at the moment

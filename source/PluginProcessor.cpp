@@ -211,6 +211,9 @@ bool PluginProcessor::isFrequencyDependentAnalyzerResolution() const noexcept
     if (fftSizeParameter == nullptr)
         return false;
 
+    if (isVqtLikeAnalyzerFilterbank())
+        return false;
+
     return analyzerFftSizeIsFrequencyDependent (
         fftSizeParameter->load (std::memory_order_relaxed));
 }
@@ -220,6 +223,15 @@ bool PluginProcessor::isFrequencyDependentAnalyzerResolutionTuned() const noexce
     if (fftSizeParameter == nullptr)
         return false;
     return analyzerFftSizeIsFrequencyDependentTuned (fftSizeParameter->load (std::memory_order_relaxed));
+}
+
+bool PluginProcessor::isVqtLikeAnalyzerFilterbank() const noexcept
+{
+    if (fftSizeParameter == nullptr)
+        return false;
+
+    return analyzerFftSizeIsVqtLike (
+        fftSizeParameter->load (std::memory_order_relaxed));
 }
 
 //==============================================================================
@@ -234,6 +246,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     analyzerEngine.setFrequencyDependentResolutionEnabled (
         isFrequencyDependentAnalyzerResolution());
     analyzerEngine.setFrequencyDependentTunedResolutionEnabled ( isFrequencyDependentAnalyzerResolutionTuned());
+    analyzerEngine.setVqtLikeFilterbankEnabled (isVqtLikeAnalyzerFilterbank());
     analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
     analyzerEngine.setRmsTimeSeconds (getRmsTimeSeconds());
 
@@ -302,6 +315,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     analyzerEngine.setFrequencyDependentResolutionEnabled (
         isFrequencyDependentAnalyzerResolution());
     analyzerEngine.setFrequencyDependentTunedResolutionEnabled ( isFrequencyDependentAnalyzerResolutionTuned());
+    analyzerEngine.setVqtLikeFilterbankEnabled (isVqtLikeAnalyzerFilterbank());
     analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
     analyzerEngine.setRmsTimeSeconds (getRmsTimeSeconds());
 

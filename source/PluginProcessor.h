@@ -108,6 +108,7 @@ public:
     float getAnalyzerSlopeDbPerOctave() const noexcept;
     bool isFrequencyDependentAnalyzerResolution() const noexcept;
     bool isFrequencyDependentAnalyzerResolutionTuned() const noexcept;
+    bool isVqtLikeAnalyzerFilterbank() const noexcept;
 
     bool copyLatestAnalyzerFrame (AnalyzerEngine::Frame& destination)
     {

@@ -278,6 +278,7 @@ AnalyzerEngine::AnalyzerEngine()
     frequencyDependentTunedLowBandAlignmentAmounts.resize (displayBinCount, 0.0f);
     frequencyDependentTunedLowBandPreviousReferenceDb.resize (displayBinCount, -100.0f);
     frequencyDependentBinPolicySnapshots.resize (static_cast<size_t> (displayBinCount));
+    vqtLikeFilterBands.resize (static_cast<size_t> (displayBinCount));
     instantaneousNotePeaks.reserve (maxInstantaneousNotePeaks);
     trackedNotePeaks.reserve (maxInstantaneousNotePeaks);
     currentNotePeaks.reserve (maxPublishedNotePeaks);
@@ -309,6 +310,9 @@ void AnalyzerEngine::prepare (double sampleRate, AnalyzerFifo& fifoToReadFrom)
     currentFrequencyDependentTunedResolutionEnabled =
         requestedFrequencyDependentTunedResolutionEnabled.load (std::memory_order_relaxed);
 
+    currentVqtLikeFilterbankEnabled =
+        requestedVqtLikeFilterbankEnabled.load (std::memory_order_relaxed);
+
     configureFft (requestedFftOrder.load (std::memory_order_relaxed));
     reset();
 }
@@ -325,6 +329,9 @@ void AnalyzerEngine::reset()
                 resetFrequencyDependentFftSource (*descriptor.source);
         }
     }
+
+    resetVqtLikeFilterbankState();
+    vqtLikeFilterbankNeedsReset = true;
 
     secondsSinceLastFramePublish = 0.0f;
 
@@ -496,6 +503,13 @@ void AnalyzerEngine::setFrequencyDependentResolutionEnabled (
 }
 
 void AnalyzerEngine::setFrequencyDependentTunedResolutionEnabled (bool shouldUseFrequencyDependentTunedResolution) noexcept { requestedFrequencyDependentTunedResolutionEnabled.store (shouldUseFrequencyDependentTunedResolution, std::memory_order_relaxed); }
+
+void AnalyzerEngine::setVqtLikeFilterbankEnabled (bool shouldUseVqtLikeFilterbank) noexcept
+{
+    requestedVqtLikeFilterbankEnabled.store (
+        shouldUseVqtLikeFilterbank,
+        std::memory_order_relaxed);
+}
 
 void AnalyzerEngine::setDisplayFrequencyRange (float minimumHz, float maximumHz) noexcept
 {
@@ -776,6 +790,14 @@ void AnalyzerEngine::updateDisplayBinFftRangesIfNeeded()
                     descriptor.source->rangeMaxFrequencyHz = 0.0f;
                 }
             }
+        }
+
+        if (currentVqtLikeFilterbankEnabled)
+        {
+            vqtLikeFilterbankSampleRate = 0.0f;
+            vqtLikeFilterbankMinFrequencyHz = 0.0f;
+            vqtLikeFilterbankMaxFrequencyHz = 0.0f;
+            vqtLikeFilterbankNeedsReset = true;
         }
     }
 
@@ -2003,6 +2025,229 @@ void AnalyzerEngine::finalizeFrequencyDependentPolicyFrameSummary() noexcept
         safePolicyRatio (summary.transitionBins, summary.totalBins);
 }
 
+void AnalyzerEngine::resetVqtLikeFilterbankState() noexcept
+{
+    for (auto& band : vqtLikeFilterBands)
+    {
+        band.z1 = 0.0f;
+        band.z2 = 0.0f;
+        band.power = 0.0f;
+        band.lastFramePower = 0.0f;
+    }
+}
+
+void AnalyzerEngine::configureVqtLikeFilterbankIfNeeded()
+{
+    const auto sampleRate = static_cast<float> (currentSampleRate);
+
+    if (sampleRate <= 0.0f || !std::isfinite (sampleRate))
+        return;
+
+    if (displayBinCenterFrequenciesHz.size() != static_cast<size_t> (displayBinCount))
+        return;
+
+    const auto needsResize =
+        vqtLikeFilterBands.size() != static_cast<size_t> (displayBinCount);
+
+    if (needsResize)
+        vqtLikeFilterBands.assign (static_cast<size_t> (displayBinCount), {});
+
+    const auto configurationChanged =
+        needsResize
+        || vqtLikeFilterbankNeedsReset
+        || std::abs (vqtLikeFilterbankSampleRate - sampleRate) >= 0.001f
+        || std::abs (vqtLikeFilterbankMinFrequencyHz - currentDisplayMinFrequencyHz) >= 0.001f
+        || std::abs (vqtLikeFilterbankMaxFrequencyHz - currentDisplayMaxFrequencyHz) >= 0.001f;
+
+    if (!configurationChanged)
+        return;
+
+    for (int i = 0; i < displayBinCount; ++i)
+    {
+        configureVqtLikeFilterBand (
+            vqtLikeFilterBands[static_cast<size_t> (i)],
+            displayBinCenterFrequenciesHz[static_cast<size_t> (i)],
+            sampleRate);
+    }
+
+    vqtLikeFilterbankSampleRate = sampleRate;
+    vqtLikeFilterbankMinFrequencyHz = currentDisplayMinFrequencyHz;
+    vqtLikeFilterbankMaxFrequencyHz = currentDisplayMaxFrequencyHz;
+    vqtLikeFilterbankNeedsReset = false;
+    resetVqtLikeFilterbankState();
+}
+
+void AnalyzerEngine::configureVqtLikeFilterBand (
+    VqtLikeFilterBand& band,
+    float centerFrequencyHz,
+    float sampleRate) noexcept
+{
+    band = {};
+
+    if (!std::isfinite (centerFrequencyHz)
+        || !std::isfinite (sampleRate)
+        || centerFrequencyHz <= 0.0f
+        || sampleRate <= 0.0f)
+    {
+        return;
+    }
+
+    const auto nyquist = sampleRate * 0.5f;
+    const auto maxCenterFrequency = nyquist * 0.98f;
+
+    if (centerFrequencyHz >= maxCenterFrequency)
+        return;
+
+    const auto gammaFade =
+        smoothLogFrequencyBlend (centerFrequencyHz,
+            vqtLikeGammaFadeStartHz,
+            vqtLikeGammaFadeEndHz);
+
+    const auto gammaHz =
+        vqtLikeLowBandGammaHz * (1.0f - gammaFade);
+
+    auto bandwidthHz =
+        (centerFrequencyHz / vqtLikeBaseQ) + gammaHz;
+
+    const auto maxBandwidthHz =
+        juce::jmax (vqtLikeMinBandwidthHz,
+            juce::jmin (centerFrequencyHz * vqtLikeMaxBandwidthFractionOfCenter,
+                nyquist * 0.45f));
+
+    bandwidthHz =
+        juce::jlimit (vqtLikeMinBandwidthHz,
+            maxBandwidthHz,
+            std::isfinite (bandwidthHz) ? bandwidthHz : vqtLikeMinBandwidthHz);
+
+    auto effectiveQ = centerFrequencyHz / bandwidthHz;
+
+    effectiveQ =
+        juce::jlimit (vqtLikeMinEffectiveQ,
+            vqtLikeMaxEffectiveQ,
+            std::isfinite (effectiveQ) ? effectiveQ : vqtLikeMinEffectiveQ);
+
+    bandwidthHz = centerFrequencyHz / effectiveQ;
+
+    const auto omega =
+        juce::MathConstants<float>::twoPi * centerFrequencyHz / sampleRate;
+
+    const auto sinOmega = std::sin (omega);
+    const auto cosOmega = std::cos (omega);
+    const auto alpha = sinOmega / (2.0f * effectiveQ);
+    const auto a0 = 1.0f + alpha;
+
+    if (!std::isfinite (alpha) || !std::isfinite (a0) || a0 <= 0.0f)
+        return;
+
+    band.centerFrequencyHz = centerFrequencyHz;
+    band.bandwidthHz = bandwidthHz;
+    band.effectiveQ = effectiveQ;
+    band.b0 = alpha / a0;
+    band.b1 = 0.0f;
+    band.b2 = -alpha / a0;
+    band.a1 = (-2.0f * cosOmega) / a0;
+    band.a2 = (1.0f - alpha) / a0;
+    band.isConfigured =
+        std::isfinite (band.b0)
+        && std::isfinite (band.b1)
+        && std::isfinite (band.b2)
+        && std::isfinite (band.a1)
+        && std::isfinite (band.a2);
+}
+
+void AnalyzerEngine::processVqtLikeFilterbankSamples (
+    const float* samples,
+    int numSamples,
+    float frameAdvanceSeconds) noexcept
+{
+    if (samples == nullptr
+        || numSamples <= 0
+        || vqtLikeFilterBands.size() != static_cast<size_t> (displayBinCount))
+    {
+        return;
+    }
+
+    juce::ScopedNoDenormals noDenormals;
+
+    const auto attackSmoothing =
+        smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
+            vqtLikeEnvelopeAttackSeconds);
+
+    const auto releaseSmoothing =
+        smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
+            vqtLikeEnvelopeReleaseSeconds);
+
+    const auto inverseNumSamples =
+        1.0f / static_cast<float> (numSamples);
+
+    for (auto& band : vqtLikeFilterBands)
+    {
+        if (!band.isConfigured)
+        {
+            band.power = 0.0f;
+            band.lastFramePower = 0.0f;
+            continue;
+        }
+
+        auto framePower = 0.0f;
+        auto z1 = band.z1;
+        auto z2 = band.z2;
+
+        for (int sampleIndex = 0; sampleIndex < numSamples; ++sampleIndex)
+        {
+            const auto inputSample = samples[sampleIndex];
+            const auto x = std::isfinite (inputSample) ? inputSample : 0.0f;
+
+            const auto y = band.b0 * x + z1;
+
+            z1 = band.b1 * x - band.a1 * y + z2;
+            z2 = band.b2 * x - band.a2 * y;
+
+            framePower += y * y;
+        }
+
+        band.z1 = std::isfinite (z1) ? z1 : 0.0f;
+        band.z2 = std::isfinite (z2) ? z2 : 0.0f;
+
+        framePower =
+            juce::jmax (0.0f,
+                std::isfinite (framePower)
+                    ? framePower * inverseNumSamples * 2.0f
+                    : 0.0f);
+
+        band.lastFramePower = framePower;
+
+        auto power = std::isfinite (band.power) ? band.power : 0.0f;
+        const auto smoothing =
+            framePower > power ? attackSmoothing : releaseSmoothing;
+
+        power += smoothing * (framePower - power);
+        band.power = juce::jmax (0.0f, std::isfinite (power) ? power : 0.0f);
+    }
+}
+
+AnalyzerEngine::DisplayBinPowerStats
+    AnalyzerEngine::getVqtLikePowerStatsForDisplayBin (
+        size_t displayBinIndex) const noexcept
+{
+    if (vqtLikeFilterBands.size() <= displayBinIndex)
+        return {};
+
+    const auto& band = vqtLikeFilterBands[displayBinIndex];
+
+    if (!band.isConfigured)
+        return {};
+
+    const auto power =
+        juce::jmax (0.0f,
+            std::isfinite (band.power) ? band.power : 0.0f);
+
+    if (power <= 0.0f)
+        return {};
+
+    return { power, power, 1 };
+}
+
 int AnalyzerEngine::getFftHopSize() const noexcept
 {
     return juce::jmax (1,
@@ -2050,14 +2295,20 @@ void AnalyzerEngine::updateFftSizeIfNeeded()
         requestedFrequencyDependentResolutionEnabled.load (std::memory_order_relaxed);
     const auto requestedFrequencyDependentTunedResolution =
         requestedFrequencyDependentTunedResolutionEnabled.load (std::memory_order_relaxed);
+    const auto requestedVqtLikeFilterbank =
+        requestedVqtLikeFilterbankEnabled.load (std::memory_order_relaxed);
 
-    if (requestedOrder == currentFftOrder && requestedFrequencyDependentResolution == currentFrequencyDependentResolutionEnabled && requestedFrequencyDependentTunedResolution == currentFrequencyDependentTunedResolutionEnabled)
+    if (requestedOrder == currentFftOrder
+        && requestedFrequencyDependentResolution == currentFrequencyDependentResolutionEnabled
+        && requestedFrequencyDependentTunedResolution == currentFrequencyDependentTunedResolutionEnabled
+        && requestedVqtLikeFilterbank == currentVqtLikeFilterbankEnabled)
     {
         return;
     }
 
     currentFrequencyDependentResolutionEnabled = requestedFrequencyDependentResolution;
     currentFrequencyDependentTunedResolutionEnabled = requestedFrequencyDependentTunedResolution;
+    currentVqtLikeFilterbankEnabled = requestedVqtLikeFilterbank;
     configureFft (requestedOrder);
     reset();
 }
@@ -2261,6 +2512,14 @@ void AnalyzerEngine::processOneFftBlock()
 
     updateDisplayBinFftRangesIfNeeded();
 
+    if (currentVqtLikeFilterbankEnabled)
+    {
+        configureVqtLikeFilterbankIfNeeded();
+        processVqtLikeFilterbankSamples (newSamples,
+            numNewSamples,
+            frameAdvanceSeconds);
+    }
+
     if (currentFrequencyDependentResolutionEnabled)
     {
         for (const auto& descriptor : getFrequencyDependentSourceDescriptors())
@@ -2306,6 +2565,12 @@ void AnalyzerEngine::processOneFftBlock()
         return;
     }
 
+    if (currentVqtLikeFilterbankEnabled
+        && vqtLikeFilterBands.size() != static_cast<size_t> (displayBinCount))
+    {
+        return;
+    }
+
     const auto shouldWarmStartDisplayAccumulation =
         displayAccumulationWarmStartRequested;
 
@@ -2322,6 +2587,9 @@ void AnalyzerEngine::processOneFftBlock()
         std::fill (frequencyDependentTunedLowBandPreviousReferenceDb.begin(),
             frequencyDependentTunedLowBandPreviousReferenceDb.end(),
             -100.0f);
+
+        if (currentVqtLikeFilterbankEnabled)
+            resetVqtLikeFilterbankState();
     }
 
     const auto decayPerFrame =
@@ -2338,6 +2606,14 @@ void AnalyzerEngine::processOneFftBlock()
 
     const auto liveReleaseSmoothing =
         smoothingCoefficientForTimeConstant (frameAdvanceSeconds, liveReleaseTimeSeconds);
+
+    const auto vqtLikeLiveAttackSmoothing =
+        smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
+            vqtLikeLiveAttackTimeSeconds);
+
+    const auto vqtLikeLiveReleaseSmoothing =
+        smoothingCoefficientForTimeConstant (frameAdvanceSeconds,
+            vqtLikeLiveReleaseTimeSeconds);
 
     const auto lowBassTailReleaseSmoothing =
         smoothingCoefficientForTimeConstant (
@@ -2368,6 +2644,53 @@ void AnalyzerEngine::processOneFftBlock()
     for (int i = 0; i < displayBinCount; ++i)
     {
         const auto index = static_cast<size_t> (i);
+
+        if (currentVqtLikeFilterbankEnabled)
+        {
+            const auto binPowerStats =
+                getVqtLikePowerStatsForDisplayBin (index);
+
+            const auto liveTargetDb =
+                displayBinPowerStatsToDb (binPowerStats);
+
+            const auto peakHoldTargetDb = liveTargetDb;
+
+            energyFrameMeanPower[index] = binPowerStats.meanPower;
+            energyFramePeakPower =
+                juce::jmax (energyFramePeakPower, binPowerStats.meanPower);
+
+            rawSpectrumDb[index] = liveTargetDb;
+
+            if (shouldWarmStartDisplayAccumulation)
+            {
+                smoothedSpectrumDb[index] = liveTargetDb;
+                peakHoldSpectrumDb[index] = peakHoldTargetDb;
+                rmsPowerSpectrum[index] = binPowerStats.meanPower;
+                continue;
+            }
+
+            const auto previousDb = smoothedSpectrumDb[index];
+            const auto smoothing =
+                liveTargetDb > previousDb
+                    ? vqtLikeLiveAttackSmoothing
+                    : vqtLikeLiveReleaseSmoothing;
+
+            smoothedSpectrumDb[index] =
+                previousDb + smoothing * (liveTargetDb - previousDb);
+
+            if (peakHoldTargetDb > peakHoldSpectrumDb[index])
+                peakHoldSpectrumDb[index] = peakHoldTargetDb;
+            else
+                peakHoldSpectrumDb[index] =
+                    juce::jmax (-100.0f, peakHoldSpectrumDb[index] - decayPerFrame);
+
+            rmsPowerSpectrum[index] =
+                rmsPowerSpectrum[index]
+                + rmsAlpha * (binPowerStats.meanPower - rmsPowerSpectrum[index]);
+
+            continue;
+        }
+
         const auto binStats = getFrequencyDependentBinStatsForDisplayBin (
             i,
             fftSizeForBlock,
