@@ -783,7 +783,7 @@ class AnalyzerEngine : private juce::Thread
     static constexpr float vqtLikeTransientDetailMaxLiftDbMid = 5.0f;
     static constexpr float vqtLikeTransientDetailMaxLiftDbHigh = 8.0f;
     static constexpr float vqtLikeMinimumUsefulPower = 1.0e-12f;
-    static constexpr bool enableVqtLikeInternalValidation = true;
+    static constexpr bool enableVqtLikeInternalValidation = false;
     static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
     static constexpr float energyAveragingWindowSeconds = 20.0f;
