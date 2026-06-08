@@ -2408,31 +2408,34 @@ void AnalyzerEngine::processOneFftBlock()
                     binStats,
                     assistResult);
 
-            auto& storedAlignmentAmount =
-                frequencyDependentTunedLowBandAlignmentAmounts[index];
+            if (currentFrequencyDependentTunedResolutionEnabled)
+            {
+                auto& storedAlignmentAmount =
+                    frequencyDependentTunedLowBandAlignmentAmounts[index];
 
-            auto& storedPreviousReferenceDb =
-                frequencyDependentTunedLowBandPreviousReferenceDb[index];
+                auto& storedPreviousReferenceDb =
+                    frequencyDependentTunedLowBandPreviousReferenceDb[index];
 
-            const auto alignmentResult =
-                applyFrequencyDependentTunedLowBandTransientAlignmentForDisplayBin (
-                    liveVisualBinPowerStats,
-                    transientReferenceBinPowerStats,
-                    binStats.centerFrequencyHz,
-                    binStats.hasCenterFrequency,
-                    binStats.blendWeights,
-                    storedAlignmentAmount,
-                    storedPreviousReferenceDb,
-                    frameAdvanceSeconds,
-                    tunedLowBandAlignmentReleaseSmoothing);
+                const auto alignmentResult =
+                    applyFrequencyDependentTunedLowBandTransientAlignmentForDisplayBin (
+                        liveVisualBinPowerStats,
+                        transientReferenceBinPowerStats,
+                        binStats.centerFrequencyHz,
+                        binStats.hasCenterFrequency,
+                        binStats.blendWeights,
+                        storedAlignmentAmount,
+                        storedPreviousReferenceDb,
+                        frameAdvanceSeconds,
+                        tunedLowBandAlignmentReleaseSmoothing);
 
-            liveVisualBinPowerStats = alignmentResult.liveVisualStats;
-            tunedLowBandTransientAlignmentAmount =
-                alignmentResult.alignmentAmount;
-            tunedLowBandOnsetConfidence =
-                alignmentResult.onsetConfidence;
-            tunedLowBandAlignmentMaxLiftDb =
-                alignmentResult.maxLiftDb;
+                liveVisualBinPowerStats = alignmentResult.liveVisualStats;
+                tunedLowBandTransientAlignmentAmount =
+                    alignmentResult.alignmentAmount;
+                tunedLowBandOnsetConfidence =
+                    alignmentResult.onsetConfidence;
+                tunedLowBandAlignmentMaxLiftDb =
+                    alignmentResult.maxLiftDb;
+            }
         }
         else
         {

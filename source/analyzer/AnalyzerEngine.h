@@ -437,8 +437,6 @@ class AnalyzerEngine : private juce::Thread
     static constexpr float frequencyDependentTunedTransientAssistReleaseSeconds = 0.075f;
     static constexpr float frequencyDependentTunedLowBassTailReleaseTimeSeconds = 0.145f;
     static constexpr float frequencyDependentTunedVeryHighReleaseTimeSeconds = 0.210f;
-    static constexpr float frequencyDependentTunedLowBandAlignmentMinRiseDb = 1.8f;
-    static constexpr float frequencyDependentTunedLowBandAlignmentFullRiseDb = 7.0f;
     static constexpr float frequencyDependentTunedLowBandAlignmentMaxBlend = 0.82f;
     static constexpr float frequencyDependentTunedLowBandAlignmentReleaseSeconds = 0.055f;
     static constexpr float frequencyDependentTunedLowBandOnsetMinRiseDb = 1.2f;

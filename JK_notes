@@ -1,4 +1,10 @@
 Command to build changes and make standalone app: cmake --build Builds --config Debug --target FullSpectrum_Standalone
 
+Aktueller Stand FFT - Verfahren:
+    Frequency Dependent = Referenz / konservativ
+    Frequency Dependent Tuned = Experimentierpfad
+    Onset-gated LowBand Alignment = safety layer
+    Fast Transient Visual Prefill = nächster nötiger Layer
+
 TODO:
     - test peak note label detection with test signals, peak note label detection looks to hectic at the moment
