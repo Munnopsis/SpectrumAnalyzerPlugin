@@ -301,6 +301,19 @@ class AnalyzerEngine : private juce::Thread
         bool isConfigured = false;
     };
 
+    struct VqtLikeDisplayBinStats
+    {
+        DisplayBinPowerStats metricStats;
+        DisplayBinPowerStats liveVisualStats;
+        DisplayBinPowerStats peakHoldVisualStats;
+
+        float centerFrequencyHz = 0.0f;
+        float peakBlend = 0.0f;
+        float peakHoldBlend = 0.0f;
+
+        bool isConfigured = false;
+    };
+
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
@@ -411,7 +424,11 @@ class AnalyzerEngine : private juce::Thread
     void processVqtLikeFilterbankSamples(const float* samples,
                                          int numSamples,
                                          float frameAdvanceSeconds) noexcept;
-    DisplayBinPowerStats getVqtLikePowerStatsForDisplayBin(
+    float getVqtLikePeakBlendForFrequency(float frequencyHz,
+                                          float lowBlend,
+                                          float midBlend,
+                                          float highBlend) const noexcept;
+    VqtLikeDisplayBinStats getVqtLikeDisplayBinStats(
         size_t displayBinIndex) const noexcept;
     void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
     void updateDisplayBinFftRangesIfNeeded();
@@ -494,6 +511,17 @@ class AnalyzerEngine : private juce::Thread
     static constexpr float vqtLikeMeanPowerScale = 2.0f;
     static constexpr float vqtLikePeakPowerScale = 1.0f;
     static constexpr float vqtLikeMaxDisplayPower = 4.0f;
+    static constexpr float vqtLikeLivePeakBlendLow = 0.20f;
+    static constexpr float vqtLikeLivePeakBlendMid = 0.42f;
+    static constexpr float vqtLikeLivePeakBlendHigh = 0.68f;
+    static constexpr float vqtLikePeakHoldPeakBlendLow = 0.35f;
+    static constexpr float vqtLikePeakHoldPeakBlendMid = 0.58f;
+    static constexpr float vqtLikePeakHoldPeakBlendHigh = 0.82f;
+    static constexpr float vqtLikePeakBlendLowToMidStartHz = 90.0f;
+    static constexpr float vqtLikePeakBlendLowToMidEndHz = 420.0f;
+    static constexpr float vqtLikePeakBlendMidToHighStartHz = 2500.0f;
+    static constexpr float vqtLikePeakBlendMidToHighEndHz = 9000.0f;
+    static constexpr float vqtLikeMinimumUsefulPower = 1.0e-12f;
     static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
     static constexpr float energyAveragingWindowSeconds = 20.0f;

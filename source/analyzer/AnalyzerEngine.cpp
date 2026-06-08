@@ -2282,30 +2282,107 @@ void AnalyzerEngine::processVqtLikeFilterbankSamples (
     }
 }
 
-AnalyzerEngine::DisplayBinPowerStats
-    AnalyzerEngine::getVqtLikePowerStatsForDisplayBin (
+float AnalyzerEngine::getVqtLikePeakBlendForFrequency (
+    float frequencyHz,
+    float lowBlend,
+    float midBlend,
+    float highBlend) const noexcept
+{
+    if (!std::isfinite (frequencyHz) || frequencyHz <= 0.0f)
+        return 0.0f;
+
+    const auto clampedLowBlend =
+        juce::jlimit (0.0f, 1.0f, std::isfinite (lowBlend) ? lowBlend : 0.0f);
+
+    const auto clampedMidBlend =
+        juce::jlimit (0.0f, 1.0f, std::isfinite (midBlend) ? midBlend : clampedLowBlend);
+
+    const auto clampedHighBlend =
+        juce::jlimit (0.0f, 1.0f, std::isfinite (highBlend) ? highBlend : clampedMidBlend);
+
+    const auto lowToMid =
+        smoothLogFrequencyBlend (frequencyHz,
+            vqtLikePeakBlendLowToMidStartHz,
+            vqtLikePeakBlendLowToMidEndHz);
+
+    auto blend =
+        clampedLowBlend
+        + lowToMid * (clampedMidBlend - clampedLowBlend);
+
+    const auto midToHigh =
+        smoothLogFrequencyBlend (frequencyHz,
+            vqtLikePeakBlendMidToHighStartHz,
+            vqtLikePeakBlendMidToHighEndHz);
+
+    blend += midToHigh * (clampedHighBlend - blend);
+
+    return juce::jlimit (0.0f, 1.0f, std::isfinite (blend) ? blend : 0.0f);
+}
+
+AnalyzerEngine::VqtLikeDisplayBinStats
+    AnalyzerEngine::getVqtLikeDisplayBinStats (
         size_t displayBinIndex) const noexcept
 {
+    VqtLikeDisplayBinStats result;
+
     if (vqtLikeFilterBands.size() <= displayBinIndex)
-        return {};
+        return result;
 
     const auto& band = vqtLikeFilterBands[displayBinIndex];
 
     if (!band.isConfigured)
-        return {};
+        return result;
+
+    if (!std::isfinite (band.centerFrequencyHz) || band.centerFrequencyHz <= 0.0f)
+        return result;
 
     const auto meanPower =
-        juce::jmax (0.0f,
+        juce::jlimit (0.0f,
+            vqtLikeMaxDisplayPower,
             std::isfinite (band.power) ? band.power : 0.0f);
 
     const auto peakPower =
-        juce::jmax (meanPower,
-            std::isfinite (band.peakPower) ? band.peakPower : 0.0f);
+        juce::jlimit (meanPower,
+            vqtLikeMaxDisplayPower,
+            std::isfinite (band.peakPower) ? band.peakPower : meanPower);
 
-    if (meanPower <= 0.0f && peakPower <= 0.0f)
-        return {};
+    if (meanPower < vqtLikeMinimumUsefulPower
+        && peakPower < vqtLikeMinimumUsefulPower)
+    {
+        return result;
+    }
 
-    return { meanPower, peakPower, 1 };
+    const auto livePeakBlend =
+        getVqtLikePeakBlendForFrequency (band.centerFrequencyHz,
+            vqtLikeLivePeakBlendLow,
+            vqtLikeLivePeakBlendMid,
+            vqtLikeLivePeakBlendHigh);
+
+    const auto peakHoldPeakBlend =
+        getVqtLikePeakBlendForFrequency (band.centerFrequencyHz,
+            vqtLikePeakHoldPeakBlendLow,
+            vqtLikePeakHoldPeakBlendMid,
+            vqtLikePeakHoldPeakBlendHigh);
+
+    const auto livePower =
+        juce::jlimit (0.0f,
+            vqtLikeMaxDisplayPower,
+            meanPower + livePeakBlend * (peakPower - meanPower));
+
+    const auto peakHoldPower =
+        juce::jlimit (0.0f,
+            vqtLikeMaxDisplayPower,
+            meanPower + peakHoldPeakBlend * (peakPower - meanPower));
+
+    result.metricStats = { meanPower, meanPower, 1 };
+    result.liveVisualStats = { livePower, livePower, 1 };
+    result.peakHoldVisualStats = { peakHoldPower, peakHoldPower, 1 };
+    result.centerFrequencyHz = band.centerFrequencyHz;
+    result.peakBlend = livePeakBlend;
+    result.peakHoldBlend = peakHoldPeakBlend;
+    result.isConfigured = true;
+
+    return result;
 }
 
 int AnalyzerEngine::getFftHopSize() const noexcept
@@ -2708,17 +2785,23 @@ void AnalyzerEngine::processOneFftBlock()
 
         if (currentVqtLikeFilterbankEnabled)
         {
-            const auto binPowerStats =
-                getVqtLikePowerStatsForDisplayBin (index);
+            const auto vqtBinStats =
+                getVqtLikeDisplayBinStats (index);
 
             const auto liveTargetDb =
-                displayBinPowerStatsToDb (binPowerStats);
+                displayBinPowerStatsToDb (vqtBinStats.liveVisualStats);
 
-            const auto peakHoldTargetDb = liveTargetDb;
+            const auto peakHoldTargetDb =
+                displayBinPowerStatsToDb (vqtBinStats.peakHoldVisualStats);
 
-            energyFrameMeanPower[index] = binPowerStats.meanPower;
+            const auto metricMeanPower =
+                vqtBinStats.isConfigured
+                    ? vqtBinStats.metricStats.meanPower
+                    : 0.0f;
+
+            energyFrameMeanPower[index] = metricMeanPower;
             energyFramePeakPower =
-                juce::jmax (energyFramePeakPower, binPowerStats.meanPower);
+                juce::jmax (energyFramePeakPower, metricMeanPower);
 
             rawSpectrumDb[index] = liveTargetDb;
 
@@ -2726,7 +2809,7 @@ void AnalyzerEngine::processOneFftBlock()
             {
                 smoothedSpectrumDb[index] = liveTargetDb;
                 peakHoldSpectrumDb[index] = peakHoldTargetDb;
-                rmsPowerSpectrum[index] = binPowerStats.meanPower;
+                rmsPowerSpectrum[index] = metricMeanPower;
                 continue;
             }
 
@@ -2747,7 +2830,7 @@ void AnalyzerEngine::processOneFftBlock()
 
             rmsPowerSpectrum[index] =
                 rmsPowerSpectrum[index]
-                + rmsAlpha * (binPowerStats.meanPower - rmsPowerSpectrum[index]);
+                + rmsAlpha * (metricMeanPower - rmsPowerSpectrum[index]);
 
             continue;
         }
