@@ -164,6 +164,8 @@ class AnalyzerEngine : private juce::Thread
     {
         DisplayBinPowerStats liveVisualStats;
         float alignmentAmount = 0.0f;
+        float onsetConfidence = 0.0f;
+        float maxLiftDb = 0.0f;
     };
 
     struct FrequencyDependentLiveReleaseBlendWeights
@@ -196,10 +198,13 @@ class AnalyzerEngine : private juce::Thread
 
         FrequencyDependentPolicyBand policyBand = FrequencyDependentPolicyBand::none;
         float tunedLowBandTransientAlignmentAmount = 0.0f;
+        float tunedLowBandOnsetConfidence = 0.0f;
+        float tunedLowBandAlignmentMaxLiftDb = 0.0f;
 
         bool usesLowBassFastRelease = false;
         bool usesVeryHighFastRelease = false;
         bool usesTunedLowBandTransientAlignment = false;
+        bool hasTunedLowBandOnsetConfidence = false;
         bool isTransitionBand = false;
 
         bool usedBassComposite = false;
@@ -227,6 +232,7 @@ class AnalyzerEngine : private juce::Thread
         int binsUsingLowBassFastRelease = 0;
         int binsUsingVeryHighFastRelease = 0;
         int binsUsingTunedLowBandTransientAlignment = 0;
+        int binsWithTunedLowBandOnsetConfidence = 0;
         int transitionBins = 0;
 
         int classifiedBins = 0;
@@ -245,6 +251,7 @@ class AnalyzerEngine : private juce::Thread
         float lowBassFastReleaseRatio = 0.0f;
         float veryHighFastReleaseRatio = 0.0f;
         float tunedLowBandTransientAlignmentRatio = 0.0f;
+        float tunedLowBandOnsetConfidenceRatio = 0.0f;
         float transitionRatio = 0.0f;
     };
 
@@ -355,6 +362,7 @@ class AnalyzerEngine : private juce::Thread
         bool hasCenterFrequency,
         const FrequencyDependentBlendWeights& blendWeights,
         float& storedAlignmentAmount,
+        float& storedPreviousReferenceDb,
         float frameAdvanceSeconds,
         float alignmentReleaseSmoothing) const noexcept;
     FrequencyDependentLiveReleaseBlendWeights
@@ -364,7 +372,9 @@ class AnalyzerEngine : private juce::Thread
     FrequencyDependentBinPolicySnapshot getFrequencyDependentBinPolicySnapshot(
         const FrequencyDependentBinStats& binStats,
         const FrequencyDependentLiveReleaseBlendWeights& liveReleaseBlendWeights,
-        float tunedLowBandTransientAlignmentAmount) const noexcept;
+        float tunedLowBandTransientAlignmentAmount,
+        float tunedLowBandOnsetConfidence,
+        float tunedLowBandAlignmentMaxLiftDb) const noexcept;
     FrequencyDependentPolicyBand getFrequencyDependentPolicyBandForSnapshot(
         const FrequencyDependentBinPolicySnapshot& snapshot) const noexcept;
     void resetFrequencyDependentPolicyFrameSummary() noexcept;
@@ -431,6 +441,13 @@ class AnalyzerEngine : private juce::Thread
     static constexpr float frequencyDependentTunedLowBandAlignmentFullRiseDb = 7.0f;
     static constexpr float frequencyDependentTunedLowBandAlignmentMaxBlend = 0.82f;
     static constexpr float frequencyDependentTunedLowBandAlignmentReleaseSeconds = 0.055f;
+    static constexpr float frequencyDependentTunedLowBandOnsetMinRiseDb = 1.2f;
+    static constexpr float frequencyDependentTunedLowBandOnsetFullRiseDb = 5.5f;
+    static constexpr float frequencyDependentTunedLowBandOnsetMinGapDb = 1.5f;
+    static constexpr float frequencyDependentTunedLowBandOnsetFullGapDb = 7.0f;
+    static constexpr float frequencyDependentTunedLowBandAlignmentMaxLiftDb = 4.5f;
+    static constexpr float frequencyDependentTunedLowBandAlignmentMinEnergyDb = -82.0f;
+    static constexpr float frequencyDependentTunedLowBandAlignmentFullEnergyDb = -58.0f;
     static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
     static constexpr float energyAveragingWindowSeconds = 20.0f;
@@ -498,6 +515,7 @@ class AnalyzerEngine : private juce::Thread
     float energyAccumulatedActiveSeconds = 0.0f;
     std::vector<float> frequencyDependentTransientAssistAmounts;
     std::vector<float> frequencyDependentTunedLowBandAlignmentAmounts;
+    std::vector<float> frequencyDependentTunedLowBandPreviousReferenceDb;
     std::vector<FrequencyDependentBinPolicySnapshot> frequencyDependentBinPolicySnapshots;
     FrequencyDependentPolicyFrameSummary frequencyDependentPolicyFrameSummary;
 
