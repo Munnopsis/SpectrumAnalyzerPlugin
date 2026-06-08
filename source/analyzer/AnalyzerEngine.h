@@ -160,6 +160,12 @@ class AnalyzerEngine : private juce::Thread
         float lowBassTailReleaseBlend = 0.0f;
     };
 
+    struct FrequencyDependentTunedLowBandAlignmentResult
+    {
+        DisplayBinPowerStats liveVisualStats;
+        float alignmentAmount = 0.0f;
+    };
+
     struct FrequencyDependentLiveReleaseBlendWeights
     {
         float lowBassTailReleaseBlend = 0.0f;
@@ -189,8 +195,11 @@ class AnalyzerEngine : private juce::Thread
         bool hasBlendWeights = false;
 
         FrequencyDependentPolicyBand policyBand = FrequencyDependentPolicyBand::none;
+        float tunedLowBandTransientAlignmentAmount = 0.0f;
+
         bool usesLowBassFastRelease = false;
         bool usesVeryHighFastRelease = false;
+        bool usesTunedLowBandTransientAlignment = false;
         bool isTransitionBand = false;
 
         bool usedBassComposite = false;
@@ -217,6 +226,7 @@ class AnalyzerEngine : private juce::Thread
         int binsUsingFrequencyDependentSources = 0;
         int binsUsingLowBassFastRelease = 0;
         int binsUsingVeryHighFastRelease = 0;
+        int binsUsingTunedLowBandTransientAlignment = 0;
         int transitionBins = 0;
 
         int classifiedBins = 0;
@@ -234,6 +244,7 @@ class AnalyzerEngine : private juce::Thread
         float frequencyDependentSourceRatio = 0.0f;
         float lowBassFastReleaseRatio = 0.0f;
         float veryHighFastReleaseRatio = 0.0f;
+        float tunedLowBandTransientAlignmentRatio = 0.0f;
         float transitionRatio = 0.0f;
     };
 
@@ -336,13 +347,24 @@ class AnalyzerEngine : private juce::Thread
         float& storedAssistAmount,
         float frameAdvanceSeconds,
         float transientAssistReleaseSmoothing) const noexcept;
+    FrequencyDependentTunedLowBandAlignmentResult
+    applyFrequencyDependentTunedLowBandTransientAlignmentForDisplayBin(
+        const DisplayBinPowerStats& liveVisualStats,
+        const DisplayBinPowerStats& transientReferenceStats,
+        float centerFrequencyHz,
+        bool hasCenterFrequency,
+        const FrequencyDependentBlendWeights& blendWeights,
+        float& storedAlignmentAmount,
+        float frameAdvanceSeconds,
+        float alignmentReleaseSmoothing) const noexcept;
     FrequencyDependentLiveReleaseBlendWeights
     getFrequencyDependentLiveReleaseBlendWeightsForDisplayBin(
         const FrequencyDependentBinStats& binStats,
         const FrequencyDependentLiveAssistResult& assistResult) const noexcept;
     FrequencyDependentBinPolicySnapshot getFrequencyDependentBinPolicySnapshot(
         const FrequencyDependentBinStats& binStats,
-        const FrequencyDependentLiveReleaseBlendWeights& liveReleaseBlendWeights) const noexcept;
+        const FrequencyDependentLiveReleaseBlendWeights& liveReleaseBlendWeights,
+        float tunedLowBandTransientAlignmentAmount) const noexcept;
     FrequencyDependentPolicyBand getFrequencyDependentPolicyBandForSnapshot(
         const FrequencyDependentBinPolicySnapshot& snapshot) const noexcept;
     void resetFrequencyDependentPolicyFrameSummary() noexcept;
@@ -400,11 +422,15 @@ class AnalyzerEngine : private juce::Thread
     static constexpr float liveReleaseTimeSeconds = 0.500f;
     static constexpr float frequencyDependentLowBassTailReleaseTimeSeconds = 0.180f;
     static constexpr float frequencyDependentVeryHighReleaseTimeSeconds = 0.220f;
-    static constexpr float frequencyDependentTunedTransientAttackBlend = 0.62f;
-    static constexpr float frequencyDependentTunedTransientTailSuppressBlend = 0.92f;
-    static constexpr float frequencyDependentTunedTransientAssistReleaseSeconds = 0.085f;
-    static constexpr float frequencyDependentTunedLowBassTailReleaseTimeSeconds = 0.130f;
-    static constexpr float frequencyDependentTunedVeryHighReleaseTimeSeconds = 0.200f;
+    static constexpr float frequencyDependentTunedTransientAttackBlend = 0.58f;
+    static constexpr float frequencyDependentTunedTransientTailSuppressBlend = 0.80f;
+    static constexpr float frequencyDependentTunedTransientAssistReleaseSeconds = 0.075f;
+    static constexpr float frequencyDependentTunedLowBassTailReleaseTimeSeconds = 0.145f;
+    static constexpr float frequencyDependentTunedVeryHighReleaseTimeSeconds = 0.210f;
+    static constexpr float frequencyDependentTunedLowBandAlignmentMinRiseDb = 1.8f;
+    static constexpr float frequencyDependentTunedLowBandAlignmentFullRiseDb = 7.0f;
+    static constexpr float frequencyDependentTunedLowBandAlignmentMaxBlend = 0.82f;
+    static constexpr float frequencyDependentTunedLowBandAlignmentReleaseSeconds = 0.055f;
     static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
     static constexpr float energyAveragingWindowSeconds = 20.0f;
@@ -471,6 +497,7 @@ class AnalyzerEngine : private juce::Thread
     bool displayAccumulationWarmStartRequested = false;
     float energyAccumulatedActiveSeconds = 0.0f;
     std::vector<float> frequencyDependentTransientAssistAmounts;
+    std::vector<float> frequencyDependentTunedLowBandAlignmentAmounts;
     std::vector<FrequencyDependentBinPolicySnapshot> frequencyDependentBinPolicySnapshots;
     FrequencyDependentPolicyFrameSummary frequencyDependentPolicyFrameSummary;
 

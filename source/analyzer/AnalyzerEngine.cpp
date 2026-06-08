@@ -246,6 +246,7 @@ AnalyzerEngine::AnalyzerEngine()
     energyFrameMeanPower.resize (displayBinCount, 0.0f);
     displayBinCenterFrequenciesHz.resize (displayBinCount, 0.0f);
     frequencyDependentTransientAssistAmounts.resize (displayBinCount, 0.0f);
+    frequencyDependentTunedLowBandAlignmentAmounts.resize (displayBinCount, 0.0f);
     frequencyDependentBinPolicySnapshots.resize (static_cast<size_t> (displayBinCount));
     instantaneousNotePeaks.reserve (maxInstantaneousNotePeaks);
     trackedNotePeaks.reserve (maxInstantaneousNotePeaks);
@@ -336,6 +337,21 @@ void AnalyzerEngine::reset()
             frequencyDependentTransientAssistAmounts.end(),
             0.0f);
     }
+
+    if (frequencyDependentTunedLowBandAlignmentAmounts.size()
+        != static_cast<size_t> (displayBinCount))
+    {
+        frequencyDependentTunedLowBandAlignmentAmounts.assign (
+            static_cast<size_t> (displayBinCount),
+            0.0f);
+    }
+    else
+    {
+        std::fill (frequencyDependentTunedLowBandAlignmentAmounts.begin(),
+            frequencyDependentTunedLowBandAlignmentAmounts.end(),
+            0.0f);
+    }
+
     if (frequencyDependentBinPolicySnapshots.size() != static_cast<size_t> (displayBinCount))
     {
         frequencyDependentBinPolicySnapshots.resize (
@@ -1444,6 +1460,122 @@ AnalyzerEngine::FrequencyDependentLiveAssistResult
     return result;
 }
 
+AnalyzerEngine::FrequencyDependentTunedLowBandAlignmentResult
+    AnalyzerEngine::applyFrequencyDependentTunedLowBandTransientAlignmentForDisplayBin (
+        const DisplayBinPowerStats& liveVisualStats,
+        const DisplayBinPowerStats& transientReferenceStats,
+        float centerFrequencyHz,
+        bool hasCenterFrequency,
+        const FrequencyDependentBlendWeights& blendWeights,
+        float& storedAlignmentAmount,
+        float frameAdvanceSeconds,
+        float alignmentReleaseSmoothing) const noexcept
+{
+    FrequencyDependentTunedLowBandAlignmentResult result;
+    result.liveVisualStats = liveVisualStats;
+
+    const auto resetStoredAlignment = [&] () noexcept {
+        storedAlignmentAmount = 0.0f;
+        result.alignmentAmount = 0.0f;
+    };
+
+    if (!currentFrequencyDependentTunedResolutionEnabled
+        || !hasCenterFrequency
+        || centerFrequencyHz <= 0.0f
+        || centerFrequencyHz > frequencyDependentTransientAssistMaxHz
+        || liveVisualStats.numBinsUsed <= 0
+        || transientReferenceStats.numBinsUsed <= 0)
+    {
+        resetStoredAlignment();
+        return result;
+    }
+
+    const auto lowBandFade =
+        juce::jlimit (0.0f,
+            1.0f,
+            std::isfinite (blendWeights.lowBassTailReleaseBlend)
+                ? blendWeights.lowBassTailReleaseBlend
+                : 0.0f);
+
+    if (lowBandFade <= 0.0f)
+    {
+        resetStoredAlignment();
+        return result;
+    }
+
+    const auto liveDisplayDb = displayBinPowerStatsToDb (liveVisualStats);
+    const auto referenceDisplayDb = displayBinPowerStatsToDb (transientReferenceStats);
+    const auto referenceAboveLiveDb = referenceDisplayDb - liveDisplayDb;
+
+    auto desiredAlignmentAmount = 0.0f;
+
+    if (referenceAboveLiveDb > frequencyDependentTunedLowBandAlignmentMinRiseDb)
+    {
+        const auto riseRangeDb =
+            frequencyDependentTunedLowBandAlignmentFullRiseDb
+            - frequencyDependentTunedLowBandAlignmentMinRiseDb;
+
+        const auto riseNormalised =
+            riseRangeDb > 0.0f
+                ? (referenceAboveLiveDb
+                      - frequencyDependentTunedLowBandAlignmentMinRiseDb)
+                      / riseRangeDb
+                : 1.0f;
+
+        desiredAlignmentAmount =
+            juce::jlimit (0.0f, 1.0f, riseNormalised)
+            * frequencyDependentTunedLowBandAlignmentMaxBlend
+            * lowBandFade;
+    }
+
+    desiredAlignmentAmount =
+        juce::jlimit (0.0f,
+            frequencyDependentTunedLowBandAlignmentMaxBlend,
+            std::isfinite (desiredAlignmentAmount)
+                ? desiredAlignmentAmount
+                : 0.0f);
+
+    storedAlignmentAmount =
+        std::isfinite (storedAlignmentAmount) ? storedAlignmentAmount : 0.0f;
+
+    if (desiredAlignmentAmount > storedAlignmentAmount)
+    {
+        storedAlignmentAmount = desiredAlignmentAmount;
+    }
+    else if (frameAdvanceSeconds > 0.0f)
+    {
+        storedAlignmentAmount +=
+            alignmentReleaseSmoothing
+            * (desiredAlignmentAmount - storedAlignmentAmount);
+    }
+    else
+    {
+        storedAlignmentAmount = desiredAlignmentAmount;
+    }
+
+    storedAlignmentAmount =
+        juce::jlimit (0.0f,
+            frequencyDependentTunedLowBandAlignmentMaxBlend,
+            std::isfinite (storedAlignmentAmount)
+                ? storedAlignmentAmount
+                : 0.0f);
+
+    const auto appliedAlignmentAmount =
+        referenceAboveLiveDb > 0.0f ? storedAlignmentAmount : 0.0f;
+
+    result.alignmentAmount = appliedAlignmentAmount;
+
+    if (appliedAlignmentAmount > 0.001f)
+    {
+        result.liveVisualStats =
+            blendDisplayBinPowerStats (liveVisualStats,
+                transientReferenceStats,
+                appliedAlignmentAmount);
+    }
+
+    return result;
+}
+
 AnalyzerEngine::FrequencyDependentLiveReleaseBlendWeights
     AnalyzerEngine::getFrequencyDependentLiveReleaseBlendWeightsForDisplayBin (
         const FrequencyDependentBinStats& binStats,
@@ -1474,7 +1606,8 @@ AnalyzerEngine::FrequencyDependentLiveReleaseBlendWeights
 AnalyzerEngine::FrequencyDependentBinPolicySnapshot
     AnalyzerEngine::getFrequencyDependentBinPolicySnapshot (
         const FrequencyDependentBinStats& binStats,
-        const FrequencyDependentLiveReleaseBlendWeights& liveReleaseBlendWeights) const noexcept
+        const FrequencyDependentLiveReleaseBlendWeights& liveReleaseBlendWeights,
+        float tunedLowBandTransientAlignmentAmount) const noexcept
 {
     FrequencyDependentBinPolicySnapshot result;
 
@@ -1498,6 +1631,16 @@ AnalyzerEngine::FrequencyDependentBinPolicySnapshot
 
     result.usesVeryHighFastRelease =
         result.liveReleaseBlendWeights.veryHighReleaseBlend > 0.0f;
+
+    result.tunedLowBandTransientAlignmentAmount =
+        juce::jlimit (0.0f,
+            1.0f,
+            std::isfinite (tunedLowBandTransientAlignmentAmount)
+                ? tunedLowBandTransientAlignmentAmount
+                : 0.0f);
+
+    result.usesTunedLowBandTransientAlignment =
+        result.tunedLowBandTransientAlignmentAmount > 0.001f;
 
     result.policyBand = getFrequencyDependentPolicyBandForSnapshot (result);
 
@@ -1624,6 +1767,9 @@ void AnalyzerEngine::accumulateFrequencyDependentPolicyFrameSummary (
     if (snapshot.usesVeryHighFastRelease)
         ++frequencyDependentPolicyFrameSummary.binsUsingVeryHighFastRelease;
 
+    if (snapshot.usesTunedLowBandTransientAlignment)
+        ++frequencyDependentPolicyFrameSummary.binsUsingTunedLowBandTransientAlignment;
+
     if (snapshot.isTransitionBand)
         ++frequencyDependentPolicyFrameSummary.transitionBins;
 }
@@ -1679,6 +1825,10 @@ void AnalyzerEngine::finalizeFrequencyDependentPolicyFrameSummary() noexcept
 
     summary.veryHighFastReleaseRatio =
         safePolicyRatio (summary.binsUsingVeryHighFastRelease,
+            summary.totalBins);
+
+    summary.tunedLowBandTransientAlignmentRatio =
+        safePolicyRatio (summary.binsUsingTunedLowBandTransientAlignment,
             summary.totalBins);
 
     summary.transitionRatio =
@@ -1970,6 +2120,12 @@ void AnalyzerEngine::processOneFftBlock()
         return;
     }
 
+    if (frequencyDependentTunedLowBandAlignmentAmounts.size()
+        != static_cast<size_t> (displayBinCount))
+    {
+        return;
+    }
+
     if (frequencyDependentBinPolicySnapshots.size()
         != static_cast<size_t> (displayBinCount))
     {
@@ -1985,6 +2141,9 @@ void AnalyzerEngine::processOneFftBlock()
     {
         std::fill (frequencyDependentTransientAssistAmounts.begin(),
             frequencyDependentTransientAssistAmounts.end(),
+            0.0f);
+        std::fill (frequencyDependentTunedLowBandAlignmentAmounts.begin(),
+            frequencyDependentTunedLowBandAlignmentAmounts.end(),
             0.0f);
     }
 
@@ -2018,6 +2177,11 @@ void AnalyzerEngine::processOneFftBlock()
         frameAdvanceSeconds,
         getFrequencyDependentTransientAssistReleaseSeconds());
 
+    const auto tunedLowBandAlignmentReleaseSmoothing =
+        smoothingCoefficientForTimeConstant (
+            frameAdvanceSeconds,
+            frequencyDependentTunedLowBandAlignmentReleaseSeconds);
+
     resetFrequencyDependentPolicyFrameSummary();
 
     auto energyFramePeakPower = 0.0f;
@@ -2041,6 +2205,7 @@ void AnalyzerEngine::processOneFftBlock()
         auto liveVisualBinPowerStats = binPowerStats;
         const auto peakHoldVisualBinPowerStats = binPowerStats;
         auto liveReleaseBlendWeights = FrequencyDependentLiveReleaseBlendWeights {};
+        auto tunedLowBandTransientAlignmentAmount = 0.0f;
 
         if (currentFrequencyDependentResolutionEnabled)
         {
@@ -2063,12 +2228,38 @@ void AnalyzerEngine::processOneFftBlock()
                 getFrequencyDependentLiveReleaseBlendWeightsForDisplayBin (
                     binStats,
                     assistResult);
+
+            auto& storedAlignmentAmount =
+                frequencyDependentTunedLowBandAlignmentAmounts[index];
+
+            const auto alignmentResult =
+                applyFrequencyDependentTunedLowBandTransientAlignmentForDisplayBin (
+                    liveVisualBinPowerStats,
+                    transientReferenceBinPowerStats,
+                    binStats.centerFrequencyHz,
+                    binStats.hasCenterFrequency,
+                    binStats.blendWeights,
+                    storedAlignmentAmount,
+                    frameAdvanceSeconds,
+                    tunedLowBandAlignmentReleaseSmoothing);
+
+            liveVisualBinPowerStats = alignmentResult.liveVisualStats;
+            tunedLowBandTransientAlignmentAmount =
+                alignmentResult.alignmentAmount;
         }
+        else
+        {
+            frequencyDependentTunedLowBandAlignmentAmounts[index] = 0.0f;
+        }
+
+        if (!currentFrequencyDependentTunedResolutionEnabled)
+            frequencyDependentTunedLowBandAlignmentAmounts[index] = 0.0f;
 
         auto policySnapshot =
             getFrequencyDependentBinPolicySnapshot (
                 binStats,
-                liveReleaseBlendWeights);
+                liveReleaseBlendWeights,
+                tunedLowBandTransientAlignmentAmount);
 
         frequencyDependentBinPolicySnapshots[index] = policySnapshot;
         accumulateFrequencyDependentPolicyFrameSummary (policySnapshot);
