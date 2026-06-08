@@ -1,6 +1,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#include <cmath>
+
 //==============================================================================
 PluginProcessor::PluginProcessor()
     : AudioProcessor (BusesProperties()
@@ -129,12 +131,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         getAnalyzerCurveSourceChoices(),
         analyzerCurveSourceToIndex (AnalyzerCurveSource::live)));
 
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { showStereoMeterParamId, 1 },
+        "Show Stereo Meter",
+        true));
+
     return { params.begin(), params.end() };
 }
 
 PluginProcessor::~PluginProcessor()
 {
     analyzerEngine.stop();
+    secondaryAnalyzerEngine.stop();
 }
 
 //==============================================================================
@@ -209,6 +217,132 @@ AnalyzerInputMode PluginProcessor::getAnalyzerInputMode() const noexcept
 
     return analyzerInputModeFromParameterValue (
         inputModeParameter->load (std::memory_order_relaxed));
+}
+
+juce::String PluginProcessor::getAnalyzerCurveLabelForMode (AnalyzerInputMode mode)
+{
+    switch (mode)
+    {
+        case AnalyzerInputMode::stereoSum:     return "Main";
+        case AnalyzerInputMode::left:          return "L";
+        case AnalyzerInputMode::right:         return "R";
+        case AnalyzerInputMode::mid:           return "M";
+        case AnalyzerInputMode::side:          return "S";
+        case AnalyzerInputMode::leftRightDual: return "L";
+        case AnalyzerInputMode::midSideDual:   return "M";
+        case AnalyzerInputMode::count:         break;
+    }
+
+    return "Main";
+}
+
+juce::String PluginProcessor::getPrimaryAnalyzerCurveLabel() const
+{
+    const auto selectedMode = getAnalyzerInputMode();
+
+    return getAnalyzerCurveLabelForMode (
+        analyzerInputModeGetPrimaryMode (selectedMode));
+}
+
+juce::String PluginProcessor::getSecondaryAnalyzerCurveLabel() const
+{
+    const auto selectedMode = getAnalyzerInputMode();
+
+    if (!analyzerInputModeIsDual (selectedMode))
+        return {};
+
+    return getAnalyzerCurveLabelForMode (
+        analyzerInputModeGetSecondaryMode (selectedMode));
+}
+
+bool PluginProcessor::isSecondaryAnalyzerActive() const noexcept
+{
+    return secondaryAnalyzerEnabled.load (std::memory_order_relaxed);
+}
+
+void PluginProcessor::syncSecondaryAnalyzerRuntimeForCurrentInputMode()
+{
+    const auto shouldRunSecondary =
+        analyzerInputModeIsDual (getAnalyzerInputMode());
+
+    const auto isSecondaryThreadStarted =
+        secondaryAnalyzerThreadStarted.load (std::memory_order_relaxed);
+
+    if (shouldRunSecondary && !isSecondaryThreadStarted)
+    {
+        secondaryAnalyzerEngine.start();
+        secondaryAnalyzerThreadStarted.store (true, std::memory_order_relaxed);
+    }
+    else if (!shouldRunSecondary && isSecondaryThreadStarted)
+    {
+        secondaryAnalyzerEngine.stop();
+        secondaryAnalyzerFifo.reset();
+        secondaryAnalyzerThreadStarted.store (false, std::memory_order_relaxed);
+    }
+
+    secondaryAnalyzerEnabled.store (
+        shouldRunSecondary,
+        std::memory_order_relaxed);
+}
+
+bool PluginProcessor::copyLatestAnalyzerFrameBundle (
+    AnalyzerFrameBundle& destination)
+{
+    destination.primaryLabel = getPrimaryAnalyzerCurveLabel();
+    destination.secondaryLabel = getSecondaryAnalyzerCurveLabel();
+    destination.hasPrimary = analyzerEngine.copyLatestFrame (destination.primary);
+
+    const auto secondaryEnabled =
+        secondaryAnalyzerEnabled.load (std::memory_order_relaxed);
+
+    destination.hasSecondary =
+        secondaryEnabled
+        && secondaryAnalyzerEngine.copyLatestFrame (destination.secondary);
+
+    return destination.hasPrimary || destination.hasSecondary;
+}
+
+PluginProcessor::StereoMeterSnapshot PluginProcessor::getStereoMeterSnapshot() const noexcept
+{
+    StereoMeterSnapshot snapshot;
+    snapshot.correlation = stereoCorrelation.load (std::memory_order_relaxed);
+    snapshot.smoothedCorrelation =
+        stereoSmoothedCorrelation.load (std::memory_order_relaxed);
+    snapshot.leftLevelDb = stereoLeftLevelDb.load (std::memory_order_relaxed);
+    snapshot.rightLevelDb = stereoRightLevelDb.load (std::memory_order_relaxed);
+    snapshot.midLevelDb = stereoMidLevelDb.load (std::memory_order_relaxed);
+    snapshot.sideLevelDb = stereoSideLevelDb.load (std::memory_order_relaxed);
+    snapshot.balanceDb = stereoBalanceDb.load (std::memory_order_relaxed);
+    snapshot.widthPercent = stereoWidthPercent.load (std::memory_order_relaxed);
+    snapshot.monoCompatibilityDb =
+        stereoMonoCompatibilityDb.load (std::memory_order_relaxed);
+
+    return snapshot;
+}
+
+void PluginProcessor::copyGoniometerPoints (
+    std::vector<juce::Point<float>>& destination) const
+{
+    destination.resize (static_cast<size_t> (goniometerPointCount));
+
+    const auto rawWriteIndex =
+        goniometerWriteIndex.load (std::memory_order_relaxed);
+
+    auto writeIndex = rawWriteIndex % goniometerPointCount;
+
+    if (writeIndex < 0)
+        writeIndex += goniometerPointCount;
+
+    for (int i = 0; i < goniometerPointCount; ++i)
+    {
+        const auto index =
+            static_cast<size_t> ((writeIndex + i) % goniometerPointCount);
+
+        destination[static_cast<size_t> (i)] = {
+            goniometerX[index].load (std::memory_order_relaxed),
+            goniometerY[index].load (std::memory_order_relaxed)
+        };
+    }
 }
 
 float PluginProcessor::getPeakHoldDecayDbPerSecond() const noexcept
@@ -287,6 +421,144 @@ AnalyzerCurveSource PluginProcessor::getDifferenceCurveSource() const noexcept
         parameter->load (std::memory_order_relaxed));
 }
 
+void PluginProcessor::configureAnalyzerEngineForCurrentSettings (
+    AnalyzerEngine& engine) noexcept
+{
+    engine.setRequestedFftOrder (getAnalyzerFftOrder());
+    engine.setFrequencyDependentResolutionEnabled (
+        isFrequencyDependentAnalyzerResolution());
+    engine.setFrequencyDependentTunedResolutionEnabled (
+        isFrequencyDependentAnalyzerResolutionTuned());
+    engine.setVqtLikeFilterbankEnabled (isVqtLikeAnalyzerFilterbank());
+    engine.setVqtLikeLiveCurveProfile (getVqtLiveCurveProfile());
+    engine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
+    engine.setRmsTimeSeconds (getRmsTimeSeconds());
+}
+
+void PluginProcessor::updateStereoMeterData (
+    const juce::AudioBuffer<float>& buffer,
+    int numInputChannels) noexcept
+{
+    const auto numSamples = buffer.getNumSamples();
+
+    if (numSamples <= 0 || numInputChannels <= 0 || buffer.getNumChannels() <= 0)
+        return;
+
+    const auto* left = buffer.getReadPointer (0);
+    const auto* right =
+        numInputChannels > 1 && buffer.getNumChannels() > 1
+            ? buffer.getReadPointer (1)
+            : left;
+
+    double sumL2 = 0.0;
+    double sumR2 = 0.0;
+    double sumLR = 0.0;
+    double sumMid2 = 0.0;
+    double sumSide2 = 0.0;
+
+    const auto goniometerStep = juce::jmax (1, numSamples / 32);
+    constexpr auto invSqrt2 = 0.70710678118f;
+
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        const auto leftSample = left[sample];
+        const auto rightSample = right[sample];
+        const auto midSample = 0.5f * (leftSample + rightSample);
+        const auto sideSample = 0.5f * (leftSample - rightSample);
+
+        sumL2 += static_cast<double> (leftSample) * leftSample;
+        sumR2 += static_cast<double> (rightSample) * rightSample;
+        sumLR += static_cast<double> (leftSample) * rightSample;
+        sumMid2 += static_cast<double> (midSample) * midSample;
+        sumSide2 += static_cast<double> (sideSample) * sideSample;
+
+        if (sample % goniometerStep == 0)
+        {
+            const auto rawIndex =
+                goniometerWriteIndex.fetch_add (1, std::memory_order_relaxed);
+
+            auto wrappedIndex = rawIndex % goniometerPointCount;
+
+            if (wrappedIndex < 0)
+                wrappedIndex += goniometerPointCount;
+
+            const auto index =
+                static_cast<size_t> (wrappedIndex);
+
+            const auto x =
+                juce::jlimit (-1.0f,
+                    1.0f,
+                    invSqrt2 * (leftSample - rightSample));
+
+            const auto y =
+                juce::jlimit (-1.0f,
+                    1.0f,
+                    invSqrt2 * (leftSample + rightSample));
+
+            goniometerX[index].store (x, std::memory_order_relaxed);
+            goniometerY[index].store (y, std::memory_order_relaxed);
+        }
+    }
+
+    constexpr auto epsilon = 1.0e-9;
+    const auto sampleCount = static_cast<double> (numSamples);
+    const auto leftRms = std::sqrt (sumL2 / sampleCount);
+    const auto rightRms = std::sqrt (sumR2 / sampleCount);
+    const auto midRms = std::sqrt (sumMid2 / sampleCount);
+    const auto sideRms = std::sqrt (sumSide2 / sampleCount);
+
+    auto correlation = 1.0f;
+
+    if (numInputChannels > 1 && sumL2 > epsilon && sumR2 > epsilon)
+    {
+        correlation = static_cast<float> (
+            sumLR / std::sqrt (sumL2 * sumR2));
+    }
+
+    correlation = juce::jlimit (-1.0f, 1.0f, correlation);
+
+    const auto leftDb =
+        juce::Decibels::gainToDecibels (static_cast<float> (leftRms), -100.0f);
+
+    const auto rightDb =
+        juce::Decibels::gainToDecibels (static_cast<float> (rightRms), -100.0f);
+
+    const auto midDb =
+        juce::Decibels::gainToDecibels (static_cast<float> (midRms), -100.0f);
+
+    const auto sideDb =
+        juce::Decibels::gainToDecibels (static_cast<float> (sideRms), -100.0f);
+
+    const auto previousSmoothed =
+        stereoSmoothedCorrelation.load (std::memory_order_relaxed);
+
+    const auto smoothed =
+        previousSmoothed + 0.08f * (correlation - previousSmoothed);
+
+    const auto widthPercent =
+        numInputChannels > 1
+            ? juce::jlimit (0.0f,
+                  300.0f,
+                  100.0f * static_cast<float> (
+                               sideRms / juce::jmax (midRms, epsilon)))
+            : 0.0f;
+
+    const auto monoCompatibilityDb =
+        midDb - juce::jmax (leftDb, rightDb);
+
+    stereoCorrelation.store (correlation, std::memory_order_relaxed);
+    stereoSmoothedCorrelation.store (smoothed, std::memory_order_relaxed);
+    stereoLeftLevelDb.store (leftDb, std::memory_order_relaxed);
+    stereoRightLevelDb.store (rightDb, std::memory_order_relaxed);
+    stereoMidLevelDb.store (midDb, std::memory_order_relaxed);
+    stereoSideLevelDb.store (numInputChannels > 1 ? sideDb : -100.0f,
+        std::memory_order_relaxed);
+    stereoBalanceDb.store (numInputChannels > 1 ? rightDb - leftDb : 0.0f,
+        std::memory_order_relaxed);
+    stereoWidthPercent.store (widthPercent, std::memory_order_relaxed);
+    stereoMonoCompatibilityDb.store (monoCompatibilityDb, std::memory_order_relaxed);
+}
+
 bool PluginProcessor::isFrequencyDependentAnalyzerResolution() const noexcept
 {
     if (fftSizeParameter == nullptr)
@@ -320,20 +592,33 @@ bool PluginProcessor::isVqtLikeAnalyzerFilterbank() const noexcept
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     analyzerEngine.stop();
+    secondaryAnalyzerEngine.stop();
 
     analyzerFifo.prepare (sampleRate, samplesPerBlock);
+    secondaryAnalyzerFifo.prepare (sampleRate, samplesPerBlock);
 
-    analyzerEngine.setRequestedFftOrder (getAnalyzerFftOrder());
-    analyzerEngine.setFrequencyDependentResolutionEnabled (
-        isFrequencyDependentAnalyzerResolution());
-    analyzerEngine.setFrequencyDependentTunedResolutionEnabled ( isFrequencyDependentAnalyzerResolutionTuned());
-    analyzerEngine.setVqtLikeFilterbankEnabled (isVqtLikeAnalyzerFilterbank());
-    analyzerEngine.setVqtLikeLiveCurveProfile (getVqtLiveCurveProfile());
-    analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
-    analyzerEngine.setRmsTimeSeconds (getRmsTimeSeconds());
+    configureAnalyzerEngineForCurrentSettings (analyzerEngine);
+    configureAnalyzerEngineForCurrentSettings (secondaryAnalyzerEngine);
 
     analyzerEngine.prepare (sampleRate, analyzerFifo);
+    secondaryAnalyzerEngine.prepare (sampleRate, secondaryAnalyzerFifo);
+
     analyzerEngine.start();
+
+    const auto selectedInputMode = getAnalyzerInputMode();
+    const auto shouldEnableSecondary =
+        analyzerInputModeIsDual (selectedInputMode);
+
+    secondaryAnalyzerEnabled.store (
+        shouldEnableSecondary,
+        std::memory_order_relaxed);
+
+    secondaryAnalyzerThreadStarted.store (
+        shouldEnableSecondary,
+        std::memory_order_relaxed);
+
+    if (shouldEnableSecondary)
+        secondaryAnalyzerEngine.start();
 }
 
 void PluginProcessor::releaseResources()
@@ -341,7 +626,11 @@ void PluginProcessor::releaseResources()
     // When playback stops, you can use this as an opportunity to free up any
     // spare memory, etc.
     analyzerEngine.stop();
+    secondaryAnalyzerEngine.stop();
     analyzerFifo.reset();
+    secondaryAnalyzerFifo.reset();
+    secondaryAnalyzerEnabled.store (false, std::memory_order_relaxed);
+    secondaryAnalyzerThreadStarted.store (false, std::memory_order_relaxed);
 }
 
 bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -393,19 +682,35 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const auto levelDb = juce::Decibels::gainToDecibels (maxSample, -100.0f);
     inputLevelDb.store (levelDb, std::memory_order_relaxed);
 
-    analyzerEngine.setRequestedFftOrder (getAnalyzerFftOrder());
-    analyzerEngine.setFrequencyDependentResolutionEnabled (
-        isFrequencyDependentAnalyzerResolution());
-    analyzerEngine.setFrequencyDependentTunedResolutionEnabled ( isFrequencyDependentAnalyzerResolutionTuned());
-    analyzerEngine.setVqtLikeFilterbankEnabled (isVqtLikeAnalyzerFilterbank());
-    analyzerEngine.setVqtLikeLiveCurveProfile (getVqtLiveCurveProfile());
-    analyzerEngine.setPeakHoldDecayDbPerSecond (getPeakHoldDecayDbPerSecond());
-    analyzerEngine.setRmsTimeSeconds (getRmsTimeSeconds());
+    updateStereoMeterData (buffer, numChannelsToAnalyse);
+
+    configureAnalyzerEngineForCurrentSettings (analyzerEngine);
+    configureAnalyzerEngineForCurrentSettings (secondaryAnalyzerEngine);
+
+    const auto selectedInputMode = getAnalyzerInputMode();
+    const auto primaryMode =
+        analyzerInputModeGetPrimaryMode (selectedInputMode);
+
+    const auto secondaryMode =
+        analyzerInputModeGetSecondaryMode (selectedInputMode);
+
+    const auto dualEnabled =
+        analyzerInputModeIsDual (selectedInputMode);
+
+    secondaryAnalyzerEnabled.store (dualEnabled, std::memory_order_relaxed);
 
     analyzerFifo.pushMonoFromBuffer (
         buffer,
         numChannelsToAnalyse,
-        getAnalyzerInputMode());
+        primaryMode);
+
+    if (dualEnabled)
+    {
+        secondaryAnalyzerFifo.pushMonoFromBuffer (
+            buffer,
+            numChannelsToAnalyse,
+            secondaryMode);
+    }
 }
 
 //==============================================================================

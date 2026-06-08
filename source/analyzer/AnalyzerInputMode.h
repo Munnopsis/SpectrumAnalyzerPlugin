@@ -9,12 +9,14 @@ enum class AnalyzerInputMode
     right,
     mid,
     side,
+    leftRightDual,
+    midSideDual,
     count
 };
 
 inline juce::StringArray getAnalyzerInputModeChoices()
 {
-    return { "Stereo Sum", "Left", "Right", "Mid", "Side" };
+    return { "Stereo Sum", "Left", "Right", "Mid", "Side", "L/R Dual", "M/S Dual" };
 }
 
 inline AnalyzerInputMode analyzerInputModeFromIndex (int index) noexcept
@@ -26,6 +28,34 @@ inline AnalyzerInputMode analyzerInputModeFromIndex (int index) noexcept
 inline AnalyzerInputMode analyzerInputModeFromParameterValue (float value) noexcept
 {
     return analyzerInputModeFromIndex (juce::roundToInt (value));
+}
+
+inline bool analyzerInputModeIsDual (AnalyzerInputMode mode) noexcept
+{
+    return mode == AnalyzerInputMode::leftRightDual
+           || mode == AnalyzerInputMode::midSideDual;
+}
+
+inline AnalyzerInputMode analyzerInputModeGetPrimaryMode (
+    AnalyzerInputMode mode) noexcept
+{
+    switch (mode)
+    {
+        case AnalyzerInputMode::leftRightDual: return AnalyzerInputMode::left;
+        case AnalyzerInputMode::midSideDual:   return AnalyzerInputMode::mid;
+        default:                               return mode;
+    }
+}
+
+inline AnalyzerInputMode analyzerInputModeGetSecondaryMode (
+    AnalyzerInputMode mode) noexcept
+{
+    switch (mode)
+    {
+        case AnalyzerInputMode::leftRightDual: return AnalyzerInputMode::right;
+        case AnalyzerInputMode::midSideDual:   return AnalyzerInputMode::side;
+        default:                               return AnalyzerInputMode::stereoSum;
+    }
 }
 
 inline float makeAnalyzerMonoSample (float left, float right, AnalyzerInputMode mode) noexcept
@@ -46,6 +76,12 @@ inline float makeAnalyzerMonoSample (float left, float right, AnalyzerInputMode 
 
         case AnalyzerInputMode::side:
             return (left - right) * 0.5f;
+
+        case AnalyzerInputMode::leftRightDual:
+            return left;
+
+        case AnalyzerInputMode::midSideDual:
+            return (left + right) * 0.5f;
 
         case AnalyzerInputMode::count:
             break;

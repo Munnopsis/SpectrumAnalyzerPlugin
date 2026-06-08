@@ -1,7 +1,9 @@
 #pragma once
 
 #include <atomic>
+#include <array>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 #include "analyzer/AnalyzerFifo.h"
 #include "analyzer/AnalyzerEngine.h"
 #include <vector>
@@ -71,12 +73,36 @@ public:
         return analyzerEngine.copyLatestRmsSpectrumDb (destination);
     }
 
+    struct AnalyzerFrameBundle
+    {
+        AnalyzerEngine::Frame primary;
+        AnalyzerEngine::Frame secondary;
+        bool hasPrimary = false;
+        bool hasSecondary = false;
+        juce::String primaryLabel;
+        juce::String secondaryLabel;
+    };
+
+    struct StereoMeterSnapshot
+    {
+        float correlation = 0.0f;
+        float smoothedCorrelation = 0.0f;
+        float leftLevelDb = -100.0f;
+        float rightLevelDb = -100.0f;
+        float midLevelDb = -100.0f;
+        float sideLevelDb = -100.0f;
+        float balanceDb = 0.0f;
+        float widthPercent = 0.0f;
+        float monoCompatibilityDb = 0.0f;
+    };
+
     static inline const juce::String showLiveCurveParamId { "showLiveCurve" };
     static inline const juce::String showRmsCurveParamId { "showRmsCurve" };
     static inline const juce::String showPeakHoldCurveParamId { "showPeakHoldCurve" };
     static inline const juce::String showEnergyCurveParamId { "showEnergyCurve" };
     static inline const juce::String showPeakDipMarkersParamId { "showPeakDipMarkers" };
     static inline const juce::String showDifferenceCurveParamId { "showDifferenceCurve" };
+    static inline const juce::String showStereoMeterParamId { "showStereoMeter" };
     static inline const juce::String inputModeParamId { "inputMode" };
     static inline const juce::String fftSizeParamId { "fftSize" };
     static inline const juce::String peakHoldDecayParamId { "peakHoldDecay" };
@@ -123,6 +149,11 @@ public:
         return parameters.getRawParameterValue (showDifferenceCurveParamId)->load() > 0.5f;
     }
 
+    bool shouldShowStereoMeter() const noexcept
+    {
+        return parameters.getRawParameterValue (showStereoMeterParamId)->load() > 0.5f;
+    }
+
     float getAnalyzerMinimumDecibels() const noexcept;
     float getAnalyzerSlopeDbPerOctave() const noexcept;
     AnalyzerDisplayResolution getAnalyzerDisplayResolution() const noexcept;
@@ -137,19 +168,38 @@ public:
         return analyzerEngine.copyLatestFrame (destination);
     }
 
+    bool copyLatestSecondaryAnalyzerFrame (AnalyzerEngine::Frame& destination)
+    {
+        if (!secondaryAnalyzerEnabled.load (std::memory_order_relaxed))
+            return false;
+
+        return secondaryAnalyzerEngine.copyLatestFrame (destination);
+    }
+
+    bool copyLatestAnalyzerFrameBundle (AnalyzerFrameBundle& destination);
+    bool isSecondaryAnalyzerActive() const noexcept;
+    juce::String getPrimaryAnalyzerCurveLabel() const;
+    juce::String getSecondaryAnalyzerCurveLabel() const;
+    void syncSecondaryAnalyzerRuntimeForCurrentInputMode();
+    StereoMeterSnapshot getStereoMeterSnapshot() const noexcept;
+    void copyGoniometerPoints (std::vector<juce::Point<float>>& destination) const;
+
     void requestClearPeakHold() noexcept
     {
         analyzerEngine.requestClearPeakHold();
+        secondaryAnalyzerEngine.requestClearPeakHold();
     }
 
     void requestClearEnergy() noexcept
     {
         analyzerEngine.requestClearEnergy();
+        secondaryAnalyzerEngine.requestClearEnergy();
     }
 
     void setAnalyzerDisplayFrequencyRange (float minimumHz, float maximumHz) noexcept
     {
         analyzerEngine.setDisplayFrequencyRange (minimumHz, maximumHz);
+        secondaryAnalyzerEngine.setDisplayFrequencyRange (minimumHz, maximumHz);
     }
 
 private:
@@ -160,6 +210,10 @@ private:
     float getPeakHoldDecayDbPerSecond() const noexcept;
     float getRmsTimeSeconds() const noexcept;
     AnalyzerVqtLiveCurveProfile getVqtLiveCurveProfile() const noexcept;
+    void configureAnalyzerEngineForCurrentSettings (AnalyzerEngine& engine) noexcept;
+    void updateStereoMeterData (const juce::AudioBuffer<float>& buffer,
+                                int numInputChannels) noexcept;
+    static juce::String getAnalyzerCurveLabelForMode (AnalyzerInputMode mode);
 
     // cached parameters
     std::atomic<float> inputLevelDb { -100.0f };
@@ -174,6 +228,26 @@ private:
 
     AnalyzerFifo analyzerFifo;
     AnalyzerEngine analyzerEngine;
+    AnalyzerFifo secondaryAnalyzerFifo;
+    AnalyzerEngine secondaryAnalyzerEngine;
+    std::atomic<bool> secondaryAnalyzerEnabled { false };
+    std::atomic<bool> secondaryAnalyzerThreadStarted { false };
+
+    static constexpr int goniometerPointCount = 512;
+    std::array<std::atomic<float>, goniometerPointCount> goniometerX {};
+    std::array<std::atomic<float>, goniometerPointCount> goniometerY {};
+    std::atomic<int> goniometerWriteIndex { 0 };
+
+    std::atomic<float> stereoCorrelation { 0.0f };
+    std::atomic<float> stereoSmoothedCorrelation { 0.0f };
+    std::atomic<float> stereoLeftLevelDb { -100.0f };
+    std::atomic<float> stereoRightLevelDb { -100.0f };
+    std::atomic<float> stereoMidLevelDb { -100.0f };
+    std::atomic<float> stereoSideLevelDb { -100.0f };
+    std::atomic<float> stereoBalanceDb { 0.0f };
+    std::atomic<float> stereoWidthPercent { 0.0f };
+    std::atomic<float> stereoMonoCompatibilityDb { 0.0f };
+
     AnalyzerInputMode getAnalyzerInputMode() const noexcept;
 
 

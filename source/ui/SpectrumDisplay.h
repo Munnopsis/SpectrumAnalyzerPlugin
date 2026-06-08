@@ -22,6 +22,20 @@ public:
         int pitchClass = -1;
     };
 
+    struct StereoMeterDisplayData
+    {
+        float correlation = 0.0f;
+        float smoothedCorrelation = 0.0f;
+        float leftLevelDb = -100.0f;
+        float rightLevelDb = -100.0f;
+        float midLevelDb = -100.0f;
+        float sideLevelDb = -100.0f;
+        float balanceDb = 0.0f;
+        float widthPercent = 0.0f;
+        float monoCompatibilityDb = 0.0f;
+        std::vector<juce::Point<float>> goniometerPoints;
+    };
+
     void setInputLevelDb (float newLevelDb);
     void setSpectrumDb (const std::vector<float>& newSpectrumDb);
     void setPeakHoldSpectrumDb (const std::vector<float>& newPeakHoldDb);
@@ -34,6 +48,16 @@ public:
                                const std::vector<float>& rmsDb,
                                const std::vector<float>& energyDb,
                                const std::vector<DisplayNotePeak>& newNotePeaks);
+    void setSecondaryAnalyzerFrameData (
+        bool shouldShowSecondary,
+        const juce::String& primaryLabel,
+        const juce::String& secondaryLabel,
+        float secondaryDataMinimumFrequencyHz,
+        float secondaryDataMaximumFrequencyHz,
+        const std::vector<float>& secondaryLiveDb,
+        const std::vector<float>& secondaryPeakHoldDb,
+        const std::vector<float>& secondaryRmsDb,
+        const std::vector<float>& secondaryEnergyDb);
     void setMinimumDecibels (float newMinimumDecibels);
     void setSlopeDbPerOctave (float newSlopeDbPerOctave);
     void setDisplayResolution (AnalyzerDisplayResolution newResolution);
@@ -53,6 +77,8 @@ public:
     void setPeakDipCurveSource (AnalyzerCurveSource source);
     void setDifferenceCurveVisible (bool shouldBeVisible);
     void setDifferenceCurveSource (AnalyzerCurveSource source);
+    void setStereoMeterData (const StereoMeterDisplayData& data);
+    void setStereoMeterVisible (bool shouldBeVisible);
 
     std::function<void (float minimumHz, float maximumHz)> onVisibleFrequencyRangeChanged;
 
@@ -128,6 +154,8 @@ private:
     void drawEnergyCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawSecondaryAnalyzerCurves (juce::Graphics& g,
+                                      juce::Rectangle<int> bounds);
     void drawPeakDipMarkers (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawDifferenceCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawCurveFromData (juce::Graphics& g,
@@ -149,6 +177,11 @@ private:
                                              juce::Rectangle<int> bounds);
     void drawMouseReadout (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPeakNoteLabels (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawStereoMeterPanel (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawCorrelationMeter (juce::Graphics& g, juce::Rectangle<float> area);
+    void drawGoniometer (juce::Graphics& g, juce::Rectangle<float> area);
+    void drawStereoBalanceAndWidthText (juce::Graphics& g,
+                                        juce::Rectangle<float> area);
 
     juce::Rectangle<float> getSpectrumArea (juce::Rectangle<int> bounds) const;
     std::vector<PeakNoteLabel> buildPeakNoteLabels (juce::Rectangle<float> area) const;
@@ -236,6 +269,15 @@ private:
     std::vector<float> peakHoldDb;
     std::vector<float> rmsDb;
     std::vector<float> energyDb;
+    bool showSecondaryAnalyzerCurves = false;
+    juce::String primaryCurveLabel = "Main";
+    juce::String secondaryCurveLabel = "Secondary";
+    float secondaryDataMinFrequencyHz = defaultMinFrequencyHz;
+    float secondaryDataMaxFrequencyHz = defaultMaxFrequencyHz;
+    std::vector<float> secondaryLiveDb;
+    std::vector<float> secondaryPeakHoldDb;
+    std::vector<float> secondaryRmsDb;
+    std::vector<float> secondaryEnergyDb;
     std::vector<ReferenceCurveSnapshot> referenceCurves;
     int activeReferenceIndex = -1;
     std::vector<DisplayNotePeak> notePeaks;
@@ -248,10 +290,12 @@ private:
     bool showPeakMarkers = true;
     bool showDipMarkers = true;
     bool showDifferenceCurve = false;
+    bool showStereoMeter = true;
     bool hasMouseReadout = false;
     bool isPanningVisibleFrequencyRange = false;
     AnalyzerCurveSource peakDipCurveSource = AnalyzerCurveSource::live;
     AnalyzerCurveSource differenceCurveSource = AnalyzerCurveSource::live;
+    StereoMeterDisplayData stereoMeterData;
     float lastPanMouseX = 0.0f;
     juce::Point<float> mousePosition;
 

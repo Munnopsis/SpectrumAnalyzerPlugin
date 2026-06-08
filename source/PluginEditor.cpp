@@ -30,6 +30,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (freezeButton);
     addAndMakeVisible (clearReferencesButton);
     addAndMakeVisible (differenceButton);
+    addAndMakeVisible (stereoMeterButton);
     addAndMakeVisible (tooltipButton);
     addAndMakeVisible (inputModeBox);
     addAndMakeVisible (fftSizeBox);
@@ -51,6 +52,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     freezeButton.setName ("FreezeButton");
     clearReferencesButton.setName ("ClearReferencesButton");
     differenceButton.setName ("DifferenceButton");
+    stereoMeterButton.setName ("StereoMeterButton");
     tooltipButton.setName ("TooltipButton");
     inputModeBox.setName ("InputModeBox");
     fftSizeBox.setName ("FftSizeBox");
@@ -72,6 +74,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     freezeButton.setWantsKeyboardFocus (true);
     clearReferencesButton.setWantsKeyboardFocus (true);
     differenceButton.setWantsKeyboardFocus (true);
+    stereoMeterButton.setWantsKeyboardFocus (true);
     tooltipButton.setWantsKeyboardFocus (true);
     inputModeBox.setWantsKeyboardFocus (true);
     fftSizeBox.setWantsKeyboardFocus (true);
@@ -93,6 +96,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     freezeButton.setTooltip ("Store the current analyzer curves as a reference snapshot");
     clearReferencesButton.setTooltip ("Clear all stored reference curves");
     differenceButton.setTooltip ("Show difference between current analyzer curve and the active reference");
+    stereoMeterButton.setTooltip ("Show stereo correlation, balance, width and phase scope");
     tooltipButton.setTooltip ("Show or hide tooltips");
 
     clearPeakButton.onClick = [this]
@@ -127,6 +131,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     freezeButton.setClickingTogglesState (false);
     clearReferencesButton.setClickingTogglesState (false);
     differenceButton.setClickingTogglesState (true);
+    stereoMeterButton.setClickingTogglesState (true);
     tooltipButton.setClickingTogglesState (true);
     tooltipButton.setToggleState (true, juce::dontSendNotification);
 
@@ -250,11 +255,19 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         PluginProcessor::showDifferenceCurveParamId,
         differenceButton);
 
+    stereoMeterButtonAttachment = std::make_unique<ButtonAttachment> (
+        state,
+        PluginProcessor::showStereoMeterParamId,
+        stereoMeterButton);
+
     spectrumDisplay.setCurveVisibility (
         processorRef.shouldShowLiveCurve(),
         processorRef.shouldShowRmsCurve(),
         processorRef.shouldShowEnergyCurve(),
         processorRef.shouldShowPeakHoldCurve());
+
+    spectrumDisplay.setStereoMeterVisible (
+        processorRef.shouldShowStereoMeter());
 
     updateFreezeButtonState();
 
@@ -269,7 +282,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         inspector->setVisible (true);
     };
 
-    setSize (1280, 680);
+    setSize (1360, 680);
 
     startTimerHz (30);
 }
@@ -358,6 +371,9 @@ void PluginEditor::resized()
     differenceButton.setBounds (secondRow.removeFromLeft (54));
     addGap (secondRow, 8);
 
+    stereoMeterButton.setBounds (secondRow.removeFromLeft (72));
+    addGap (secondRow, 8);
+
     tooltipButton.setBounds (secondRow.removeFromLeft (54));
     addGap (secondRow, 8);
 
@@ -366,6 +382,8 @@ void PluginEditor::resized()
 
 void PluginEditor::timerCallback()
 {
+    processorRef.syncSecondaryAnalyzerRuntimeForCurrentInputMode();
+
     spectrumDisplay.setInputLevelDb (processorRef.getInputLevelDb());
     spectrumDisplay.setMinimumDecibels (processorRef.getAnalyzerMinimumDecibels());
     spectrumDisplay.setSlopeDbPerOctave (processorRef.getAnalyzerSlopeDbPerOctave());
@@ -390,28 +408,89 @@ void PluginEditor::timerCallback()
     spectrumDisplay.setDifferenceCurveSource (
         processorRef.getDifferenceCurveSource());
 
-    if (processorRef.copyLatestAnalyzerFrame (analyzerFrame))
-    {
-        std::vector<SpectrumDisplay::DisplayNotePeak> displayNotePeaks;
-        displayNotePeaks.reserve (analyzerFrame.notePeaks.size());
+    const auto stereoMeterVisible = processorRef.shouldShowStereoMeter();
+    spectrumDisplay.setStereoMeterVisible (stereoMeterVisible);
 
-        for (const auto& notePeak : analyzerFrame.notePeaks)
+    if (stereoMeterVisible)
+    {
+        const auto snapshot = processorRef.getStereoMeterSnapshot();
+
+        stereoMeterDisplayData.correlation = snapshot.correlation;
+        stereoMeterDisplayData.smoothedCorrelation = snapshot.smoothedCorrelation;
+        stereoMeterDisplayData.leftLevelDb = snapshot.leftLevelDb;
+        stereoMeterDisplayData.rightLevelDb = snapshot.rightLevelDb;
+        stereoMeterDisplayData.midLevelDb = snapshot.midLevelDb;
+        stereoMeterDisplayData.sideLevelDb = snapshot.sideLevelDb;
+        stereoMeterDisplayData.balanceDb = snapshot.balanceDb;
+        stereoMeterDisplayData.widthPercent = snapshot.widthPercent;
+        stereoMeterDisplayData.monoCompatibilityDb =
+            snapshot.monoCompatibilityDb;
+
+        processorRef.copyGoniometerPoints (
+            stereoMeterDisplayData.goniometerPoints);
+
+        spectrumDisplay.setStereoMeterData (stereoMeterDisplayData);
+    }
+
+    if (processorRef.copyLatestAnalyzerFrameBundle (analyzerFrameBundle))
+    {
+        if (analyzerFrameBundle.hasPrimary)
         {
-            displayNotePeaks.push_back ({
-                notePeak.frequencyHz,
-                notePeak.decibels,
-                notePeak.midiNote,
-                notePeak.pitchClass
-            });
+            const auto& primary = analyzerFrameBundle.primary;
+
+            std::vector<SpectrumDisplay::DisplayNotePeak> displayNotePeaks;
+            displayNotePeaks.reserve (primary.notePeaks.size());
+
+            for (const auto& notePeak : primary.notePeaks)
+            {
+                displayNotePeaks.push_back ({
+                    notePeak.frequencyHz,
+                    notePeak.decibels,
+                    notePeak.midiNote,
+                    notePeak.pitchClass
+                });
+            }
+
+            spectrumDisplay.setAnalyzerFrameData (primary.dataMinFrequencyHz,
+                                                  primary.dataMaxFrequencyHz,
+                                                  primary.liveDb,
+                                                  primary.peakHoldDb,
+                                                  primary.rmsDb,
+                                                  primary.energyDb,
+                                                  displayNotePeaks);
         }
 
-        spectrumDisplay.setAnalyzerFrameData (analyzerFrame.dataMinFrequencyHz,
-                                              analyzerFrame.dataMaxFrequencyHz,
-                                              analyzerFrame.liveDb,
-                                              analyzerFrame.peakHoldDb,
-                                              analyzerFrame.rmsDb,
-                                              analyzerFrame.energyDb,
-                                              displayNotePeaks);
+        if (analyzerFrameBundle.hasSecondary)
+        {
+            const auto& secondary = analyzerFrameBundle.secondary;
+
+            spectrumDisplay.setSecondaryAnalyzerFrameData (
+                true,
+                analyzerFrameBundle.primaryLabel,
+                analyzerFrameBundle.secondaryLabel,
+                secondary.dataMinFrequencyHz,
+                secondary.dataMaxFrequencyHz,
+                secondary.liveDb,
+                secondary.peakHoldDb,
+                secondary.rmsDb,
+                secondary.energyDb);
+
+            return;
+        }
+    }
+
+    if (!processorRef.isSecondaryAnalyzerActive())
+    {
+        spectrumDisplay.setSecondaryAnalyzerFrameData (
+            false,
+            processorRef.getPrimaryAnalyzerCurveLabel(),
+            {},
+            AnalyzerFrequencyRange::minimumHz,
+            AnalyzerFrequencyRange::maximumHz,
+            {},
+            {},
+            {},
+            {});
     }
 }
 

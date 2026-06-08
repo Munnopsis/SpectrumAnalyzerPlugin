@@ -83,6 +83,7 @@ private:
     juce::TextButton freezeButton { "Add Ref" };
     juce::TextButton clearReferencesButton { "Clear Refs" };
     juce::TextButton differenceButton { "Diff" };
+    juce::TextButton stereoMeterButton { "Stereo" };
     juce::TextButton tooltipButton { "Tips" };
     juce::ComboBox inputModeBox;
     juce::ComboBox fftSizeBox;
@@ -100,6 +101,7 @@ private:
     std::unique_ptr<ButtonAttachment> peakButtonAttachment;
     std::unique_ptr<ButtonAttachment> peakDipButtonAttachment;
     std::unique_ptr<ButtonAttachment> differenceButtonAttachment;
+    std::unique_ptr<ButtonAttachment> stereoMeterButtonAttachment;
     std::unique_ptr<ComboBoxAttachment> inputModeAttachment;
     std::unique_ptr<ComboBoxAttachment> fftSizeAttachment;
     std::unique_ptr<ComboBoxAttachment> peakHoldDecayAttachment;
@@ -110,7 +112,8 @@ private:
     std::unique_ptr<ComboBoxAttachment> vqtLiveCurveAttachment;
 
     SpectrumDisplay spectrumDisplay;
-    AnalyzerEngine::Frame analyzerFrame;
+    PluginProcessor::AnalyzerFrameBundle analyzerFrameBundle;
+    SpectrumDisplay::StereoMeterDisplayData stereoMeterDisplayData;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

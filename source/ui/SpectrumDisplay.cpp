@@ -25,6 +25,23 @@ namespace
             displayMinusInfinityDb,
             20.0f * std::log10 (gain));
     }
+
+    juce::String formatMeterDb (float decibels)
+    {
+        if (!std::isfinite (decibels) || decibels <= -99.9f)
+            return "-inf";
+
+        return juce::String (decibels, 1);
+    }
+
+    juce::String formatSignedMeterDb (float decibels)
+    {
+        if (!std::isfinite (decibels))
+            return "+0.0";
+
+        return juce::String (decibels >= 0.0f ? "+" : "")
+               + juce::String (decibels, 1);
+    }
 }
 
 SpectrumDisplay::SpectrumDisplay()
@@ -89,6 +106,50 @@ void SpectrumDisplay::setAnalyzerFrameData (
     rmsDb = newRmsDb;
     energyDb = newEnergyDb;
     notePeaks = newNotePeaks;
+
+    repaint();
+}
+
+void SpectrumDisplay::setSecondaryAnalyzerFrameData (
+    bool shouldShowSecondary,
+    const juce::String& newPrimaryLabel,
+    const juce::String& newSecondaryLabel,
+    float secondaryDataMinimumFrequencyHz,
+    float secondaryDataMaximumFrequencyHz,
+    const std::vector<float>& newSecondaryLiveDb,
+    const std::vector<float>& newSecondaryPeakHoldDb,
+    const std::vector<float>& newSecondaryRmsDb,
+    const std::vector<float>& newSecondaryEnergyDb)
+{
+    showSecondaryAnalyzerCurves = shouldShowSecondary;
+    primaryCurveLabel = newPrimaryLabel.isNotEmpty() ? newPrimaryLabel : "Main";
+    secondaryCurveLabel =
+        newSecondaryLabel.isNotEmpty() ? newSecondaryLabel : "Secondary";
+
+    const auto clampedMinimum =
+        juce::jlimit (AnalyzerFrequencyRange::minimumHz,
+                      AnalyzerFrequencyRange::maximumHz - 1.0f,
+                      secondaryDataMinimumFrequencyHz);
+
+    const auto clampedMaximum =
+        juce::jlimit (clampedMinimum + 1.0f,
+                      AnalyzerFrequencyRange::maximumHz,
+                      secondaryDataMaximumFrequencyHz);
+
+    secondaryDataMinFrequencyHz = clampedMinimum;
+    secondaryDataMaxFrequencyHz = clampedMaximum;
+    secondaryLiveDb = newSecondaryLiveDb;
+    secondaryPeakHoldDb = newSecondaryPeakHoldDb;
+    secondaryRmsDb = newSecondaryRmsDb;
+    secondaryEnergyDb = newSecondaryEnergyDb;
+
+    if (!showSecondaryAnalyzerCurves)
+    {
+        secondaryLiveDb.clear();
+        secondaryPeakHoldDb.clear();
+        secondaryRmsDb.clear();
+        secondaryEnergyDb.clear();
+    }
 
     repaint();
 }
@@ -319,6 +380,21 @@ void SpectrumDisplay::setDifferenceCurveSource (AnalyzerCurveSource source)
     repaint();
 }
 
+void SpectrumDisplay::setStereoMeterData (const StereoMeterDisplayData& data)
+{
+    stereoMeterData = data;
+    repaint();
+}
+
+void SpectrumDisplay::setStereoMeterVisible (bool shouldBeVisible)
+{
+    if (showStereoMeter == shouldBeVisible)
+        return;
+
+    showStereoMeter = shouldBeVisible;
+    repaint();
+}
+
 void SpectrumDisplay::setCurveVisibility (bool shouldShowLive,
                                           bool shouldShowRms,
                                           bool shouldShowEnergy,
@@ -360,6 +436,9 @@ void SpectrumDisplay::paint (juce::Graphics& g)
         if (showPeakHoldCurve && ! peakHoldDb.empty())
             drawPeakHoldCurve (g, bounds);
 
+        if (showSecondaryAnalyzerCurves)
+            drawSecondaryAnalyzerCurves (g, bounds);
+
         if (showDifferenceCurve)
             drawDifferenceCurve (g, bounds);
     }
@@ -373,6 +452,9 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     drawVisibleFrequencyRangeIndicator (g, bounds);
 
     drawInputLevelMeter (g, bounds);
+
+    if (showStereoMeter)
+        drawStereoMeterPanel (g, bounds);
 
     g.setColour (juce::Colours::white.withAlpha (0.85f));
     g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
@@ -882,18 +964,73 @@ juce::String SpectrumDisplay::buildCurveReadoutText (float frequencyHz) const
 {
     juce::StringArray values;
     float valueDb = 0.0f;
+    const auto primarySuffix =
+        showSecondaryAnalyzerCurves
+            ? juce::String (" ") + primaryCurveLabel
+            : juce::String {};
+    const auto secondarySuffix =
+        showSecondaryAnalyzerCurves
+            ? juce::String (" ") + secondaryCurveLabel
+            : juce::String {};
 
     if (showLiveCurve && getInterpolatedCurveValueDb (spectrumDb, frequencyHz, valueDb))
-        values.add (formatCurveValue ("Live", valueDb));
+        values.add (formatCurveValue (juce::String ("Live") + primarySuffix, valueDb));
 
     if (showRmsCurve && getInterpolatedCurveValueDb (rmsDb, frequencyHz, valueDb))
-        values.add (formatCurveValue ("RMS", valueDb));
+        values.add (formatCurveValue (juce::String ("RMS") + primarySuffix, valueDb));
 
     if (showEnergyCurve && getInterpolatedCurveValueDb (energyDb, frequencyHz, valueDb))
-        values.add (formatCurveValue ("Energy", valueDb));
+        values.add (formatCurveValue (juce::String ("Energy") + primarySuffix, valueDb));
 
     if (showPeakHoldCurve && getInterpolatedCurveValueDb (peakHoldDb, frequencyHz, valueDb))
-        values.add (formatCurveValue ("Peak", valueDb));
+        values.add (formatCurveValue (juce::String ("Peak") + primarySuffix, valueDb));
+
+    if (showSecondaryAnalyzerCurves)
+    {
+        if (showLiveCurve
+            && getInterpolatedCurveValueDbForDataRange (secondaryLiveDb,
+                                                        frequencyHz,
+                                                        secondaryDataMinFrequencyHz,
+                                                        secondaryDataMaxFrequencyHz,
+                                                        valueDb))
+        {
+            values.add (formatCurveValue (juce::String ("Live") + secondarySuffix,
+                                          valueDb));
+        }
+
+        if (showRmsCurve
+            && getInterpolatedCurveValueDbForDataRange (secondaryRmsDb,
+                                                        frequencyHz,
+                                                        secondaryDataMinFrequencyHz,
+                                                        secondaryDataMaxFrequencyHz,
+                                                        valueDb))
+        {
+            values.add (formatCurveValue (juce::String ("RMS") + secondarySuffix,
+                                          valueDb));
+        }
+
+        if (showEnergyCurve
+            && getInterpolatedCurveValueDbForDataRange (secondaryEnergyDb,
+                                                        frequencyHz,
+                                                        secondaryDataMinFrequencyHz,
+                                                        secondaryDataMaxFrequencyHz,
+                                                        valueDb))
+        {
+            values.add (formatCurveValue (juce::String ("Energy") + secondarySuffix,
+                                          valueDb));
+        }
+
+        if (showPeakHoldCurve
+            && getInterpolatedCurveValueDbForDataRange (secondaryPeakHoldDb,
+                                                        frequencyHz,
+                                                        secondaryDataMinFrequencyHz,
+                                                        secondaryDataMaxFrequencyHz,
+                                                        valueDb))
+        {
+            values.add (formatCurveValue (juce::String ("Peak") + secondarySuffix,
+                                          valueDb));
+        }
+    }
 
     auto differenceDb = 0.0f;
 
@@ -1525,6 +1662,275 @@ void SpectrumDisplay::drawInputLevelMeter (juce::Graphics& g, juce::Rectangle<in
                 juce::Justification::centredLeft);
 }
 
+void SpectrumDisplay::drawStereoMeterPanel (
+    juce::Graphics& g,
+    juce::Rectangle<int> bounds)
+{
+    auto availableArea = bounds.reduced (16).toFloat();
+    availableArea.removeFromBottom (34.0f);
+
+    const auto panelWidth = juce::jmin (320.0f, availableArea.getWidth() - 24.0f);
+    constexpr auto panelHeight = 148.0f;
+
+    if (panelWidth < 260.0f || availableArea.getHeight() < panelHeight + 40.0f)
+        return;
+
+    juce::Rectangle<float> panelBounds (
+        availableArea.getRight() - panelWidth,
+        availableArea.getBottom() - panelHeight,
+        panelWidth,
+        panelHeight);
+
+    g.setColour (juce::Colours::black.withAlpha (0.62f));
+    g.fillRoundedRectangle (panelBounds, 6.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.14f));
+    g.drawRoundedRectangle (panelBounds, 6.0f, 1.0f);
+
+    auto content = panelBounds.reduced (10.0f);
+    auto header = content.removeFromTop (18.0f);
+
+    g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    g.setColour (juce::Colours::white.withAlpha (0.86f));
+    g.drawText ("Stereo",
+                header,
+                juce::Justification::centredLeft,
+                false);
+
+    const auto correlationText =
+        juce::String ("Corr ")
+        + juce::String (stereoMeterData.smoothedCorrelation >= 0.0f ? "+" : "")
+        + juce::String (stereoMeterData.smoothedCorrelation, 2);
+
+    g.drawText (correlationText,
+                header,
+                juce::Justification::centredRight,
+                false);
+
+    content.removeFromTop (6.0f);
+
+    auto goniometerArea = content.removeFromLeft (104.0f);
+    drawGoniometer (g, goniometerArea);
+
+    content.removeFromLeft (10.0f);
+
+    auto correlationArea = content.removeFromTop (38.0f);
+    drawCorrelationMeter (g, correlationArea);
+
+    content.removeFromTop (7.0f);
+    drawStereoBalanceAndWidthText (g, content);
+}
+
+void SpectrumDisplay::drawCorrelationMeter (
+    juce::Graphics& g,
+    juce::Rectangle<float> area)
+{
+    auto meterArea = area.reduced (0.0f, 5.0f);
+
+    if (meterArea.getWidth() <= 24.0f || meterArea.getHeight() <= 8.0f)
+        return;
+
+    const auto trackArea = meterArea.withTrimmedTop (7.0f)
+                                    .withTrimmedBottom (7.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.10f));
+    g.fillRoundedRectangle (trackArea, 3.0f);
+
+    const auto zeroX =
+        juce::jmap (0.0f,
+                    -1.0f,
+                    1.0f,
+                    trackArea.getX(),
+                    trackArea.getRight());
+
+    const auto markerX =
+        juce::jmap (juce::jlimit (-1.0f,
+                                  1.0f,
+                                  stereoMeterData.smoothedCorrelation),
+                    -1.0f,
+                    1.0f,
+                    trackArea.getX(),
+                    trackArea.getRight());
+
+    const auto fillX = juce::jmin (zeroX, markerX);
+    const auto fillWidth = std::abs (markerX - zeroX);
+
+    if (fillWidth > 0.5f)
+    {
+        const auto fillColour =
+            markerX >= zeroX
+                ? juce::Colour::fromRGB (120, 255, 160).withAlpha (0.76f)
+                : juce::Colour::fromRGB (255, 110, 110).withAlpha (0.82f);
+
+        g.setColour (fillColour);
+        g.fillRoundedRectangle (fillX,
+                                trackArea.getY(),
+                                fillWidth,
+                                trackArea.getHeight(),
+                                3.0f);
+    }
+
+    g.setColour (juce::Colours::white.withAlpha (0.28f));
+    g.drawVerticalLine (juce::roundToInt (zeroX),
+                        trackArea.getY() - 4.0f,
+                        trackArea.getBottom() + 4.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.88f));
+    g.drawLine (markerX,
+                trackArea.getY() - 5.0f,
+                markerX,
+                trackArea.getBottom() + 5.0f,
+                1.6f);
+
+    g.setFont (juce::FontOptions (9.0f));
+    g.setColour (juce::Colours::white.withAlpha (0.54f));
+    g.drawText ("-1",
+                area.withHeight (10.0f),
+                juce::Justification::topLeft,
+                false);
+    g.drawText ("0",
+                area.withHeight (10.0f),
+                juce::Justification::centredTop,
+                false);
+    g.drawText ("+1",
+                area.withHeight (10.0f),
+                juce::Justification::topRight,
+                false);
+}
+
+void SpectrumDisplay::drawGoniometer (
+    juce::Graphics& g,
+    juce::Rectangle<float> area)
+{
+    const auto side = juce::jmin (area.getWidth(), area.getHeight());
+
+    if (side <= 24.0f)
+        return;
+
+    auto scopeArea =
+        area.withSizeKeepingCentre (side, side).reduced (1.0f);
+
+    g.setColour (juce::Colours::black.withAlpha (0.38f));
+    g.fillRoundedRectangle (scopeArea, 5.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.13f));
+    g.drawRoundedRectangle (scopeArea, 5.0f, 1.0f);
+
+    const auto centre = scopeArea.getCentre();
+
+    g.setColour (juce::Colours::white.withAlpha (0.13f));
+    g.drawLine (centre.x,
+                scopeArea.getY(),
+                centre.x,
+                scopeArea.getBottom(),
+                1.0f);
+    g.drawLine (scopeArea.getX(),
+                centre.y,
+                scopeArea.getRight(),
+                centre.y,
+                1.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.08f));
+    g.drawLine (scopeArea.getX(),
+                scopeArea.getBottom(),
+                scopeArea.getRight(),
+                scopeArea.getY(),
+                1.0f);
+    g.drawLine (scopeArea.getX(),
+                scopeArea.getY(),
+                scopeArea.getRight(),
+                scopeArea.getBottom(),
+                1.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.10f));
+    g.drawEllipse (scopeArea.reduced (8.0f), 1.0f);
+
+    const auto pointCount =
+        static_cast<int> (stereoMeterData.goniometerPoints.size());
+
+    if (pointCount <= 0)
+        return;
+
+    const auto scale = scopeArea.getWidth() * 0.45f;
+
+    for (int i = 0; i < pointCount; ++i)
+    {
+        const auto age =
+            pointCount > 1
+                ? static_cast<float> (i) / static_cast<float> (pointCount - 1)
+                : 1.0f;
+
+        const auto& point =
+            stereoMeterData.goniometerPoints[static_cast<size_t> (i)];
+
+        const auto x = centre.x + juce::jlimit (-1.0f, 1.0f, point.x) * scale;
+        const auto y = centre.y - juce::jlimit (-1.0f, 1.0f, point.y) * scale;
+
+        if (!scopeArea.contains (x, y))
+            continue;
+
+        g.setColour (
+            juce::Colour::fromRGB (90, 220, 255).withAlpha (
+                juce::jmap (age, 0.08f, 0.74f)));
+
+        g.fillEllipse (x - 1.0f, y - 1.0f, 2.0f, 2.0f);
+    }
+}
+
+void SpectrumDisplay::drawStereoBalanceAndWidthText (
+    juce::Graphics& g,
+    juce::Rectangle<float> area)
+{
+    if (area.getWidth() <= 40.0f || area.getHeight() <= 20.0f)
+        return;
+
+    const auto balanceAmount = std::abs (stereoMeterData.balanceDb);
+    const auto balanceText =
+        balanceAmount < 0.05f
+            ? juce::String ("Bal C 0.0 dB")
+            : juce::String ("Bal ")
+              + (stereoMeterData.balanceDb >= 0.0f ? "R +" : "L +")
+              + juce::String (balanceAmount, 1)
+              + " dB";
+
+    const auto widthText =
+        juce::String ("Width ")
+        + juce::String (juce::roundToInt (stereoMeterData.widthPercent))
+        + "%";
+
+    const auto monoText =
+        juce::String ("Mono ")
+        + formatSignedMeterDb (stereoMeterData.monoCompatibilityDb)
+        + " dB";
+
+    const std::array<juce::String, 4> rows {{
+        juce::String ("L ") + formatMeterDb (stereoMeterData.leftLevelDb)
+            + " / R " + formatMeterDb (stereoMeterData.rightLevelDb)
+            + " dB",
+        juce::String ("M ") + formatMeterDb (stereoMeterData.midLevelDb)
+            + " / S " + formatMeterDb (stereoMeterData.sideLevelDb)
+            + " dB",
+        balanceText,
+        widthText + "  " + monoText
+    }};
+
+    g.setFont (juce::FontOptions (10.8f));
+
+    for (const auto& row : rows)
+    {
+        if (area.getHeight() < 13.0f)
+            break;
+
+        auto rowArea = area.removeFromTop (15.0f);
+
+        g.setColour (juce::Colours::white.withAlpha (0.74f));
+        g.drawText (row,
+                    rowArea,
+                    juce::Justification::centredLeft,
+                    false);
+    }
+}
+
 void SpectrumDisplay::drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
     drawCurveFromData (g,
@@ -1592,6 +1998,58 @@ void SpectrumDisplay::drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> boun
                        rmsDb,
                        juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f),
                        2.0f);
+}
+
+void SpectrumDisplay::drawSecondaryAnalyzerCurves (juce::Graphics& g,
+                                                   juce::Rectangle<int> bounds)
+{
+    if (!showSecondaryAnalyzerCurves)
+        return;
+
+    if (showEnergyCurve && secondaryEnergyDb.size() >= 2)
+    {
+        drawCurveFromDataRange (g,
+                                bounds,
+                                secondaryEnergyDb,
+                                secondaryDataMinFrequencyHz,
+                                secondaryDataMaxFrequencyHz,
+                                juce::Colour::fromRGB (120, 255, 160).withAlpha (0.38f),
+                                1.25f);
+    }
+
+    if (showRmsCurve && secondaryRmsDb.size() >= 2)
+    {
+        drawCurveFromDataRange (g,
+                                bounds,
+                                secondaryRmsDb,
+                                secondaryDataMinFrequencyHz,
+                                secondaryDataMaxFrequencyHz,
+                                juce::Colour::fromRGB (190, 150, 255).withAlpha (0.48f),
+                                1.45f);
+    }
+
+    if (showLiveCurve && secondaryLiveDb.size() >= 2)
+    {
+        drawCurveFromDataRange (g,
+                                bounds,
+                                secondaryLiveDb,
+                                secondaryDataMinFrequencyHz,
+                                secondaryDataMaxFrequencyHz,
+                                juce::Colour::fromRGB (255, 140, 110).withAlpha (0.72f),
+                                1.65f,
+                                CurveRenderMode::pixelResampled);
+    }
+
+    if (showPeakHoldCurve && secondaryPeakHoldDb.size() >= 2)
+    {
+        drawCurveFromDataRange (g,
+                                bounds,
+                                secondaryPeakHoldDb,
+                                secondaryDataMinFrequencyHz,
+                                secondaryDataMaxFrequencyHz,
+                                juce::Colour::fromRGB (255, 214, 120).withAlpha (0.50f),
+                                1.2f);
+    }
 }
 
 void SpectrumDisplay::drawDifferenceCurve (juce::Graphics& g,
@@ -1896,17 +2354,83 @@ void SpectrumDisplay::drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds
     {
         juce::String label;
         juce::Colour colour;
-        bool visible;
         bool shouldDraw;
     };
 
-    const std::array<LegendItem, 5> items {{
-        { "Live", juce::Colour::fromRGB (90, 220, 255), true, showLiveCurve && ! spectrumDb.empty() },
-        { "Energy", juce::Colour::fromRGB (120, 255, 160).withAlpha (0.78f), true, showEnergyCurve && ! energyDb.empty() },
-        { "RMS", juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f), true, showRmsCurve && ! rmsDb.empty() },
-        { "Peak", juce::Colour::fromRGB (255, 190, 80).withAlpha (0.9f), true, showPeakHoldCurve && ! peakHoldDb.empty() },
-        { "Ref", juce::Colours::white.withAlpha (0.34f), true, hasFrozenReferenceSpectrum() }
-    }};
+    std::vector<LegendItem> items;
+    items.reserve (10);
+
+    const auto primarySuffix =
+        showSecondaryAnalyzerCurves
+            ? juce::String (" ") + primaryCurveLabel
+            : juce::String {};
+
+    const auto secondarySuffix =
+        showSecondaryAnalyzerCurves
+            ? juce::String (" ") + secondaryCurveLabel
+            : juce::String {};
+
+    auto addCurveItems =
+        [&items, primarySuffix, secondarySuffix] (
+            const juce::String& baseLabel,
+            juce::Colour primaryColour,
+            bool shouldDrawPrimary,
+            juce::Colour secondaryColour,
+            bool shouldDrawSecondary)
+        {
+            items.push_back ({
+                baseLabel + primarySuffix,
+                primaryColour,
+                shouldDrawPrimary
+            });
+
+            if (secondarySuffix.isNotEmpty())
+            {
+                items.push_back ({
+                    baseLabel + secondarySuffix,
+                    secondaryColour,
+                    shouldDrawSecondary
+                });
+            }
+        };
+
+    addCurveItems ("Live",
+                   juce::Colour::fromRGB (90, 220, 255),
+                   showLiveCurve && !spectrumDb.empty(),
+                   juce::Colour::fromRGB (255, 140, 110).withAlpha (0.72f),
+                   showLiveCurve && secondaryLiveDb.size() >= 2);
+
+    addCurveItems ("Energy",
+                   juce::Colour::fromRGB (120, 255, 160).withAlpha (0.78f),
+                   showEnergyCurve && !energyDb.empty(),
+                   juce::Colour::fromRGB (120, 255, 160).withAlpha (0.38f),
+                   showEnergyCurve && secondaryEnergyDb.size() >= 2);
+
+    addCurveItems ("RMS",
+                   juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f),
+                   showRmsCurve && !rmsDb.empty(),
+                   juce::Colour::fromRGB (190, 150, 255).withAlpha (0.48f),
+                   showRmsCurve && secondaryRmsDb.size() >= 2);
+
+    addCurveItems ("Peak",
+                   juce::Colour::fromRGB (255, 190, 80).withAlpha (0.9f),
+                   showPeakHoldCurve && !peakHoldDb.empty(),
+                   juce::Colour::fromRGB (255, 214, 120).withAlpha (0.50f),
+                   showPeakHoldCurve && secondaryPeakHoldDb.size() >= 2);
+
+    items.push_back ({
+        "Ref",
+        juce::Colours::white.withAlpha (0.34f),
+        hasFrozenReferenceSpectrum()
+    });
+
+    items.push_back ({
+        "Diff",
+        juce::Colour::fromRGB (255, 110, 205).withAlpha (0.92f),
+        showDifferenceCurve
+        && activeReferenceIndex >= 0
+        && activeReferenceIndex < static_cast<int> (referenceCurves.size())
+    });
 
     g.setFont (juce::FontOptions (12.0f));
 
@@ -1917,13 +2441,26 @@ void SpectrumDisplay::drawLegend (juce::Graphics& g, juce::Rectangle<int> bounds
         if (! item.shouldDraw)
             continue;
 
-        const auto itemWidth = 64.0f;
-        auto itemArea = juce::Rectangle<float> (x, legendBounds.getY(), itemWidth, legendBounds.getHeight());
+        const auto labelWidth =
+            juce::GlyphArrangement::getStringWidth (
+                g.getCurrentFont(),
+                item.label);
 
-        g.setColour (item.colour.withAlpha (item.visible ? 1.0f : 0.25f));
+        const auto itemWidth = juce::jmax (54.0f, labelWidth + 32.0f);
+
+        if (x + itemWidth > legendBounds.getRight())
+            break;
+
+        auto itemArea =
+            juce::Rectangle<float> (x,
+                                    legendBounds.getY(),
+                                    itemWidth,
+                                    legendBounds.getHeight());
+
+        g.setColour (item.colour);
         g.fillRoundedRectangle (itemArea.getX(), itemArea.getCentreY() - 3.0f, 18.0f, 6.0f, 3.0f);
 
-        g.setColour (juce::Colours::white.withAlpha (item.visible ? 0.75f : 0.28f));
+        g.setColour (juce::Colours::white.withAlpha (0.75f));
         g.drawText (item.label,
                     itemArea.withTrimmedLeft (24.0f),
                     juce::Justification::centredLeft,
