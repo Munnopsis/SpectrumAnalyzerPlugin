@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../analyzer/AnalyzerDisplayResolution.h"
 #include "../analyzer/AnalyzerFrequencyRange.h"
 
 #include <functional>
@@ -34,6 +35,7 @@ public:
                                const std::vector<DisplayNotePeak>& newNotePeaks);
     void setMinimumDecibels (float newMinimumDecibels);
     void setSlopeDbPerOctave (float newSlopeDbPerOctave);
+    void setDisplayResolution (AnalyzerDisplayResolution newResolution);
     void setVisibleFrequencyRange (float minimumHz, float maximumHz);
     void setSpectrumDataFrequencyRange (float minimumHz, float maximumHz);
     void freezeCurrentSpectrumAsReference();
@@ -132,6 +134,18 @@ private:
                                                   float sourceMinFrequencyHz,
                                                   float sourceMaxFrequencyHz,
                                                   float& resultDb) const;
+    float getDisplayResolutionOctaveWidth() const noexcept;
+    bool getRawInterpolatedCurveValueDbForDataRange (const std::vector<float>& values,
+                                                     float frequencyHz,
+                                                     float sourceMinFrequencyHz,
+                                                     float sourceMaxFrequencyHz,
+                                                     float& resultDb) const;
+    bool getDisplayResolutionCurveValueDbForDataRange (
+        const std::vector<float>& values,
+        float frequencyHz,
+        float sourceMinFrequencyHz,
+        float sourceMaxFrequencyHz,
+        float& resultDb) const;
     juce::String formatCurveValue (const juce::String& label, float valueDb) const;
     juce::String buildCurveReadoutText (float frequencyHz) const;
     float applySlopeCorrection (float decibels, float frequencyHz) const;
@@ -151,6 +165,8 @@ private:
 
     float minDecibels = -100.0f;
     float slopeDbPerOctave = 0.0f;
+    AnalyzerDisplayResolution displayResolution =
+        AnalyzerDisplayResolution::highResolution;
     float inputLevelDb = -100.0f;
     float dataMinFrequencyHz = defaultMinFrequencyHz;
     float dataMaxFrequencyHz = defaultMaxFrequencyHz;

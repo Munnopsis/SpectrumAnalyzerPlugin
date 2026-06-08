@@ -19,6 +19,8 @@ PluginProcessor::PluginProcessor()
     rmsTimeParameter = parameters.getRawParameterValue (rmsTimeParamId);
     dbRangeParameter = parameters.getRawParameterValue (dbRangeParamId);
     slopeParameter = parameters.getRawParameterValue (slopeParamId);
+    displayResolutionParameter =
+        parameters.getRawParameterValue (displayResolutionParamId);
     vqtLiveCurveProfileParameter =
         parameters.getRawParameterValue (vqtLiveCurveProfileParamId);
 
@@ -28,6 +30,7 @@ PluginProcessor::PluginProcessor()
     jassert (rmsTimeParameter != nullptr);
     jassert (dbRangeParameter != nullptr);
     jassert (slopeParameter != nullptr);
+    jassert (displayResolutionParameter != nullptr);
     jassert (vqtLiveCurveProfileParameter != nullptr);
 }
 
@@ -87,9 +90,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
 
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { slopeParamId, 1 },
-        "Slope",
+        "Weighting",
         getAnalyzerSlopeChoices(),
         0));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { displayResolutionParamId, 1 },
+        "Display Resolution",
+        getAnalyzerDisplayResolutionChoices(),
+        analyzerDisplayResolutionToIndex (
+            AnalyzerDisplayResolution::highResolution)));
 
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { vqtLiveCurveProfileParamId, 1 },
@@ -222,6 +232,15 @@ float PluginProcessor::getAnalyzerSlopeDbPerOctave() const noexcept
 
     return analyzerSlopeDbPerOctaveFromParameterValue (
         slopeParameter->load (std::memory_order_relaxed));
+}
+
+AnalyzerDisplayResolution PluginProcessor::getAnalyzerDisplayResolution() const noexcept
+{
+    if (displayResolutionParameter == nullptr)
+        return AnalyzerDisplayResolution::highResolution;
+
+    return analyzerDisplayResolutionFromParameterValue (
+        displayResolutionParameter->load (std::memory_order_relaxed));
 }
 
 bool PluginProcessor::isFrequencyDependentAnalyzerResolution() const noexcept

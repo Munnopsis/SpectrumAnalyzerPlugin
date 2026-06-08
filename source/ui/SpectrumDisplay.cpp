@@ -3,6 +3,29 @@
 #include <array>
 #include <cmath>
 
+namespace
+{
+    constexpr float displayMinusInfinityDb = -100.0f;
+
+    float displayDecibelsToGain (float decibels) noexcept
+    {
+        if (!std::isfinite (decibels) || decibels <= displayMinusInfinityDb)
+            return 0.0f;
+
+        return std::pow (10.0f, decibels * 0.05f);
+    }
+
+    float displayGainToDecibels (float gain) noexcept
+    {
+        if (!std::isfinite (gain) || gain <= 0.0f)
+            return displayMinusInfinityDb;
+
+        return juce::jmax (
+            displayMinusInfinityDb,
+            20.0f * std::log10 (gain));
+    }
+}
+
 SpectrumDisplay::SpectrumDisplay()
 {
     setOpaque (true);
@@ -82,12 +105,22 @@ void SpectrumDisplay::setMinimumDecibels (float newMinimumDecibels)
 
 void SpectrumDisplay::setSlopeDbPerOctave (float newSlopeDbPerOctave)
 {
-    const auto clampedSlope = juce::jlimit (0.0f, 12.0f, newSlopeDbPerOctave);
+    const auto clampedSlope = juce::jlimit (-12.0f, 12.0f, newSlopeDbPerOctave);
 
     if (std::abs (slopeDbPerOctave - clampedSlope) < 0.001f)
         return;
 
     slopeDbPerOctave = clampedSlope;
+    repaint();
+}
+
+void SpectrumDisplay::setDisplayResolution (
+    AnalyzerDisplayResolution newResolution)
+{
+    if (displayResolution == newResolution)
+        return;
+
+    displayResolution = newResolution;
     repaint();
 }
 
@@ -455,6 +488,45 @@ bool SpectrumDisplay::getInterpolatedCurveValueDbForDataRange (
     float sourceMaxFrequencyHz,
     float& resultDb) const
 {
+    float displayResolutionDb = 0.0f;
+
+    if (! getDisplayResolutionCurveValueDbForDataRange (values,
+                                                        frequencyHz,
+                                                        sourceMinFrequencyHz,
+                                                        sourceMaxFrequencyHz,
+                                                        displayResolutionDb))
+    {
+        return false;
+    }
+
+    resultDb = applySlopeCorrection (displayResolutionDb, frequencyHz);
+    return true;
+}
+
+float SpectrumDisplay::getDisplayResolutionOctaveWidth() const noexcept
+{
+    switch (displayResolution)
+    {
+        case AnalyzerDisplayResolution::highResolution: return 0.0f;
+        case AnalyzerDisplayResolution::detailed:       return 1.0f / 48.0f;
+        case AnalyzerDisplayResolution::balanced:       return 1.0f / 24.0f;
+        case AnalyzerDisplayResolution::smooth:         return 1.0f / 12.0f;
+        case AnalyzerDisplayResolution::oneSixthOctave: return 1.0f / 6.0f;
+        case AnalyzerDisplayResolution::oneThirdOctave: return 1.0f / 3.0f;
+        case AnalyzerDisplayResolution::octave:         return 1.0f;
+        case AnalyzerDisplayResolution::count:          break;
+    }
+
+    return 0.0f;
+}
+
+bool SpectrumDisplay::getRawInterpolatedCurveValueDbForDataRange (
+    const std::vector<float>& values,
+    float frequencyHz,
+    float sourceMinFrequencyHz,
+    float sourceMaxFrequencyHz,
+    float& resultDb) const
+{
     if (values.size() < 2 || frequencyHz <= 0.0f)
         return false;
 
@@ -477,7 +549,90 @@ bool SpectrumDisplay::getInterpolatedCurveValueDbForDataRange (
     const auto interpolatedDb =
         values[lowerIndex] + alpha * (values[upperIndex] - values[lowerIndex]);
 
-    resultDb = applySlopeCorrection (interpolatedDb, frequencyHz);
+    resultDb = interpolatedDb;
+    return true;
+}
+
+bool SpectrumDisplay::getDisplayResolutionCurveValueDbForDataRange (
+    const std::vector<float>& values,
+    float frequencyHz,
+    float sourceMinFrequencyHz,
+    float sourceMaxFrequencyHz,
+    float& resultDb) const
+{
+    const auto octaveWidth = getDisplayResolutionOctaveWidth();
+
+    if (octaveWidth <= 0.0f)
+    {
+        return getRawInterpolatedCurveValueDbForDataRange (values,
+                                                           frequencyHz,
+                                                           sourceMinFrequencyHz,
+                                                           sourceMaxFrequencyHz,
+                                                           resultDb);
+    }
+
+    if (values.size() < 2 || frequencyHz <= 0.0f)
+        return false;
+
+    if (sourceMinFrequencyHz <= 0.0f || sourceMaxFrequencyHz <= sourceMinFrequencyHz)
+        return false;
+
+    const auto clampedFrequency =
+        juce::jlimit (sourceMinFrequencyHz, sourceMaxFrequencyHz, frequencyHz);
+
+    const auto centreLog2 = std::log2 (clampedFrequency);
+    const auto halfWidth = octaveWidth * 0.5f;
+    const auto minLog2 = centreLog2 - halfWidth;
+    const auto maxLog2 = centreLog2 + halfWidth;
+    auto weightedPowerSum = 0.0f;
+    auto weightSum = 0.0f;
+    const auto maxIndex = values.size() - 1;
+
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        const auto normalisedX =
+            static_cast<float> (i) / static_cast<float> (maxIndex);
+
+        const auto binFrequencyHz =
+            sourceMinFrequencyHz
+            * std::pow (sourceMaxFrequencyHz / sourceMinFrequencyHz, normalisedX);
+
+        if (binFrequencyHz <= 0.0f)
+            continue;
+
+        const auto binLog2 = std::log2 (binFrequencyHz);
+
+        if (binLog2 < minLog2 || binLog2 > maxLog2)
+            continue;
+
+        const auto distance = std::abs (binLog2 - centreLog2);
+        const auto weight =
+            juce::jlimit (0.0f, 1.0f, 1.0f - distance / halfWidth);
+
+        if (weight <= 0.0f)
+            continue;
+
+        const auto binDb =
+            std::isfinite (values[i]) ? values[i] : -100.0f;
+
+        const auto amplitude = displayDecibelsToGain (binDb);
+
+        weightedPowerSum += weight * amplitude * amplitude;
+        weightSum += weight;
+    }
+
+    if (weightSum <= 0.0f)
+    {
+        return getRawInterpolatedCurveValueDbForDataRange (values,
+                                                           frequencyHz,
+                                                           sourceMinFrequencyHz,
+                                                           sourceMaxFrequencyHz,
+                                                           resultDb);
+    }
+
+    const auto meanPower = weightedPowerSum / weightSum;
+    const auto meanAmplitude = std::sqrt (juce::jmax (0.0f, meanPower));
+    resultDb = displayGainToDecibels (meanAmplitude);
     return true;
 }
 

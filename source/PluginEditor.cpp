@@ -6,6 +6,7 @@
 #include "analyzer/AnalyzerRmsTime.h"
 #include "analyzer/AnalyzerDbRange.h"
 #include "analyzer/AnalyzerSlope.h"
+#include "analyzer/AnalyzerDisplayResolution.h"
 #include "analyzer/AnalyzerVqtLiveCurveProfile.h"
 
 PluginEditor::PluginEditor (PluginProcessor& p)
@@ -33,6 +34,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (rmsTimeBox);
     addAndMakeVisible (dbRangeBox);
     addAndMakeVisible (slopeBox);
+    addAndMakeVisible (displayResolutionBox);
     addAndMakeVisible (vqtLiveCurveBox);
 
     inspectButton.setName ("InspectButton");
@@ -50,6 +52,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     rmsTimeBox.setName ("RmsTimeBox");
     dbRangeBox.setName ("DbRangeBox");
     slopeBox.setName ("SlopeBox");
+    displayResolutionBox.setName ("DisplayResolutionBox");
     vqtLiveCurveBox.setName ("VqtLiveCurveBox");
 
     inspectButton.setWantsKeyboardFocus (true);
@@ -67,6 +70,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     rmsTimeBox.setWantsKeyboardFocus (true);
     dbRangeBox.setWantsKeyboardFocus (true);
     slopeBox.setWantsKeyboardFocus (true);
+    displayResolutionBox.setWantsKeyboardFocus (true);
     vqtLiveCurveBox.setWantsKeyboardFocus (true);
 
     inspectButton.setTooltip ("Open the Melatonin UI inspector");
@@ -166,13 +170,25 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     slopeBox.addItemList (getAnalyzerSlopeChoices(), 1);
     slopeBox.setJustificationType (juce::Justification::centred);
-    slopeBox.setTextWhenNothingSelected ("Slope");
-    slopeBox.setTooltip ("Select display-only spectrum slope compensation");
+    slopeBox.setTextWhenNothingSelected ("Weighting");
+    slopeBox.setTooltip (
+        "Display weighting for raw, pink-flat, music-tilt or white-flat spectrum views");
 
     slopeAttachment = std::make_unique<ComboBoxAttachment> (
         state,
         PluginProcessor::slopeParamId,
         slopeBox);
+
+    displayResolutionBox.addItemList (getAnalyzerDisplayResolutionChoices(), 1);
+    displayResolutionBox.setJustificationType (juce::Justification::centred);
+    displayResolutionBox.setTextWhenNothingSelected ("Resolution");
+    displayResolutionBox.setTooltip (
+        "Controls visual analyzer resolution from high-detail to octave-smoothed display");
+
+    displayResolutionAttachment = std::make_unique<ComboBoxAttachment> (
+        state,
+        PluginProcessor::displayResolutionParamId,
+        displayResolutionBox);
 
     vqtLiveCurveBox.addItemList (getAnalyzerVqtLiveCurveProfileChoices(), 1);
     vqtLiveCurveBox.setJustificationType (juce::Justification::centred);
@@ -275,7 +291,10 @@ void PluginEditor::resized()
     dbRangeBox.setBounds (firstRow.removeFromLeft (80));
     addGap (firstRow, 8);
 
-    slopeBox.setBounds (firstRow.removeFromLeft (100));
+    slopeBox.setBounds (firstRow.removeFromLeft (132));
+    addGap (firstRow, 8);
+
+    displayResolutionBox.setBounds (firstRow.removeFromLeft (128));
     addGap (firstRow, 8);
 
     vqtLiveCurveBox.setBounds (firstRow.removeFromLeft (128));
@@ -312,6 +331,8 @@ void PluginEditor::timerCallback()
     spectrumDisplay.setInputLevelDb (processorRef.getInputLevelDb());
     spectrumDisplay.setMinimumDecibels (processorRef.getAnalyzerMinimumDecibels());
     spectrumDisplay.setSlopeDbPerOctave (processorRef.getAnalyzerSlopeDbPerOctave());
+    spectrumDisplay.setDisplayResolution (
+        processorRef.getAnalyzerDisplayResolution());
 
     spectrumDisplay.setCurveVisibility (
         processorRef.shouldShowLiveCurve(),

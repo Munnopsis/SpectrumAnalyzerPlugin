@@ -11,6 +11,7 @@
 #include "analyzer/AnalyzerRmsTime.h"
 #include "analyzer/AnalyzerDbRange.h"
 #include "analyzer/AnalyzerSlope.h"
+#include "analyzer/AnalyzerDisplayResolution.h"
 #include "analyzer/AnalyzerVqtLiveCurveProfile.h"
 
 #if (MSVC)
@@ -79,6 +80,7 @@ public:
     static inline const juce::String rmsTimeParamId { "rmsTime" };
     static inline const juce::String dbRangeParamId { "dbRange" };
     static inline const juce::String slopeParamId { "slope" };
+    static inline const juce::String displayResolutionParamId { "displayResolution" };
     static inline const juce::String vqtLiveCurveProfileParamId { "vqtLiveCurveProfile" };
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept
@@ -108,6 +110,7 @@ public:
 
     float getAnalyzerMinimumDecibels() const noexcept;
     float getAnalyzerSlopeDbPerOctave() const noexcept;
+    AnalyzerDisplayResolution getAnalyzerDisplayResolution() const noexcept;
     bool isFrequencyDependentAnalyzerResolution() const noexcept;
     bool isFrequencyDependentAnalyzerResolutionTuned() const noexcept;
     bool isVqtLikeAnalyzerFilterbank() const noexcept;
@@ -149,6 +152,7 @@ private:
     std::atomic<float>* rmsTimeParameter = nullptr;
     std::atomic<float>* dbRangeParameter = nullptr;
     std::atomic<float>* slopeParameter = nullptr;
+    std::atomic<float>* displayResolutionParameter = nullptr;
     std::atomic<float>* vqtLiveCurveProfileParameter = nullptr;
 
     AnalyzerFifo analyzerFifo;
