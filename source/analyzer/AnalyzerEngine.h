@@ -285,6 +285,9 @@ class AnalyzerEngine : private juce::Thread
         float centerFrequencyHz = 0.0f;
         float bandwidthHz = 0.0f;
         float effectiveQ = 0.0f;
+        float normalisedPosition = 0.0f;
+        float leftDisplayBin = 0.0f;
+        float rightDisplayBin = 0.0f;
         float b0 = 0.0f;
         float b1 = 0.0f;
         float b2 = 0.0f;
@@ -310,6 +313,8 @@ class AnalyzerEngine : private juce::Thread
         float centerFrequencyHz = 0.0f;
         float peakBlend = 0.0f;
         float peakHoldBlend = 0.0f;
+        int analysisBandsUsed = 0;
+        float analysisWeightSum = 0.0f;
 
         bool isConfigured = false;
     };
@@ -495,14 +500,18 @@ class AnalyzerEngine : private juce::Thread
     static constexpr float frequencyDependentTunedLowBandAlignmentMaxLiftDb = 4.5f;
     static constexpr float frequencyDependentTunedLowBandAlignmentMinEnergyDb = -82.0f;
     static constexpr float frequencyDependentTunedLowBandAlignmentFullEnergyDb = -58.0f;
-    static constexpr float vqtLikeBaseQ = 18.0f;
-    static constexpr float vqtLikeMinEffectiveQ = 1.2f;
-    static constexpr float vqtLikeMaxEffectiveQ = 36.0f;
-    static constexpr float vqtLikeLowBandGammaHz = 22.0f;
-    static constexpr float vqtLikeGammaFadeStartHz = 180.0f;
-    static constexpr float vqtLikeGammaFadeEndHz = 1800.0f;
-    static constexpr float vqtLikeMinBandwidthHz = 18.0f;
-    static constexpr float vqtLikeMaxBandwidthFractionOfCenter = 1.25f;
+    static constexpr int vqtLikeAnalysisBandsPerDisplayBin = 3;
+    static constexpr int vqtLikeAnalysisBandCount =
+        displayBinCount * vqtLikeAnalysisBandsPerDisplayBin;
+    static constexpr float vqtLikeResolutionBaseQ = 42.0f;
+    static constexpr float vqtLikeResolutionMinEffectiveQ = 2.5f;
+    static constexpr float vqtLikeResolutionMaxEffectiveQ = 96.0f;
+    static constexpr float vqtLikeResolutionLowBandGammaHz = 4.5f;
+    static constexpr float vqtLikeResolutionGammaFadeStartHz = 70.0f;
+    static constexpr float vqtLikeResolutionGammaFadeEndHz = 850.0f;
+    static constexpr float vqtLikeResolutionMinBandwidthHz = 3.5f;
+    static constexpr float vqtLikeResolutionMaxBandwidthFractionOfCenter = 0.75f;
+    static constexpr float vqtLikeAggregationRadiusDisplayBins = 1.25f;
     static constexpr float vqtLikeEnvelopeAttackSeconds = 0.018f;
     static constexpr float vqtLikeEnvelopeReleaseSeconds = 0.160f;
     static constexpr float vqtLikePeakEnvelopeReleaseSeconds = 0.075f;
@@ -584,6 +593,7 @@ class AnalyzerEngine : private juce::Thread
     FrequencyDependentFftSource frequencyDependentMidBassPath;
     FrequencyDependentFftSource frequencyDependentHighPath;
     FrequencyDependentFftSource frequencyDependentVeryHighPath;
+    // Oversampled internal VQT-like analysis bands, aggregated into display bins.
     std::vector<VqtLikeFilterBand> vqtLikeFilterBands;
     float vqtLikeFilterbankSampleRate = 0.0f;
     float vqtLikeFilterbankMinFrequencyHz = 0.0f;

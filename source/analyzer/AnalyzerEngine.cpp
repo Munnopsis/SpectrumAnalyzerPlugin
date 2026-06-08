@@ -278,7 +278,7 @@ AnalyzerEngine::AnalyzerEngine()
     frequencyDependentTunedLowBandAlignmentAmounts.resize (displayBinCount, 0.0f);
     frequencyDependentTunedLowBandPreviousReferenceDb.resize (displayBinCount, -100.0f);
     frequencyDependentBinPolicySnapshots.resize (static_cast<size_t> (displayBinCount));
-    vqtLikeFilterBands.resize (static_cast<size_t> (displayBinCount));
+    vqtLikeFilterBands.resize (static_cast<size_t> (vqtLikeAnalysisBandCount));
     instantaneousNotePeaks.reserve (maxInstantaneousNotePeaks);
     trackedNotePeaks.reserve (maxInstantaneousNotePeaks);
     currentNotePeaks.reserve (maxPublishedNotePeaks);
@@ -2050,10 +2050,10 @@ void AnalyzerEngine::configureVqtLikeFilterbankIfNeeded()
         return;
 
     const auto needsResize =
-        vqtLikeFilterBands.size() != static_cast<size_t> (displayBinCount);
+        vqtLikeFilterBands.size() != static_cast<size_t> (vqtLikeAnalysisBandCount);
 
     if (needsResize)
-        vqtLikeFilterBands.assign (static_cast<size_t> (displayBinCount), {});
+        vqtLikeFilterBands.assign (static_cast<size_t> (vqtLikeAnalysisBandCount), {});
 
     const auto configurationChanged =
         needsResize
@@ -2065,12 +2065,33 @@ void AnalyzerEngine::configureVqtLikeFilterbankIfNeeded()
     if (!configurationChanged)
         return;
 
-    for (int i = 0; i < displayBinCount; ++i)
+    const auto analysisDenominator =
+        static_cast<float> (juce::jmax (1, vqtLikeAnalysisBandCount - 1));
+
+    for (int i = 0; i < vqtLikeAnalysisBandCount; ++i)
     {
+        const auto normalisedPosition =
+            static_cast<float> (i) / analysisDenominator;
+
+        const auto centerFrequencyHz =
+            logFrequencyAtNormalisedPosition (normalisedPosition,
+                currentDisplayMinFrequencyHz,
+                currentDisplayMaxFrequencyHz);
+
         configureVqtLikeFilterBand (
             vqtLikeFilterBands[static_cast<size_t> (i)],
-            displayBinCenterFrequenciesHz[static_cast<size_t> (i)],
+            centerFrequencyHz,
             sampleRate);
+
+        auto& band = vqtLikeFilterBands[static_cast<size_t> (i)];
+        const auto displayPosition =
+            normalisedPosition * static_cast<float> (displayBinCount - 1);
+        const auto halfAnalysisBandWidthDisplayBins =
+            0.5f / static_cast<float> (vqtLikeAnalysisBandsPerDisplayBin);
+
+        band.normalisedPosition = normalisedPosition;
+        band.leftDisplayBin = displayPosition - halfAnalysisBandWidthDisplayBins;
+        band.rightDisplayBin = displayPosition + halfAnalysisBandWidthDisplayBins;
     }
 
     vqtLikeFilterbankSampleRate = sampleRate;
@@ -2103,31 +2124,31 @@ void AnalyzerEngine::configureVqtLikeFilterBand (
 
     const auto gammaFade =
         smoothLogFrequencyBlend (centerFrequencyHz,
-            vqtLikeGammaFadeStartHz,
-            vqtLikeGammaFadeEndHz);
+            vqtLikeResolutionGammaFadeStartHz,
+            vqtLikeResolutionGammaFadeEndHz);
 
     const auto gammaHz =
-        vqtLikeLowBandGammaHz * (1.0f - gammaFade);
+        vqtLikeResolutionLowBandGammaHz * (1.0f - gammaFade);
 
     auto bandwidthHz =
-        (centerFrequencyHz / vqtLikeBaseQ) + gammaHz;
+        (centerFrequencyHz / vqtLikeResolutionBaseQ) + gammaHz;
 
     const auto maxBandwidthHz =
-        juce::jmax (vqtLikeMinBandwidthHz,
-            juce::jmin (centerFrequencyHz * vqtLikeMaxBandwidthFractionOfCenter,
+        juce::jmax (vqtLikeResolutionMinBandwidthHz,
+            juce::jmin (centerFrequencyHz * vqtLikeResolutionMaxBandwidthFractionOfCenter,
                 nyquist * 0.45f));
 
     bandwidthHz =
-        juce::jlimit (vqtLikeMinBandwidthHz,
+        juce::jlimit (vqtLikeResolutionMinBandwidthHz,
             maxBandwidthHz,
-            std::isfinite (bandwidthHz) ? bandwidthHz : vqtLikeMinBandwidthHz);
+            std::isfinite (bandwidthHz) ? bandwidthHz : vqtLikeResolutionMinBandwidthHz);
 
     auto effectiveQ = centerFrequencyHz / bandwidthHz;
 
     effectiveQ =
-        juce::jlimit (vqtLikeMinEffectiveQ,
-            vqtLikeMaxEffectiveQ,
-            std::isfinite (effectiveQ) ? effectiveQ : vqtLikeMinEffectiveQ);
+        juce::jlimit (vqtLikeResolutionMinEffectiveQ,
+            vqtLikeResolutionMaxEffectiveQ,
+            std::isfinite (effectiveQ) ? effectiveQ : vqtLikeResolutionMinEffectiveQ);
 
     bandwidthHz = centerFrequencyHz / effectiveQ;
 
@@ -2168,7 +2189,7 @@ void AnalyzerEngine::processVqtLikeFilterbankSamples (
 {
     if (samples == nullptr
         || numSamples <= 0
-        || vqtLikeFilterBands.size() != static_cast<size_t> (displayBinCount))
+        || vqtLikeFilterBands.size() != static_cast<size_t> (vqtLikeAnalysisBandCount))
     {
         return;
     }
@@ -2325,26 +2346,80 @@ AnalyzerEngine::VqtLikeDisplayBinStats
 {
     VqtLikeDisplayBinStats result;
 
-    if (vqtLikeFilterBands.size() <= displayBinIndex)
+    if (displayBinIndex >= static_cast<size_t> (displayBinCount)
+        || vqtLikeFilterBands.size() != static_cast<size_t> (vqtLikeAnalysisBandCount))
         return result;
 
-    const auto& band = vqtLikeFilterBands[displayBinIndex];
+    const auto displayDenominator =
+        static_cast<float> (juce::jmax (1, displayBinCount - 1));
 
-    if (!band.isConfigured)
+    const auto displayPosition =
+        static_cast<float> (displayBinIndex) / displayDenominator;
+
+    const auto displayBinWidth =
+        1.0f / displayDenominator;
+
+    auto weightedMeanPower = 0.0f;
+    auto weightedPeakPower = 0.0f;
+    auto weightSum = 0.0f;
+    auto analysisBandsUsed = 0;
+
+    for (const auto& band : vqtLikeFilterBands)
+    {
+        if (!band.isConfigured
+            || !std::isfinite (band.normalisedPosition)
+            || !std::isfinite (band.centerFrequencyHz)
+            || band.centerFrequencyHz <= 0.0f)
+        {
+            continue;
+        }
+
+        const auto distanceDisplayBins =
+            std::abs ((band.normalisedPosition - displayPosition) / displayBinWidth);
+
+        if (!std::isfinite (distanceDisplayBins)
+            || distanceDisplayBins > vqtLikeAggregationRadiusDisplayBins)
+        {
+            continue;
+        }
+
+        const auto weight =
+            1.0f
+            - (distanceDisplayBins / vqtLikeAggregationRadiusDisplayBins);
+
+        if (!std::isfinite (weight) || weight <= 0.0f)
+            continue;
+
+        const auto bandMeanPower =
+            juce::jlimit (0.0f,
+                vqtLikeMaxDisplayPower,
+                std::isfinite (band.power) ? band.power : 0.0f);
+
+        const auto bandPeakPower =
+            juce::jlimit (0.0f,
+                vqtLikeMaxDisplayPower,
+                std::isfinite (band.peakPower) ? band.peakPower : bandMeanPower);
+
+        weightedMeanPower += bandMeanPower * weight;
+        weightedPeakPower += bandPeakPower * weight;
+        weightSum += weight;
+        ++analysisBandsUsed;
+    }
+
+    if (weightSum <= 0.0f || analysisBandsUsed <= 0)
         return result;
 
-    if (!std::isfinite (band.centerFrequencyHz) || band.centerFrequencyHz <= 0.0f)
-        return result;
-
-    const auto meanPower =
+    auto meanPower =
         juce::jlimit (0.0f,
             vqtLikeMaxDisplayPower,
-            std::isfinite (band.power) ? band.power : 0.0f);
+            weightedMeanPower / weightSum);
 
-    const auto peakPower =
-        juce::jlimit (meanPower,
+    auto peakPower =
+        juce::jlimit (0.0f,
             vqtLikeMaxDisplayPower,
-            std::isfinite (band.peakPower) ? band.peakPower : meanPower);
+            weightedPeakPower / weightSum);
+
+    peakPower = juce::jmax (peakPower, meanPower);
 
     if (meanPower < vqtLikeMinimumUsefulPower
         && peakPower < vqtLikeMinimumUsefulPower)
@@ -2352,14 +2427,28 @@ AnalyzerEngine::VqtLikeDisplayBinStats
         return result;
     }
 
+    auto centerFrequencyHz =
+        logFrequencyAtNormalisedPosition (displayPosition,
+            currentDisplayMinFrequencyHz,
+            currentDisplayMaxFrequencyHz);
+
+    if (displayBinCenterFrequenciesHz.size() == static_cast<size_t> (displayBinCount))
+    {
+        const auto displayCenterFrequencyHz =
+            displayBinCenterFrequenciesHz[displayBinIndex];
+
+        if (std::isfinite (displayCenterFrequencyHz) && displayCenterFrequencyHz > 0.0f)
+            centerFrequencyHz = displayCenterFrequencyHz;
+    }
+
     const auto livePeakBlend =
-        getVqtLikePeakBlendForFrequency (band.centerFrequencyHz,
+        getVqtLikePeakBlendForFrequency (centerFrequencyHz,
             vqtLikeLivePeakBlendLow,
             vqtLikeLivePeakBlendMid,
             vqtLikeLivePeakBlendHigh);
 
     const auto peakHoldPeakBlend =
-        getVqtLikePeakBlendForFrequency (band.centerFrequencyHz,
+        getVqtLikePeakBlendForFrequency (centerFrequencyHz,
             vqtLikePeakHoldPeakBlendLow,
             vqtLikePeakHoldPeakBlendMid,
             vqtLikePeakHoldPeakBlendHigh);
@@ -2377,9 +2466,11 @@ AnalyzerEngine::VqtLikeDisplayBinStats
     result.metricStats = { meanPower, meanPower, 1 };
     result.liveVisualStats = { livePower, livePower, 1 };
     result.peakHoldVisualStats = { peakHoldPower, peakHoldPower, 1 };
-    result.centerFrequencyHz = band.centerFrequencyHz;
+    result.centerFrequencyHz = centerFrequencyHz;
     result.peakBlend = livePeakBlend;
     result.peakHoldBlend = peakHoldPeakBlend;
+    result.analysisBandsUsed = analysisBandsUsed;
+    result.analysisWeightSum = weightSum;
     result.isConfigured = true;
 
     return result;
@@ -2707,7 +2798,7 @@ void AnalyzerEngine::processOneFftBlock()
     }
 
     if (currentVqtLikeFilterbankEnabled
-        && vqtLikeFilterBands.size() != static_cast<size_t> (displayBinCount))
+        && vqtLikeFilterBands.size() != static_cast<size_t> (vqtLikeAnalysisBandCount))
     {
         return;
     }
