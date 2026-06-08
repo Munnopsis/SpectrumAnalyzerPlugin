@@ -315,6 +315,56 @@ void AnalyzerEngine::prepare (double sampleRate, AnalyzerFifo& fifoToReadFrom)
 
     configureFft (requestedFftOrder.load (std::memory_order_relaxed));
     reset();
+
+    if constexpr (enableVqtLikeInternalValidation)
+    {
+        static bool hasRunVqtValidation = false;
+
+        if (!hasRunVqtValidation)
+        {
+            hasRunVqtValidation = true;
+
+            updateDisplayBinFftRangesIfNeeded();
+            runVqtLikeInternalCalibrationValidation();
+
+            juce::StringArray lines;
+
+            lines.add ("================ VQT-like internal validation ================");
+            lines.add ("Result count: " + juce::String (static_cast<int> (lastVqtLikeValidationResults.size())));
+
+            for (const auto& result : lastVqtLikeValidationResults)
+            {
+                lines.add ("------------------------------------------------------------");
+                lines.add ("targetFrequencyHz: " + juce::String (result.targetFrequencyHz));
+                lines.add ("measuredPeakFrequencyHz: " + juce::String (result.measuredPeakFrequencyHz));
+                lines.add ("expectedDb: " + juce::String (result.expectedDb));
+                lines.add ("measuredMetricDb: " + juce::String (result.measuredMetricDb));
+                lines.add ("measuredLiveDb: " + juce::String (result.measuredLiveDb));
+                lines.add ("metricErrorDb: " + juce::String (result.metricErrorDb));
+                lines.add ("liveErrorDb: " + juce::String (result.liveErrorDb));
+                lines.add ("peakWidthBinsAboveMinus3Db: " + juce::String (result.peakWidthBinsAboveMinus3Db));
+                lines.add ("peakWidthHzAboveMinus3Db: " + juce::String (result.peakWidthHzAboveMinus3Db));
+                lines.add ("averageAbsMetricReferenceErrorDb: " + juce::String (result.averageAbsMetricReferenceErrorDb));
+                lines.add ("maxAbsMetricReferenceErrorDb: " + juce::String (result.maxAbsMetricReferenceErrorDb));
+                lines.add ("isValid: " + juce::String (static_cast<int> (result.isValid)));
+            }
+
+            lines.add ("================ end VQT-like validation =====================");
+
+            const auto outputFile =
+                juce::File::getSpecialLocation (juce::File::userDesktopDirectory)
+                    .getChildFile ("VQT_like_validation_results.txt");
+
+            const auto writeSucceeded =
+                outputFile.replaceWithText (lines.joinIntoString ("\n"));
+
+            juce::Logger::writeToLog ("VQT-like validation output path: "
+                                      + outputFile.getFullPathName());
+
+            juce::Logger::writeToLog ("VQT-like validation file write success: "
+                                      + juce::String (static_cast<int> (writeSucceeded)));
+        }
+    }
 }
 
 void AnalyzerEngine::reset()
@@ -1399,36 +1449,36 @@ AnalyzerEngine::DisplayBinPowerStats AnalyzerEngine::applyFrequencyDependentTran
 float AnalyzerEngine::getFrequencyDependentTransientAttackBlend() const noexcept
 {
     return currentFrequencyDependentTunedResolutionEnabled
-        ? frequencyDependentTunedTransientAttackBlend
-        : frequencyDependentTransientAttackBlend;
+               ? frequencyDependentTunedTransientAttackBlend
+               : frequencyDependentTransientAttackBlend;
 }
 
 float AnalyzerEngine::getFrequencyDependentTransientTailSuppressBlend() const noexcept
 {
     return currentFrequencyDependentTunedResolutionEnabled
-        ? frequencyDependentTunedTransientTailSuppressBlend
-        : frequencyDependentTransientTailSuppressBlend;
+               ? frequencyDependentTunedTransientTailSuppressBlend
+               : frequencyDependentTransientTailSuppressBlend;
 }
 
 float AnalyzerEngine::getFrequencyDependentTransientAssistReleaseSeconds() const noexcept
 {
     return currentFrequencyDependentTunedResolutionEnabled
-        ? frequencyDependentTunedTransientAssistReleaseSeconds
-        : frequencyDependentTransientAssistReleaseSeconds;
+               ? frequencyDependentTunedTransientAssistReleaseSeconds
+               : frequencyDependentTransientAssistReleaseSeconds;
 }
 
 float AnalyzerEngine::getFrequencyDependentLowBassTailReleaseTimeSeconds() const noexcept
 {
     return currentFrequencyDependentTunedResolutionEnabled
-        ? frequencyDependentTunedLowBassTailReleaseTimeSeconds
-        : frequencyDependentLowBassTailReleaseTimeSeconds;
+               ? frequencyDependentTunedLowBassTailReleaseTimeSeconds
+               : frequencyDependentLowBassTailReleaseTimeSeconds;
 }
 
 float AnalyzerEngine::getFrequencyDependentVeryHighReleaseTimeSeconds() const noexcept
 {
     return currentFrequencyDependentTunedResolutionEnabled
-        ? frequencyDependentTunedVeryHighReleaseTimeSeconds
-        : frequencyDependentVeryHighReleaseTimeSeconds;
+               ? frequencyDependentTunedVeryHighReleaseTimeSeconds
+               : frequencyDependentVeryHighReleaseTimeSeconds;
 }
 
 AnalyzerEngine::FrequencyDependentLiveAssistResult
@@ -1541,7 +1591,7 @@ AnalyzerEngine::FrequencyDependentTunedLowBandAlignmentResult
     FrequencyDependentTunedLowBandAlignmentResult result;
     result.liveVisualStats = liveVisualStats;
 
-    const auto resetStoredState = [&] () noexcept {
+    const auto resetStoredState = [&]() noexcept {
         storedAlignmentAmount = 0.0f;
         storedPreviousReferenceDb = -100.0f;
         result.alignmentAmount = 0.0f;
@@ -2113,8 +2163,7 @@ void AnalyzerEngine::accumulateVqtLikeFrameSummary (
 
 void AnalyzerEngine::finalizeVqtLikeFrameSummary() noexcept
 {
-    const auto sanitizeDiagnosticValue = [] (float value) noexcept
-    {
+    const auto sanitizeDiagnosticValue = [] (float value) noexcept {
         return std::isfinite (value) ? value : 0.0f;
     };
 
@@ -2276,7 +2325,7 @@ void AnalyzerEngine::configureVqtLikeFilterbankIfNeeded()
     resetVqtLikeFilterbankState();
 }
 
-float AnalyzerEngine::powerToAnalyzerDb(float power) const noexcept
+float AnalyzerEngine::powerToAnalyzerDb (float power) const noexcept
 {
     const auto safePower =
         juce::jmax (0.0f, std::isfinite (power) ? power : 0.0f);
@@ -2395,21 +2444,53 @@ float AnalyzerEngine::getVqtLikeLayerCalibrationPowerGain (
 float AnalyzerEngine::getVqtLikeTonalCalibrationTrimForFrequency (
     float frequencyHz) const noexcept
 {
-    juce::ignoreUnused (frequencyHz);
-    return 1.0f;
+    if (!std::isfinite (frequencyHz) || frequencyHz <= 0.0f)
+        return 1.0f;
+
+    auto trimDb = 0.0f;
+
+    const auto subBassFadeOut =
+        1.0f - smoothLogFrequencyBlend (frequencyHz, 35.0f, 120.0f);
+    trimDb += subBassFadeOut * 1.0f;
+
+    const auto highFadeIn =
+        smoothLogFrequencyBlend (frequencyHz, 8000.0f, 16000.0f);
+    trimDb += highFadeIn * -0.75f;
+
+    trimDb = juce::jlimit (-1.5f, 1.5f, std::isfinite (trimDb) ? trimDb : 0.0f);
+
+    return juce::Decibels::decibelsToGain (trimDb);
 }
 
 float AnalyzerEngine::getVqtLikeFastCalibrationTrimForFrequency (
     float frequencyHz) const noexcept
 {
-    juce::ignoreUnused (frequencyHz);
-    return 1.0f;
+    if (!std::isfinite (frequencyHz) || frequencyHz <= 0.0f)
+        return 1.0f;
+
+    auto trimDb = 0.0f;
+
+    const auto lowFadeOut =
+        1.0f - smoothLogFrequencyBlend (frequencyHz, 60.0f, 180.0f);
+    trimDb += lowFadeOut * -1.0f;
+
+    const auto highFadeIn =
+        smoothLogFrequencyBlend (frequencyHz, 6000.0f, 14000.0f);
+    trimDb += highFadeIn * 0.5f;
+
+    trimDb = juce::jlimit (-2.0f, 1.0f, std::isfinite (trimDb) ? trimDb : 0.0f);
+
+    return juce::Decibels::decibelsToGain (trimDb);
 }
 
 float AnalyzerEngine::getVqtLikeNoiseDensityTrimForFrequency (
     float frequencyHz) const noexcept
 {
     juce::ignoreUnused (frequencyHz);
+
+    // Kept neutral for now. Noise-density compensation needs a measured
+    // calibration pass because it affects broad-band material differently
+    // than sine calibration.
     return 1.0f;
 }
 
@@ -2536,17 +2617,17 @@ bool AnalyzerEngine::configureVqtLikeBandpassLayer (
         getVqtLikeLayerCalibrationPowerGain (outCenterGain, calibrationTrim);
 
     return std::isfinite (outBandwidthHz)
-        && std::isfinite (outEffectiveQ)
-        && outEffectiveQ > 0.0f
-        && std::isfinite (outB0)
-        && std::isfinite (outB1)
-        && std::isfinite (outB2)
-        && std::isfinite (outA1)
-        && std::isfinite (outA2)
-        && std::abs (outA2) < 1.0f
-        && std::isfinite (outCenterGain)
-        && std::isfinite (outEquivalentBandwidthHz)
-        && std::isfinite (outCalibrationPowerGain);
+           && std::isfinite (outEffectiveQ)
+           && outEffectiveQ > 0.0f
+           && std::isfinite (outB0)
+           && std::isfinite (outB1)
+           && std::isfinite (outB2)
+           && std::isfinite (outA1)
+           && std::isfinite (outA2)
+           && std::abs (outA2) < 1.0f
+           && std::isfinite (outCenterGain)
+           && std::isfinite (outEquivalentBandwidthHz)
+           && std::isfinite (outCalibrationPowerGain);
 }
 
 void AnalyzerEngine::configureVqtLikeFilterBand (
@@ -2679,8 +2760,7 @@ void AnalyzerEngine::processVqtLikeFilterbankSamples (
             float& powerState,
             float& peakPowerState,
             float& lastFramePowerState,
-            float& lastFramePeakPowerState) noexcept
-        {
+            float& lastFramePeakPowerState) noexcept {
             if (!std::isfinite (b0)
                 || !std::isfinite (b1)
                 || !std::isfinite (b2)
@@ -3304,6 +3384,381 @@ AnalyzerEngine::VqtLikeDisplayBinStats
     return result;
 }
 
+void AnalyzerEngine::generateVqtLikeValidationSignal (
+    const VqtLikeValidationSignalSpec& spec,
+    float sampleRate,
+    std::vector<float>& outputBuffer) const
+{
+    outputBuffer.clear();
+
+    if (!std::isfinite (sampleRate) || sampleRate <= 0.0f)
+        return;
+
+    const auto safeDurationSeconds =
+        juce::jlimit (0.05f, 10.0f, std::isfinite (spec.durationSeconds) ? spec.durationSeconds : 1.0f);
+
+    const auto numSamples =
+        juce::jmax (1, static_cast<int> (std::ceil (safeDurationSeconds * sampleRate)));
+
+    outputBuffer.assign (static_cast<size_t> (numSamples), 0.0f);
+
+    const auto nyquist = sampleRate * 0.5f;
+    const auto levelGain =
+        juce::Decibels::decibelsToGain (
+            juce::jlimit (-120.0f, 0.0f, std::isfinite (spec.levelDb) ? spec.levelDb : -18.0f));
+
+    const auto clampFrequency = [nyquist] (float frequencyHz, float fallbackHz) noexcept {
+        const auto safeFrequency =
+            std::isfinite (frequencyHz) && frequencyHz > 0.0f ? frequencyHz : fallbackHz;
+
+        return juce::jlimit (1.0f, nyquist * 0.95f, safeFrequency);
+    };
+
+    auto randomState = spec.randomSeed != 0u ? spec.randomSeed : 0x12345678u;
+    const auto nextRandomBipolar = [&randomState]() noexcept {
+        randomState = randomState * 1664525u + 1013904223u;
+        const auto normalised =
+            static_cast<float> ((randomState >> 8) & 0x00ffffffu)
+            / static_cast<float> (0x00ffffffu);
+
+        return normalised * 2.0f - 1.0f;
+    };
+
+    switch (spec.type)
+    {
+        case VqtLikeValidationSignalSpec::Type::sine:
+        {
+            const auto frequencyHz = clampFrequency (spec.frequencyHz, 1000.0f);
+            const auto phaseAdvance =
+                juce::MathConstants<float>::twoPi * frequencyHz / sampleRate;
+            auto phase = 0.0f;
+
+            for (auto& sample : outputBuffer)
+            {
+                sample = levelGain * std::sin (phase);
+                phase += phaseAdvance;
+
+                if (phase > juce::MathConstants<float>::twoPi)
+                    phase -= juce::MathConstants<float>::twoPi;
+            }
+
+            break;
+        }
+
+        case VqtLikeValidationSignalSpec::Type::dualSine:
+        {
+            const auto firstFrequencyHz = clampFrequency (spec.frequencyHz, 80.0f);
+            const auto secondFrequencyHz =
+                clampFrequency (spec.secondFrequencyHz > 0.0f
+                                    ? spec.secondFrequencyHz
+                                    : spec.frequencyHz * 1.1f,
+                    firstFrequencyHz * 1.1f);
+            const auto firstPhaseAdvance =
+                juce::MathConstants<float>::twoPi * firstFrequencyHz / sampleRate;
+            const auto secondPhaseAdvance =
+                juce::MathConstants<float>::twoPi * secondFrequencyHz / sampleRate;
+            auto firstPhase = 0.0f;
+            auto secondPhase = 0.0f;
+
+            for (auto& sample : outputBuffer)
+            {
+                sample =
+                    0.5f * levelGain
+                    * (std::sin (firstPhase) + std::sin (secondPhase));
+
+                firstPhase += firstPhaseAdvance;
+                secondPhase += secondPhaseAdvance;
+
+                if (firstPhase > juce::MathConstants<float>::twoPi)
+                    firstPhase -= juce::MathConstants<float>::twoPi;
+
+                if (secondPhase > juce::MathConstants<float>::twoPi)
+                    secondPhase -= juce::MathConstants<float>::twoPi;
+            }
+
+            break;
+        }
+
+        case VqtLikeValidationSignalSpec::Type::whiteNoise:
+        {
+            for (auto& sample : outputBuffer)
+                sample = levelGain * nextRandomBipolar();
+
+            break;
+        }
+
+        case VqtLikeValidationSignalSpec::Type::pinkNoise:
+        {
+            auto b0 = 0.0f;
+            auto b1 = 0.0f;
+            auto b2 = 0.0f;
+
+            for (auto& sample : outputBuffer)
+            {
+                const auto white = nextRandomBipolar();
+                b0 = 0.99765f * b0 + white * 0.0990460f;
+                b1 = 0.96300f * b1 + white * 0.2965164f;
+                b2 = 0.57000f * b2 + white * 1.0526913f;
+
+                const auto pink = (b0 + b1 + b2 + white * 0.1848f) * 0.20f;
+                sample = levelGain * juce::jlimit (-1.0f, 1.0f, pink);
+            }
+
+            break;
+        }
+
+        case VqtLikeValidationSignalSpec::Type::logarithmicSweep:
+        {
+            const auto startHz = clampFrequency (spec.sweepStartHz, 20.0f);
+            const auto endHz =
+                juce::jmax (startHz + 1.0f, clampFrequency (spec.sweepEndHz, 20000.0f));
+            const auto logRatio = std::log (endHz / startHz);
+            auto phase = 0.0f;
+
+            for (int sampleIndex = 0; sampleIndex < numSamples; ++sampleIndex)
+            {
+                const auto t =
+                    static_cast<float> (sampleIndex)
+                    / static_cast<float> (juce::jmax (1, numSamples - 1));
+                const auto frequencyHz = startHz * std::exp (logRatio * t);
+                phase += juce::MathConstants<float>::twoPi * frequencyHz / sampleRate;
+                outputBuffer[static_cast<size_t> (sampleIndex)] = levelGain * std::sin (phase);
+
+                if (phase > juce::MathConstants<float>::twoPi)
+                    phase = std::fmod (phase, juce::MathConstants<float>::twoPi);
+            }
+
+            break;
+        }
+    }
+}
+
+AnalyzerEngine::VqtLikeValidationResult AnalyzerEngine::runVqtLikeValidationSignal (
+    const VqtLikeValidationSignalSpec& spec,
+    float sampleRate)
+{
+    VqtLikeValidationResult result;
+    result.spec = spec;
+
+    const auto validationSampleRate =
+        std::isfinite (sampleRate) && sampleRate > 0.0f ? sampleRate : 48000.0f;
+
+    const auto savedFilterBands = vqtLikeFilterBands;
+    const auto savedFilterbankSampleRate = vqtLikeFilterbankSampleRate;
+    const auto savedFilterbankMinFrequencyHz = vqtLikeFilterbankMinFrequencyHz;
+    const auto savedFilterbankMaxFrequencyHz = vqtLikeFilterbankMaxFrequencyHz;
+    const auto savedFilterbankNeedsReset = vqtLikeFilterbankNeedsReset;
+    const auto savedCurrentSampleRate = currentSampleRate;
+    const auto savedDisplayMinFrequencyHz = currentDisplayMinFrequencyHz;
+    const auto savedDisplayMaxFrequencyHz = currentDisplayMaxFrequencyHz;
+    const auto savedDisplayCenters = displayBinCenterFrequenciesHz;
+    const auto savedFrameSummary = vqtLikeFrameSummary;
+
+    currentSampleRate = validationSampleRate;
+    currentDisplayMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
+    currentDisplayMaxFrequencyHz =
+        AnalyzerFrequencyRange::getMaximumHzForSampleRate (validationSampleRate);
+
+    if (currentDisplayMaxFrequencyHz <= currentDisplayMinFrequencyHz)
+        currentDisplayMaxFrequencyHz = currentDisplayMinFrequencyHz + 1.0f;
+
+    if (displayBinCenterFrequenciesHz.size() != static_cast<size_t> (displayBinCount))
+        displayBinCenterFrequenciesHz.resize (static_cast<size_t> (displayBinCount), 0.0f);
+
+    const auto displayDenominator = static_cast<float> (juce::jmax (1, displayBinCount - 1));
+
+    for (int i = 0; i < displayBinCount; ++i)
+    {
+        const auto normalisedPosition = static_cast<float> (i) / displayDenominator;
+        displayBinCenterFrequenciesHz[static_cast<size_t> (i)] =
+            logFrequencyAtNormalisedPosition (normalisedPosition,
+                currentDisplayMinFrequencyHz,
+                currentDisplayMaxFrequencyHz);
+    }
+
+    vqtLikeFilterbankSampleRate = 0.0f;
+    vqtLikeFilterbankMinFrequencyHz = 0.0f;
+    vqtLikeFilterbankMaxFrequencyHz = 0.0f;
+    vqtLikeFilterbankNeedsReset = true;
+    configureVqtLikeFilterbankIfNeeded();
+    resetVqtLikeFilterbankState();
+
+    std::vector<float> validationSignal;
+    generateVqtLikeValidationSignal (spec, validationSampleRate, validationSignal);
+
+    const auto validationHopSize =
+        juce::jmax (1,
+            juce::jmin ((1 << defaultFftOrder) / fftOverlapFactor,
+                maximumFftHopSizeSamples));
+
+    for (size_t offset = 0; offset < validationSignal.size();
+        offset += static_cast<size_t> (validationHopSize))
+    {
+        const auto remainingSamples = validationSignal.size() - offset;
+        const auto samplesThisBlock =
+            static_cast<int> (juce::jmin (remainingSamples,
+                static_cast<size_t> (validationHopSize)));
+        const auto frameAdvanceSeconds =
+            static_cast<float> (samplesThisBlock) / validationSampleRate;
+
+        processVqtLikeFilterbankSamples (validationSignal.data() + offset,
+            samplesThisBlock,
+            frameAdvanceSeconds);
+    }
+
+    auto metricDbByDisplayBin =
+        std::vector<float> (static_cast<size_t> (displayBinCount), -100.0f);
+
+    auto peakBinIndex = -1;
+    auto peakMetricDb = -100.0f;
+    auto peakLiveDb = -100.0f;
+
+    resetVqtLikeFrameSummary();
+
+    for (int i = 0; i < displayBinCount; ++i)
+    {
+        const auto stats = getVqtLikeDisplayBinStats (static_cast<size_t> (i));
+        accumulateVqtLikeFrameSummary (stats);
+
+        if (!stats.isConfigured)
+            continue;
+
+        const auto metricDb = powerToAnalyzerDb (stats.metricStats.meanPower);
+        const auto liveDb = displayBinPowerStatsToDb (stats.liveVisualStats);
+        metricDbByDisplayBin[static_cast<size_t> (i)] = metricDb;
+
+        if (metricDb > peakMetricDb)
+        {
+            peakMetricDb = metricDb;
+            peakLiveDb = liveDb;
+            peakBinIndex = i;
+        }
+    }
+
+    finalizeVqtLikeFrameSummary();
+
+    auto targetFrequencyHz = spec.frequencyHz;
+    if (spec.type == VqtLikeValidationSignalSpec::Type::logarithmicSweep)
+        targetFrequencyHz = std::sqrt (spec.sweepStartHz * spec.sweepEndHz);
+    else if (spec.type == VqtLikeValidationSignalSpec::Type::whiteNoise
+             || spec.type == VqtLikeValidationSignalSpec::Type::pinkNoise)
+        targetFrequencyHz = 1000.0f;
+
+    if (!std::isfinite (targetFrequencyHz) || targetFrequencyHz <= 0.0f)
+        targetFrequencyHz = 1000.0f;
+
+    result.targetFrequencyHz = targetFrequencyHz;
+    result.expectedDb = juce::jlimit (-100.0f, 0.0f, spec.levelDb);
+
+    if (spec.type == VqtLikeValidationSignalSpec::Type::dualSine)
+        result.expectedDb = juce::jlimit (-100.0f, 0.0f, spec.levelDb - 6.0206f);
+
+    if (peakBinIndex >= 0)
+    {
+        result.measuredPeakFrequencyHz =
+            displayBinCenterFrequenciesHz[static_cast<size_t> (peakBinIndex)];
+        result.measuredMetricDb = peakMetricDb;
+        result.measuredLiveDb = peakLiveDb;
+        result.metricErrorDb =
+            juce::jlimit (-60.0f, 60.0f, result.measuredMetricDb - result.expectedDb);
+        result.liveErrorDb =
+            juce::jlimit (-60.0f, 60.0f, result.measuredLiveDb - result.expectedDb);
+
+        const auto widthThresholdDb = peakMetricDb - 3.0f;
+        auto leftBin = peakBinIndex;
+        auto rightBin = peakBinIndex;
+
+        while (leftBin > 0
+               && metricDbByDisplayBin[static_cast<size_t> (leftBin - 1)] >= widthThresholdDb)
+        {
+            --leftBin;
+        }
+
+        while (rightBin + 1 < displayBinCount
+               && metricDbByDisplayBin[static_cast<size_t> (rightBin + 1)] >= widthThresholdDb)
+        {
+            ++rightBin;
+        }
+
+        result.peakWidthBinsAboveMinus3Db =
+            static_cast<float> (rightBin - leftBin + 1);
+
+        const auto leftFrequencyHz = displayBinCenterFrequenciesHz[static_cast<size_t> (leftBin)];
+        const auto rightFrequencyHz = displayBinCenterFrequenciesHz[static_cast<size_t> (rightBin)];
+        result.peakWidthHzAboveMinus3Db =
+            juce::jmax (0.0f, rightFrequencyHz - leftFrequencyHz);
+
+        result.isValid = true;
+    }
+
+    result.averageMetricReferenceErrorDb =
+        vqtLikeFrameSummary.averageMetricReferenceErrorDb;
+    result.averageAbsMetricReferenceErrorDb =
+        vqtLikeFrameSummary.averageAbsMetricReferenceErrorDb;
+    result.maxAbsMetricReferenceErrorDb =
+        vqtLikeFrameSummary.maxAbsMetricReferenceErrorDb;
+
+    vqtLikeFilterBands = savedFilterBands;
+    vqtLikeFilterbankSampleRate = savedFilterbankSampleRate;
+    vqtLikeFilterbankMinFrequencyHz = savedFilterbankMinFrequencyHz;
+    vqtLikeFilterbankMaxFrequencyHz = savedFilterbankMaxFrequencyHz;
+    vqtLikeFilterbankNeedsReset = savedFilterbankNeedsReset;
+    currentSampleRate = savedCurrentSampleRate;
+    currentDisplayMinFrequencyHz = savedDisplayMinFrequencyHz;
+    currentDisplayMaxFrequencyHz = savedDisplayMaxFrequencyHz;
+    displayBinCenterFrequenciesHz = savedDisplayCenters;
+    vqtLikeFrameSummary = savedFrameSummary;
+
+    return result;
+}
+
+void AnalyzerEngine::runVqtLikeInternalCalibrationValidation()
+{
+    if (!enableVqtLikeInternalValidation)
+        return;
+
+    const auto validationSampleRate =
+        currentSampleRate > 0.0 ? static_cast<float> (currentSampleRate) : 48000.0f;
+
+    using ValidationType = VqtLikeValidationSignalSpec::Type;
+
+    std::vector<VqtLikeValidationSignalSpec> specs;
+    specs.reserve (9);
+
+    auto makeSpec = [] (ValidationType type,
+                        float frequencyHz,
+                        float secondFrequencyHz,
+                        float levelDb) {
+        VqtLikeValidationSignalSpec spec;
+        spec.type = type;
+        spec.frequencyHz = frequencyHz;
+        spec.secondFrequencyHz = secondFrequencyHz;
+        spec.levelDb = levelDb;
+        spec.durationSeconds = 1.0f;
+        return spec;
+    };
+
+    specs.push_back (makeSpec (ValidationType::sine, 50.0f, 0.0f, -18.0f));
+    specs.push_back (makeSpec (ValidationType::sine, 80.0f, 0.0f, -18.0f));
+    specs.push_back (makeSpec (ValidationType::sine, 1000.0f, 0.0f, -18.0f));
+    specs.push_back (makeSpec (ValidationType::sine, 10000.0f, 0.0f, -18.0f));
+    specs.push_back (makeSpec (ValidationType::dualSine, 50.0f, 55.0f, -18.0f));
+    specs.push_back (makeSpec (ValidationType::dualSine, 80.0f, 90.0f, -18.0f));
+    specs.push_back (makeSpec (ValidationType::whiteNoise, 1000.0f, 0.0f, -24.0f));
+    specs.push_back (makeSpec (ValidationType::pinkNoise, 1000.0f, 0.0f, -24.0f));
+
+    auto sweepSpec = makeSpec (ValidationType::logarithmicSweep, 1000.0f, 0.0f, -24.0f);
+    sweepSpec.sweepStartHz = 20.0f;
+    sweepSpec.sweepEndHz = 20000.0f;
+    specs.push_back (sweepSpec);
+
+    lastVqtLikeValidationResults.clear();
+    lastVqtLikeValidationResults.reserve (specs.size());
+
+    for (const auto& spec : specs)
+        lastVqtLikeValidationResults.push_back (runVqtLikeValidationSignal (spec, validationSampleRate));
+}
+
 int AnalyzerEngine::getFftHopSize() const noexcept
 {
     return juce::jmax (1,
@@ -3679,13 +4134,13 @@ void AnalyzerEngine::processOneFftBlock()
 
     const auto veryHighReleaseSmoothing =
         smoothingCoefficientForTimeConstant (
-        frameAdvanceSeconds,
-        getFrequencyDependentVeryHighReleaseTimeSeconds());
+            frameAdvanceSeconds,
+            getFrequencyDependentVeryHighReleaseTimeSeconds());
 
     const auto transientAssistReleaseSmoothing =
         smoothingCoefficientForTimeConstant (
-        frameAdvanceSeconds,
-        getFrequencyDependentTransientAssistReleaseSeconds());
+            frameAdvanceSeconds,
+            getFrequencyDependentTransientAssistReleaseSeconds());
 
     const auto tunedLowBandAlignmentReleaseSmoothing =
         smoothingCoefficientForTimeConstant (

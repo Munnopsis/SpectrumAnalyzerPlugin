@@ -8,6 +8,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -400,6 +401,53 @@ class AnalyzerEngine : private juce::Thread
         float referenceComparisonBinRatio = 0.0f;
     };
 
+    struct VqtLikeValidationSignalSpec
+    {
+        enum class Type
+        {
+            sine,
+            dualSine,
+            whiteNoise,
+            pinkNoise,
+            logarithmicSweep
+        };
+
+        Type type = Type::sine;
+
+        float frequencyHz = 1000.0f;
+        float secondFrequencyHz = 0.0f;
+        float levelDb = -18.0f;
+        float durationSeconds = 1.0f;
+
+        float sweepStartHz = 20.0f;
+        float sweepEndHz = 20000.0f;
+
+        std::uint32_t randomSeed = 0x12345678u;
+    };
+
+    struct VqtLikeValidationResult
+    {
+        VqtLikeValidationSignalSpec spec;
+
+        float targetFrequencyHz = 0.0f;
+        float measuredPeakFrequencyHz = 0.0f;
+        float measuredMetricDb = -100.0f;
+        float measuredLiveDb = -100.0f;
+        float expectedDb = -100.0f;
+
+        float metricErrorDb = 0.0f;
+        float liveErrorDb = 0.0f;
+
+        float peakWidthBinsAboveMinus3Db = 0.0f;
+        float peakWidthHzAboveMinus3Db = 0.0f;
+
+        float averageMetricReferenceErrorDb = 0.0f;
+        float averageAbsMetricReferenceErrorDb = 0.0f;
+        float maxAbsMetricReferenceErrorDb = 0.0f;
+
+        bool isValid = false;
+    };
+
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
@@ -569,6 +617,14 @@ class AnalyzerEngine : private juce::Thread
                            float maxLiftDb) const noexcept;
     VqtLikeDisplayBinStats getVqtLikeDisplayBinStats(
         size_t displayBinIndex) const noexcept;
+    void generateVqtLikeValidationSignal(
+        const VqtLikeValidationSignalSpec& spec,
+        float sampleRate,
+        std::vector<float>& outputBuffer) const;
+    VqtLikeValidationResult runVqtLikeValidationSignal(
+        const VqtLikeValidationSignalSpec& spec,
+        float sampleRate);
+    void runVqtLikeInternalCalibrationValidation();
     void requestDisplayAccumulationWarmStartForRangeChange() noexcept;
     void updateDisplayBinFftRangesIfNeeded();
     void publishLatestFrame();
@@ -694,6 +750,7 @@ class AnalyzerEngine : private juce::Thread
     static constexpr float vqtLikeTransientDetailMaxLiftDbMid = 5.0f;
     static constexpr float vqtLikeTransientDetailMaxLiftDbHigh = 8.0f;
     static constexpr float vqtLikeMinimumUsefulPower = 1.0e-12f;
+    static constexpr bool enableVqtLikeInternalValidation = true;
     static constexpr float latestFramePublishRateHz = 60.0f;
     static constexpr float defaultRmsTimeSeconds = 0.300f;
     static constexpr float energyAveragingWindowSeconds = 20.0f;
@@ -773,6 +830,7 @@ class AnalyzerEngine : private juce::Thread
     std::vector<FrequencyDependentBinPolicySnapshot> frequencyDependentBinPolicySnapshots;
     FrequencyDependentPolicyFrameSummary frequencyDependentPolicyFrameSummary;
     VqtLikeFrameSummary vqtLikeFrameSummary;
+    std::vector<VqtLikeValidationResult> lastVqtLikeValidationResults;
 
     std::vector<float> rawSpectrumDb;
     std::vector<float> smoothedSpectrumDb;
