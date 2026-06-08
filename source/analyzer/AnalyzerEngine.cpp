@@ -335,6 +335,8 @@ void AnalyzerEngine::prepare (double sampleRate, AnalyzerFifo& fifoToReadFrom)
             for (const auto& result : lastVqtLikeValidationResults)
             {
                 lines.add ("------------------------------------------------------------");
+                lines.add ("signalName: " + result.signalName);
+                lines.add ("signalType: " + juce::String (static_cast<int> (result.spec.type)));
                 lines.add ("targetFrequencyHz: " + juce::String (result.targetFrequencyHz));
                 lines.add ("measuredPeakFrequencyHz: " + juce::String (result.measuredPeakFrequencyHz));
                 lines.add ("expectedDb: " + juce::String (result.expectedDb));
@@ -3384,6 +3386,53 @@ AnalyzerEngine::VqtLikeDisplayBinStats
     return result;
 }
 
+juce::String AnalyzerEngine::getVqtLikeValidationSignalName(
+    const VqtLikeValidationSignalSpec& spec) const
+{
+    switch (spec.type)
+    {
+        case VqtLikeValidationSignalSpec::Type::sine:
+            return "sine "
+                   + juce::String (spec.frequencyHz, 2)
+                   + " Hz @ "
+                   + juce::String (spec.levelDb, 1)
+                   + " dB";
+
+        case VqtLikeValidationSignalSpec::Type::dualSine:
+            return "dual sine "
+                   + juce::String (spec.frequencyHz, 2)
+                   + " + "
+                   + juce::String (spec.secondFrequencyHz, 2)
+                   + " Hz @ "
+                   + juce::String (spec.levelDb, 1)
+                   + " dB";
+
+        case VqtLikeValidationSignalSpec::Type::whiteNoise:
+            return "white noise @ "
+                   + juce::String (spec.levelDb, 1)
+                   + " dB";
+
+        case VqtLikeValidationSignalSpec::Type::pinkNoise:
+            return "pink noise @ "
+                   + juce::String (spec.levelDb, 1)
+                   + " dB";
+
+        case VqtLikeValidationSignalSpec::Type::logarithmicSweep:
+            return "log sweep "
+                   + juce::String (spec.sweepStartHz, 1)
+                   + " - "
+                   + juce::String (spec.sweepEndHz, 1)
+                   + " Hz @ "
+                   + juce::String (spec.levelDb, 1)
+                   + " dB";
+
+        default:
+            break;
+    }
+
+    return "unknown";
+}
+
 void AnalyzerEngine::generateVqtLikeValidationSignal (
     const VqtLikeValidationSignalSpec& spec,
     float sampleRate,
@@ -3539,6 +3588,7 @@ AnalyzerEngine::VqtLikeValidationResult AnalyzerEngine::runVqtLikeValidationSign
 {
     VqtLikeValidationResult result;
     result.spec = spec;
+    result.signalName = getVqtLikeValidationSignalName (spec);
 
     const auto validationSampleRate =
         std::isfinite (sampleRate) && sampleRate > 0.0f ? sampleRate : 48000.0f;

@@ -428,6 +428,7 @@ class AnalyzerEngine : private juce::Thread
     struct VqtLikeValidationResult
     {
         VqtLikeValidationSignalSpec spec;
+        juce::String signalName;
 
         float targetFrequencyHz = 0.0f;
         float measuredPeakFrequencyHz = 0.0f;
@@ -617,6 +618,10 @@ class AnalyzerEngine : private juce::Thread
                            float maxLiftDb) const noexcept;
     VqtLikeDisplayBinStats getVqtLikeDisplayBinStats(
         size_t displayBinIndex) const noexcept;
+
+    juce::String getVqtLikeValidationSignalName(
+        const VqtLikeValidationSignalSpec& spec) const;
+
     void generateVqtLikeValidationSignal(
         const VqtLikeValidationSignalSpec& spec,
         float sampleRate,
