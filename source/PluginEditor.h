@@ -79,7 +79,10 @@ private:
     juce::TextButton clearEnergyButton { "Clear Energy" };
     juce::TextButton peakButton { "Peak" };
     juce::TextButton clearPeakButton { "Clear Peak" };
-    juce::TextButton freezeButton { "Freeze" };
+    juce::TextButton peakDipButton { "Peaks/Dips" };
+    juce::TextButton freezeButton { "Add Ref" };
+    juce::TextButton clearReferencesButton { "Clear Refs" };
+    juce::TextButton differenceButton { "Diff" };
     juce::TextButton tooltipButton { "Tips" };
     juce::ComboBox inputModeBox;
     juce::ComboBox fftSizeBox;
@@ -95,6 +98,8 @@ private:
     std::unique_ptr<ButtonAttachment> rmsButtonAttachment;
     std::unique_ptr<ButtonAttachment> energyButtonAttachment;
     std::unique_ptr<ButtonAttachment> peakButtonAttachment;
+    std::unique_ptr<ButtonAttachment> peakDipButtonAttachment;
+    std::unique_ptr<ButtonAttachment> differenceButtonAttachment;
     std::unique_ptr<ComboBoxAttachment> inputModeAttachment;
     std::unique_ptr<ComboBoxAttachment> fftSizeAttachment;
     std::unique_ptr<ComboBoxAttachment> peakHoldDecayAttachment;

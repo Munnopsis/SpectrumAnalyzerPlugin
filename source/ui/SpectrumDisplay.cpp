@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <utility>
 
 namespace
 {
@@ -177,33 +178,145 @@ void SpectrumDisplay::setSpectrumDataFrequencyRange (float minimumHz, float maxi
 
 void SpectrumDisplay::freezeCurrentSpectrumAsReference()
 {
-    if (spectrumDb.size() < 2)
-        return;
-
-    frozenReferenceDb = spectrumDb;
-    frozenReferenceDataMinFrequencyHz = dataMinFrequencyHz;
-    frozenReferenceDataMaxFrequencyHz = dataMaxFrequencyHz;
-    hasFrozenReferenceDb = true;
-
-    repaint();
+    addCurrentSpectrumAsReference();
 }
 
 void SpectrumDisplay::clearFrozenReferenceSpectrum()
 {
-    if (! hasFrozenReferenceDb && frozenReferenceDb.empty())
-        return;
-
-    frozenReferenceDb.clear();
-    frozenReferenceDataMinFrequencyHz = defaultMinFrequencyHz;
-    frozenReferenceDataMaxFrequencyHz = defaultMaxFrequencyHz;
-    hasFrozenReferenceDb = false;
-
-    repaint();
+    clearAllReferenceCurves();
 }
 
 bool SpectrumDisplay::hasFrozenReferenceSpectrum() const noexcept
 {
-    return hasFrozenReferenceDb && frozenReferenceDb.size() >= 2;
+    return !referenceCurves.empty();
+}
+
+void SpectrumDisplay::addCurrentSpectrumAsReference()
+{
+    if (spectrumDb.size() < 2)
+        return;
+
+    if (referenceCurves.size() >= static_cast<size_t> (maxReferenceCurves))
+    {
+        referenceCurves.erase (referenceCurves.begin());
+
+        if (activeReferenceIndex > 0)
+            --activeReferenceIndex;
+    }
+
+    ReferenceCurveSnapshot snapshot;
+    snapshot.name = "Ref " + juce::String (referenceCurves.size() + 1);
+    snapshot.dataMinFrequencyHz = dataMinFrequencyHz;
+    snapshot.dataMaxFrequencyHz = dataMaxFrequencyHz;
+    snapshot.liveDb = spectrumDb;
+    snapshot.rmsDb = rmsDb;
+    snapshot.energyDb = energyDb;
+    snapshot.peakHoldDb = peakHoldDb;
+    snapshot.visible = true;
+
+    referenceCurves.push_back (std::move (snapshot));
+    activeReferenceIndex = static_cast<int> (referenceCurves.size()) - 1;
+
+    repaint();
+}
+
+void SpectrumDisplay::clearAllReferenceCurves()
+{
+    if (referenceCurves.empty() && activeReferenceIndex < 0)
+        return;
+
+    referenceCurves.clear();
+    activeReferenceIndex = -1;
+    repaint();
+}
+
+void SpectrumDisplay::removeActiveReferenceCurve()
+{
+    if (activeReferenceIndex < 0
+        || activeReferenceIndex >= static_cast<int> (referenceCurves.size()))
+    {
+        return;
+    }
+
+    referenceCurves.erase (referenceCurves.begin() + activeReferenceIndex);
+
+    if (referenceCurves.empty())
+        activeReferenceIndex = -1;
+    else
+        activeReferenceIndex = juce::jlimit (
+            0,
+            static_cast<int> (referenceCurves.size()) - 1,
+            activeReferenceIndex);
+
+    repaint();
+}
+
+void SpectrumDisplay::setActiveReferenceIndex (int index)
+{
+    const auto newIndex =
+        referenceCurves.empty()
+            ? -1
+            : juce::jlimit (0, static_cast<int> (referenceCurves.size()) - 1, index);
+
+    if (activeReferenceIndex == newIndex)
+        return;
+
+    activeReferenceIndex = newIndex;
+    repaint();
+}
+
+int SpectrumDisplay::getNumReferenceCurves() const noexcept
+{
+    return static_cast<int> (referenceCurves.size());
+}
+
+int SpectrumDisplay::getActiveReferenceIndex() const noexcept
+{
+    return activeReferenceIndex;
+}
+
+juce::String SpectrumDisplay::getReferenceCurveName (int index) const
+{
+    if (index < 0 || index >= static_cast<int> (referenceCurves.size()))
+        return {};
+
+    return referenceCurves[static_cast<size_t> (index)].name;
+}
+
+void SpectrumDisplay::setPeakDipMarkersVisible (bool shouldBeVisible)
+{
+    if (showPeakDipMarkers == shouldBeVisible)
+        return;
+
+    showPeakDipMarkers = shouldBeVisible;
+    repaint();
+}
+
+void SpectrumDisplay::setPeakDipCurveSource (AnalyzerCurveSource source)
+{
+    if (peakDipCurveSource == source)
+        return;
+
+    peakDipCurveSource = source;
+    repaint();
+}
+
+void SpectrumDisplay::setDifferenceCurveVisible (bool shouldBeVisible)
+{
+    if (showDifferenceCurve == shouldBeVisible)
+        return;
+
+    showDifferenceCurve = shouldBeVisible;
+    repaint();
+}
+
+void SpectrumDisplay::setDifferenceCurveSource (AnalyzerCurveSource source)
+{
+    if (differenceCurveSource == source)
+        return;
+
+    differenceCurveSource = source;
+    repaint();
 }
 
 void SpectrumDisplay::setCurveVisibility (bool shouldShowLive,
@@ -246,7 +359,13 @@ void SpectrumDisplay::paint (juce::Graphics& g)
 
         if (showPeakHoldCurve && ! peakHoldDb.empty())
             drawPeakHoldCurve (g, bounds);
+
+        if (showDifferenceCurve)
+            drawDifferenceCurve (g, bounds);
     }
+
+    if (showPeakDipMarkers)
+        drawPeakDipMarkers (g, bounds);
 
     drawPeakNoteLabels (g, bounds);
 
@@ -636,6 +755,124 @@ bool SpectrumDisplay::getDisplayResolutionCurveValueDbForDataRange (
     return true;
 }
 
+const std::vector<float>* SpectrumDisplay::getCurveDataForSource (
+    AnalyzerCurveSource source) const noexcept
+{
+    switch (source)
+    {
+        case AnalyzerCurveSource::live:     return &spectrumDb;
+        case AnalyzerCurveSource::rms:      return &rmsDb;
+        case AnalyzerCurveSource::energy:   return &energyDb;
+        case AnalyzerCurveSource::peakHold: return &peakHoldDb;
+        case AnalyzerCurveSource::count:    break;
+    }
+
+    return &spectrumDb;
+}
+
+const std::vector<float>* SpectrumDisplay::getReferenceCurveDataForSource (
+    const ReferenceCurveSnapshot& reference,
+    AnalyzerCurveSource source) const noexcept
+{
+    switch (source)
+    {
+        case AnalyzerCurveSource::live:     return &reference.liveDb;
+        case AnalyzerCurveSource::rms:      return &reference.rmsDb;
+        case AnalyzerCurveSource::energy:   return &reference.energyDb;
+        case AnalyzerCurveSource::peakHold: return &reference.peakHoldDb;
+        case AnalyzerCurveSource::count:    break;
+    }
+
+    return &reference.liveDb;
+}
+
+juce::String SpectrumDisplay::getCurveSourceLabel (AnalyzerCurveSource source) const
+{
+    switch (source)
+    {
+        case AnalyzerCurveSource::live:     return "Live";
+        case AnalyzerCurveSource::rms:      return "RMS";
+        case AnalyzerCurveSource::energy:   return "Energy";
+        case AnalyzerCurveSource::peakHold: return "Peak";
+        case AnalyzerCurveSource::count:    break;
+    }
+
+    return "Live";
+}
+
+bool SpectrumDisplay::getDifferenceCurveValueDb (
+    float frequencyHz,
+    float& differenceDb) const
+{
+    if (!showDifferenceCurve
+        || activeReferenceIndex < 0
+        || activeReferenceIndex >= static_cast<int> (referenceCurves.size()))
+    {
+        return false;
+    }
+
+    const auto* currentCurve = getCurveDataForSource (differenceCurveSource);
+
+    if (currentCurve == nullptr || currentCurve->size() < 2)
+        return false;
+
+    const auto& reference =
+        referenceCurves[static_cast<size_t> (activeReferenceIndex)];
+
+    const auto* referenceCurve =
+        getReferenceCurveDataForSource (reference, differenceCurveSource);
+
+    if (referenceCurve == nullptr || referenceCurve->size() < 2)
+        return false;
+
+    auto currentDb = 0.0f;
+    auto referenceDb = 0.0f;
+
+    if (! getInterpolatedCurveValueDbForDataRange (*currentCurve,
+                                                   frequencyHz,
+                                                   dataMinFrequencyHz,
+                                                   dataMaxFrequencyHz,
+                                                   currentDb))
+    {
+        return false;
+    }
+
+    if (! getInterpolatedCurveValueDbForDataRange (*referenceCurve,
+                                                   frequencyHz,
+                                                   reference.dataMinFrequencyHz,
+                                                   reference.dataMaxFrequencyHz,
+                                                   referenceDb))
+    {
+        return false;
+    }
+
+    differenceDb =
+        juce::jlimit (-differenceViewRangeDb,
+            differenceViewRangeDb,
+            currentDb - referenceDb);
+
+    return true;
+}
+
+float SpectrumDisplay::differenceDecibelsToY (
+    float differenceDb,
+    juce::Rectangle<float> area) const
+{
+    const auto clamped =
+        juce::jlimit (-differenceViewRangeDb,
+            differenceViewRangeDb,
+            differenceDb);
+
+    const auto normalised =
+        (clamped + differenceViewRangeDb) / (2.0f * differenceViewRangeDb);
+
+    return juce::jmap (normalised,
+        0.0f,
+        1.0f,
+        area.getBottom(),
+        area.getY());
+}
+
 juce::String SpectrumDisplay::formatCurveValue (const juce::String& label, float valueDb) const
 {
     return label + " " + juce::String (valueDb, 1);
@@ -657,6 +894,11 @@ juce::String SpectrumDisplay::buildCurveReadoutText (float frequencyHz) const
 
     if (showPeakHoldCurve && getInterpolatedCurveValueDb (peakHoldDb, frequencyHz, valueDb))
         values.add (formatCurveValue ("Peak", valueDb));
+
+    auto differenceDb = 0.0f;
+
+    if (showDifferenceCurve && getDifferenceCurveValueDb (frequencyHz, differenceDb))
+        values.add (formatCurveValue ("Diff", differenceDb));
 
     return values.joinIntoString ("  ");
 }
@@ -915,6 +1157,228 @@ std::vector<SpectrumDisplay::PeakNoteLabel> SpectrumDisplay::buildPeakNoteLabels
     return selected;
 }
 
+std::vector<SpectrumDisplay::SpectrumExtremumMarker>
+    SpectrumDisplay::buildPeakDipMarkers (juce::Rectangle<float> area) const
+{
+    std::vector<SpectrumExtremumMarker> markers;
+
+    const auto* curveData = getCurveDataForSource (peakDipCurveSource);
+
+    if (curveData == nullptr || curveData->size() < 2)
+        return markers;
+
+    if (visibleMinFrequencyHz <= 0.0f || visibleMaxFrequencyHz <= visibleMinFrequencyHz)
+        return markers;
+
+    std::array<float, peakDipSamplingPoints> frequencies {};
+    std::array<float, peakDipSamplingPoints> decibels {};
+    std::array<bool, peakDipSamplingPoints> isValid {};
+
+    for (int i = 0; i < peakDipSamplingPoints; ++i)
+    {
+        const auto normalisedX =
+            static_cast<float> (i)
+            / static_cast<float> (peakDipSamplingPoints - 1);
+
+        const auto frequency =
+            visibleMinFrequencyHz
+            * std::pow (visibleMaxFrequencyHz / visibleMinFrequencyHz, normalisedX);
+
+        auto valueDb = 0.0f;
+
+        const auto valid =
+            getInterpolatedCurveValueDbForDataRange (*curveData,
+                                                     frequency,
+                                                     dataMinFrequencyHz,
+                                                     dataMaxFrequencyHz,
+                                                     valueDb)
+            && valueDb > minDecibels + 1.0f;
+
+        frequencies[static_cast<size_t> (i)] = frequency;
+        decibels[static_cast<size_t> (i)] = valueDb;
+        isValid[static_cast<size_t> (i)] = valid;
+    }
+
+    const auto visibleOctaves =
+        std::log2 (visibleMaxFrequencyHz / visibleMinFrequencyHz);
+
+    if (visibleOctaves <= 0.0f)
+        return markers;
+
+    const auto samplesPerOctave =
+        static_cast<float> (peakDipSamplingPoints - 1) / visibleOctaves;
+
+    const auto neighbourWindowSamples =
+        juce::jmax (2,
+            juce::roundToInt (peakDipNeighbourWindowOctaves * samplesPerOctave));
+
+    std::vector<SpectrumExtremumMarker> peakCandidates;
+    std::vector<SpectrumExtremumMarker> dipCandidates;
+    peakCandidates.reserve (24);
+    dipCandidates.reserve (24);
+
+    for (int i = 1; i < peakDipSamplingPoints - 1; ++i)
+    {
+        const auto index = static_cast<size_t> (i);
+
+        if (!isValid[index]
+            || !isValid[static_cast<size_t> (i - 1)]
+            || !isValid[static_cast<size_t> (i + 1)])
+        {
+            continue;
+        }
+
+        const auto valueDb = decibels[index];
+        const auto isPeak =
+            showPeakMarkers
+            && valueDb > decibels[static_cast<size_t> (i - 1)]
+            && valueDb >= decibels[static_cast<size_t> (i + 1)];
+
+        const auto isDip =
+            showDipMarkers
+            && valueDb < decibels[static_cast<size_t> (i - 1)]
+            && valueDb <= decibels[static_cast<size_t> (i + 1)];
+
+        if (!isPeak && !isDip)
+            continue;
+
+        const auto leftStart = juce::jmax (0, i - neighbourWindowSamples);
+        const auto rightEnd =
+            juce::jmin (peakDipSamplingPoints - 1, i + neighbourWindowSamples);
+
+        auto leftMin = valueDb;
+        auto rightMin = valueDb;
+        auto leftMax = valueDb;
+        auto rightMax = valueDb;
+
+        for (int j = leftStart; j < i; ++j)
+        {
+            const auto sampleIndex = static_cast<size_t> (j);
+
+            if (!isValid[sampleIndex])
+                continue;
+
+            leftMin = juce::jmin (leftMin, decibels[sampleIndex]);
+            leftMax = juce::jmax (leftMax, decibels[sampleIndex]);
+        }
+
+        for (int j = i + 1; j <= rightEnd; ++j)
+        {
+            const auto sampleIndex = static_cast<size_t> (j);
+
+            if (!isValid[sampleIndex])
+                continue;
+
+            rightMin = juce::jmin (rightMin, decibels[sampleIndex]);
+            rightMax = juce::jmax (rightMax, decibels[sampleIndex]);
+        }
+
+        auto prominenceDb = 0.0f;
+        auto kind = SpectrumExtremumKind::peak;
+
+        if (isPeak)
+        {
+            prominenceDb = valueDb - juce::jmax (leftMin, rightMin);
+            kind = SpectrumExtremumKind::peak;
+        }
+        else
+        {
+            prominenceDb = juce::jmin (leftMax, rightMax) - valueDb;
+            kind = SpectrumExtremumKind::dip;
+        }
+
+        if (prominenceDb < minimumPeakDipProminenceDb)
+            continue;
+
+        const auto frequencyHz = frequencies[index];
+        const auto x = frequencyToX (frequencyHz, area);
+        const auto y = decibelsToY (valueDb, area);
+
+        if (!area.contains (juce::Point<float> (x, y)))
+            continue;
+
+        auto marker = SpectrumExtremumMarker {};
+        marker.kind = kind;
+        marker.frequencyHz = frequencyHz;
+        marker.decibels = valueDb;
+        marker.prominenceDb = prominenceDb;
+        marker.x = x;
+        marker.y = y;
+
+        if (kind == SpectrumExtremumKind::peak)
+            peakCandidates.push_back (marker);
+        else
+            dipCandidates.push_back (marker);
+    }
+
+    const auto maxMarkersPerKind =
+        static_cast<size_t> (maxPeakDipMarkersPerKind);
+
+    const auto minimumSpacingOctaves = minimumPeakDipSpacingOctaves;
+
+    const auto selectMarkers =
+        [maxMarkersPerKind, minimumSpacingOctaves] (
+            std::vector<SpectrumExtremumMarker>& candidates)
+        {
+            std::sort (candidates.begin(),
+                       candidates.end(),
+                       [] (const auto& first, const auto& second)
+                       {
+                           return first.prominenceDb > second.prominenceDb;
+                       });
+
+            std::vector<SpectrumExtremumMarker> selected;
+            selected.reserve (maxMarkersPerKind);
+
+            for (const auto& candidate : candidates)
+            {
+                const auto isFarEnough =
+                    std::all_of (selected.begin(),
+                                 selected.end(),
+                                 [&candidate, minimumSpacingOctaves] (
+                                     const auto& existing)
+                                 {
+                                     if (candidate.frequencyHz <= 0.0f
+                                         || existing.frequencyHz <= 0.0f)
+                                     {
+                                         return false;
+                                     }
+
+                                     return std::abs (std::log2 (
+                                                candidate.frequencyHz
+                                                / existing.frequencyHz))
+                                            >= minimumSpacingOctaves;
+                                 });
+
+                if (!isFarEnough)
+                    continue;
+
+                selected.push_back (candidate);
+
+                if (selected.size() >= maxMarkersPerKind)
+                    break;
+            }
+
+            return selected;
+        };
+
+    auto selectedPeaks = selectMarkers (peakCandidates);
+    auto selectedDips = selectMarkers (dipCandidates);
+
+    markers.reserve (selectedPeaks.size() + selectedDips.size());
+    markers.insert (markers.end(), selectedPeaks.begin(), selectedPeaks.end());
+    markers.insert (markers.end(), selectedDips.begin(), selectedDips.end());
+
+    std::sort (markers.begin(),
+               markers.end(),
+               [] (const auto& first, const auto& second)
+               {
+                   return first.frequencyHz < second.frequencyHz;
+               });
+
+    return markers;
+}
+
 void SpectrumDisplay::drawBackground (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
     juce::ignoreUnused (bounds);
@@ -1074,16 +1538,33 @@ void SpectrumDisplay::drawSpectrumCurve (juce::Graphics& g, juce::Rectangle<int>
 void SpectrumDisplay::drawFrozenReferenceCurve (juce::Graphics& g,
                                                 juce::Rectangle<int> bounds)
 {
-    if (! hasFrozenReferenceSpectrum())
+    if (referenceCurves.empty())
         return;
 
-    drawCurveFromDataRange (g,
-                            bounds,
-                            frozenReferenceDb,
-                            frozenReferenceDataMinFrequencyHz,
-                            frozenReferenceDataMaxFrequencyHz,
-                            juce::Colours::white.withAlpha (0.34f),
-                            1.25f);
+    for (size_t i = 0; i < referenceCurves.size(); ++i)
+    {
+        const auto& reference = referenceCurves[i];
+
+        if (!reference.visible)
+            continue;
+
+        const auto* referenceData =
+            getReferenceCurveDataForSource (reference, AnalyzerCurveSource::live);
+
+        if (referenceData == nullptr || referenceData->size() < 2)
+            continue;
+
+        const auto isActive =
+            static_cast<int> (i) == activeReferenceIndex;
+
+        drawCurveFromDataRange (g,
+                                bounds,
+                                *referenceData,
+                                reference.dataMinFrequencyHz,
+                                reference.dataMaxFrequencyHz,
+                                juce::Colours::white.withAlpha (isActive ? 0.40f : 0.20f),
+                                isActive ? 1.35f : 1.0f);
+    }
 }
 
 void SpectrumDisplay::drawEnergyCurve (juce::Graphics& g, juce::Rectangle<int> bounds)
@@ -1111,6 +1592,175 @@ void SpectrumDisplay::drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> boun
                        rmsDb,
                        juce::Colour::fromRGB (150, 120, 255).withAlpha (0.85f),
                        2.0f);
+}
+
+void SpectrumDisplay::drawDifferenceCurve (juce::Graphics& g,
+                                           juce::Rectangle<int> bounds)
+{
+    if (!showDifferenceCurve
+        || activeReferenceIndex < 0
+        || activeReferenceIndex >= static_cast<int> (referenceCurves.size()))
+    {
+        return;
+    }
+
+    if (visibleMinFrequencyHz <= 0.0f || visibleMaxFrequencyHz <= visibleMinFrequencyHz)
+        return;
+
+    const auto area = getSpectrumArea (bounds);
+    const auto zeroY = differenceDecibelsToY (0.0f, area);
+
+    g.setColour (juce::Colours::white.withAlpha (0.18f));
+    g.drawHorizontalLine (juce::roundToInt (zeroY), area.getX(), area.getRight());
+
+    const auto pixelCount =
+        juce::jmax (2, juce::roundToInt (area.getWidth()));
+
+    juce::Path curve;
+    auto hasStartedPath = false;
+
+    for (int px = 0; px <= pixelCount; ++px)
+    {
+        const auto normalisedX =
+            static_cast<float> (px) / static_cast<float> (pixelCount);
+
+        const auto frequency =
+            visibleMinFrequencyHz
+            * std::pow (visibleMaxFrequencyHz / visibleMinFrequencyHz, normalisedX);
+
+        auto differenceDb = 0.0f;
+
+        if (! getDifferenceCurveValueDb (frequency, differenceDb))
+            continue;
+
+        const auto x = area.getX() + normalisedX * area.getWidth();
+        const auto y = differenceDecibelsToY (differenceDb, area);
+
+        if (!hasStartedPath)
+        {
+            curve.startNewSubPath (x, y);
+            hasStartedPath = true;
+        }
+        else
+        {
+            curve.lineTo (x, y);
+        }
+    }
+
+    if (!hasStartedPath)
+        return;
+
+    const auto colour = juce::Colour::fromRGB (255, 110, 205);
+    g.setColour (colour.withAlpha (0.92f));
+    g.strokePath (curve, juce::PathStrokeType (1.75f));
+
+    const auto& reference =
+        referenceCurves[static_cast<size_t> (activeReferenceIndex)];
+
+    const auto label =
+        "Diff: "
+        + getCurveSourceLabel (differenceCurveSource)
+        + " - "
+        + reference.name
+        + " +/-"
+        + juce::String (juce::roundToInt (differenceViewRangeDb))
+        + " dB";
+
+    auto labelBounds =
+        juce::Rectangle<float> (0.0f, 0.0f, 168.0f, 20.0f);
+
+    labelBounds.setX (area.getRight() - labelBounds.getWidth() - 8.0f);
+    labelBounds.setY (area.getY() + 34.0f);
+
+    g.setColour (juce::Colours::black.withAlpha (0.58f));
+    g.fillRoundedRectangle (labelBounds, 4.0f);
+
+    g.setColour (colour.withAlpha (0.85f));
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawText (label,
+                labelBounds.toNearestInt().reduced (7, 0),
+                juce::Justification::centredLeft,
+                true);
+}
+
+void SpectrumDisplay::drawPeakDipMarkers (juce::Graphics& g,
+                                          juce::Rectangle<int> bounds)
+{
+    if (!showPeakDipMarkers)
+        return;
+
+    const auto area = getSpectrumArea (bounds);
+    const auto markers = buildPeakDipMarkers (area);
+
+    if (markers.empty())
+        return;
+
+    g.setFont (juce::FontOptions (10.5f));
+
+    for (const auto& marker : markers)
+    {
+        const auto isPeak = marker.kind == SpectrumExtremumKind::peak;
+        const auto colour =
+            isPeak
+                ? juce::Colour::fromRGB (255, 214, 96)
+                : juce::Colour::fromRGB (100, 210, 255);
+
+        juce::Path triangle;
+
+        if (isPeak)
+        {
+            triangle.startNewSubPath (marker.x, marker.y - 11.0f);
+            triangle.lineTo (marker.x - 5.0f, marker.y - 3.0f);
+            triangle.lineTo (marker.x + 5.0f, marker.y - 3.0f);
+        }
+        else
+        {
+            triangle.startNewSubPath (marker.x, marker.y + 11.0f);
+            triangle.lineTo (marker.x - 5.0f, marker.y + 3.0f);
+            triangle.lineTo (marker.x + 5.0f, marker.y + 3.0f);
+        }
+
+        triangle.closeSubPath();
+
+        g.setColour (colour.withAlpha (0.92f));
+        g.fillPath (triangle);
+
+        const auto label =
+            juce::String (isPeak ? "Peak " : "Dip ")
+            + formatFrequency (marker.frequencyHz)
+            + " "
+            + juce::String (marker.decibels, 1);
+
+        constexpr auto labelWidth = 82.0f;
+        constexpr auto labelHeight = 17.0f;
+
+        const auto labelX =
+            juce::jlimit (area.getX(),
+                area.getRight() - labelWidth,
+                marker.x - labelWidth * 0.5f);
+
+        const auto rawLabelY =
+            isPeak
+                ? marker.y - 31.0f
+                : marker.y + 14.0f;
+
+        const auto labelY =
+            juce::jlimit (area.getY(),
+                area.getBottom() - labelHeight,
+                rawLabelY);
+
+        const auto labelBounds =
+            juce::Rectangle<float> (labelX, labelY, labelWidth, labelHeight);
+
+        g.setColour (juce::Colours::black.withAlpha (0.56f));
+        g.fillRoundedRectangle (labelBounds, 3.0f);
+
+        g.setColour (colour.withAlpha (0.92f));
+        g.drawText (label,
+                    labelBounds.toNearestInt().reduced (5, 0),
+                    juce::Justification::centred,
+                    true);
+    }
 }
 
 void SpectrumDisplay::drawCurveFromData (juce::Graphics& g,

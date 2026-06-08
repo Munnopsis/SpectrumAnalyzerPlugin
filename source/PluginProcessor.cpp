@@ -58,6 +58,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         "Show Energy Curve",
         true));
 
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { showPeakDipMarkersParamId, 1 },
+        "Show Peak/Dip Markers",
+        false));
+
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { showDifferenceCurveParamId, 1 },
+        "Show Difference Curve",
+        false));
+
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { inputModeParamId, 1 },
         "Input Mode",
@@ -106,6 +116,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         "VQT Live Curve",
         getAnalyzerVqtLiveCurveProfileChoices(),
         analyzerVqtLiveCurveProfileToIndex (AnalyzerVqtLiveCurveProfile::balanced)));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { peakDipSourceParamId, 1 },
+        "Peak/Dip Source",
+        getAnalyzerCurveSourceChoices(),
+        analyzerCurveSourceToIndex (AnalyzerCurveSource::live)));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { differenceCurveSourceParamId, 1 },
+        "Difference Source",
+        getAnalyzerCurveSourceChoices(),
+        analyzerCurveSourceToIndex (AnalyzerCurveSource::live)));
 
     return { params.begin(), params.end() };
 }
@@ -241,6 +263,28 @@ AnalyzerDisplayResolution PluginProcessor::getAnalyzerDisplayResolution() const 
 
     return analyzerDisplayResolutionFromParameterValue (
         displayResolutionParameter->load (std::memory_order_relaxed));
+}
+
+AnalyzerCurveSource PluginProcessor::getPeakDipSource() const noexcept
+{
+    const auto* parameter = parameters.getRawParameterValue (peakDipSourceParamId);
+
+    if (parameter == nullptr)
+        return AnalyzerCurveSource::live;
+
+    return analyzerCurveSourceFromParameterValue (
+        parameter->load (std::memory_order_relaxed));
+}
+
+AnalyzerCurveSource PluginProcessor::getDifferenceCurveSource() const noexcept
+{
+    const auto* parameter = parameters.getRawParameterValue (differenceCurveSourceParamId);
+
+    if (parameter == nullptr)
+        return AnalyzerCurveSource::live;
+
+    return analyzerCurveSourceFromParameterValue (
+        parameter->load (std::memory_order_relaxed));
 }
 
 bool PluginProcessor::isFrequencyDependentAnalyzerResolution() const noexcept

@@ -26,7 +26,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (clearEnergyButton);
     addAndMakeVisible (peakButton);
     addAndMakeVisible (clearPeakButton);
+    addAndMakeVisible (peakDipButton);
     addAndMakeVisible (freezeButton);
+    addAndMakeVisible (clearReferencesButton);
+    addAndMakeVisible (differenceButton);
     addAndMakeVisible (tooltipButton);
     addAndMakeVisible (inputModeBox);
     addAndMakeVisible (fftSizeBox);
@@ -44,7 +47,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     clearEnergyButton.setName ("ClearEnergyButton");
     peakButton.setName ("PeakButton");
     clearPeakButton.setName ("ClearPeakButton");
+    peakDipButton.setName ("PeakDipButton");
     freezeButton.setName ("FreezeButton");
+    clearReferencesButton.setName ("ClearReferencesButton");
+    differenceButton.setName ("DifferenceButton");
     tooltipButton.setName ("TooltipButton");
     inputModeBox.setName ("InputModeBox");
     fftSizeBox.setName ("FftSizeBox");
@@ -62,7 +68,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     clearEnergyButton.setWantsKeyboardFocus (true);
     peakButton.setWantsKeyboardFocus (true);
     clearPeakButton.setWantsKeyboardFocus (true);
+    peakDipButton.setWantsKeyboardFocus (true);
     freezeButton.setWantsKeyboardFocus (true);
+    clearReferencesButton.setWantsKeyboardFocus (true);
+    differenceButton.setWantsKeyboardFocus (true);
     tooltipButton.setWantsKeyboardFocus (true);
     inputModeBox.setWantsKeyboardFocus (true);
     fftSizeBox.setWantsKeyboardFocus (true);
@@ -80,7 +89,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     clearEnergyButton.setTooltip ("Clear the long-term Energy curve");
     peakButton.setTooltip ("Show or hide the peak hold curve");
     clearPeakButton.setTooltip ("Clear the peak hold curve");
-    freezeButton.setTooltip ("Freeze the current live spectrum as a reference curve");
+    peakDipButton.setTooltip ("Show automatic peak and dip markers on the visible analyzer curve");
+    freezeButton.setTooltip ("Store the current analyzer curves as a reference snapshot");
+    clearReferencesButton.setTooltip ("Clear all stored reference curves");
+    differenceButton.setTooltip ("Show difference between current analyzer curve and the active reference");
     tooltipButton.setTooltip ("Show or hide tooltips");
 
     clearPeakButton.onClick = [this]
@@ -95,10 +107,14 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     freezeButton.onClick = [this]
     {
-        if (spectrumDisplay.hasFrozenReferenceSpectrum())
-            spectrumDisplay.clearFrozenReferenceSpectrum();
-        else
-            spectrumDisplay.freezeCurrentSpectrumAsReference();
+        spectrumDisplay.addCurrentSpectrumAsReference();
+
+        updateFreezeButtonState();
+    };
+
+    clearReferencesButton.onClick = [this]
+    {
+        spectrumDisplay.clearAllReferenceCurves();
 
         updateFreezeButtonState();
     };
@@ -107,7 +123,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     rmsButton.setClickingTogglesState (true);
     energyButton.setClickingTogglesState (true);
     peakButton.setClickingTogglesState (true);
+    peakDipButton.setClickingTogglesState (true);
     freezeButton.setClickingTogglesState (false);
+    clearReferencesButton.setClickingTogglesState (false);
+    differenceButton.setClickingTogglesState (true);
     tooltipButton.setClickingTogglesState (true);
     tooltipButton.setToggleState (true, juce::dontSendNotification);
 
@@ -172,7 +191,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     slopeBox.setJustificationType (juce::Justification::centred);
     slopeBox.setTextWhenNothingSelected ("Weighting");
     slopeBox.setTooltip (
-        "Display weighting for raw, pink-flat, music-tilt or white-flat spectrum views");
+        "Display weighting for raw, music-tilt or white-flat spectrum views");
 
     slopeAttachment = std::make_unique<ComboBoxAttachment> (
         state,
@@ -221,6 +240,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         PluginProcessor::showPeakHoldCurveParamId,
         peakButton);
 
+    peakDipButtonAttachment = std::make_unique<ButtonAttachment> (
+        state,
+        PluginProcessor::showPeakDipMarkersParamId,
+        peakDipButton);
+
+    differenceButtonAttachment = std::make_unique<ButtonAttachment> (
+        state,
+        PluginProcessor::showDifferenceCurveParamId,
+        differenceButton);
+
     spectrumDisplay.setCurveVisibility (
         processorRef.shouldShowLiveCurve(),
         processorRef.shouldShowRmsCurve(),
@@ -240,7 +269,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         inspector->setVisible (true);
     };
 
-    setSize (1180, 650);
+    setSize (1280, 680);
 
     startTimerHz (30);
 }
@@ -317,13 +346,22 @@ void PluginEditor::resized()
     clearPeakButton.setBounds (secondRow.removeFromLeft (92));
     addGap (secondRow, 8);
 
-    freezeButton.setBounds (secondRow.removeFromLeft (104));
+    peakDipButton.setBounds (secondRow.removeFromLeft (92));
     addGap (secondRow, 8);
 
-    inspectButton.setBounds (secondRow.removeFromLeft (128));
+    freezeButton.setBounds (secondRow.removeFromLeft (78));
+    addGap (secondRow, 8);
+
+    clearReferencesButton.setBounds (secondRow.removeFromLeft (86));
+    addGap (secondRow, 8);
+
+    differenceButton.setBounds (secondRow.removeFromLeft (54));
     addGap (secondRow, 8);
 
     tooltipButton.setBounds (secondRow.removeFromLeft (54));
+    addGap (secondRow, 8);
+
+    inspectButton.setBounds (secondRow.removeFromLeft (128));
 }
 
 void PluginEditor::timerCallback()
@@ -339,6 +377,18 @@ void PluginEditor::timerCallback()
         processorRef.shouldShowRmsCurve(),
         processorRef.shouldShowEnergyCurve(),
         processorRef.shouldShowPeakHoldCurve());
+
+    spectrumDisplay.setPeakDipMarkersVisible (
+        processorRef.shouldShowPeakDipMarkers());
+
+    spectrumDisplay.setPeakDipCurveSource (
+        processorRef.getPeakDipSource());
+
+    spectrumDisplay.setDifferenceCurveVisible (
+        processorRef.shouldShowDifferenceCurve());
+
+    spectrumDisplay.setDifferenceCurveSource (
+        processorRef.getDifferenceCurveSource());
 
     if (processorRef.copyLatestAnalyzerFrame (analyzerFrame))
     {
@@ -367,11 +417,12 @@ void PluginEditor::timerCallback()
 
 void PluginEditor::updateFreezeButtonState()
 {
-    const auto hasFrozenReference =
+    const auto hasReference =
         spectrumDisplay.hasFrozenReferenceSpectrum();
 
-    freezeButton.setButtonText (hasFrozenReference ? "Clear Freeze" : "Freeze");
-    freezeButton.setToggleState (hasFrozenReference, juce::dontSendNotification);
+    freezeButton.setButtonText ("Add Ref");
+    freezeButton.setToggleState (false, juce::dontSendNotification);
+    clearReferencesButton.setEnabled (hasReference);
 }
 
 void PluginEditor::setTooltipsEnabled (bool shouldBeEnabled)

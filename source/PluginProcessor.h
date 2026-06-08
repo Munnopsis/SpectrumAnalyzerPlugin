@@ -12,6 +12,7 @@
 #include "analyzer/AnalyzerDbRange.h"
 #include "analyzer/AnalyzerSlope.h"
 #include "analyzer/AnalyzerDisplayResolution.h"
+#include "analyzer/AnalyzerCurveSource.h"
 #include "analyzer/AnalyzerVqtLiveCurveProfile.h"
 
 #if (MSVC)
@@ -74,6 +75,8 @@ public:
     static inline const juce::String showRmsCurveParamId { "showRmsCurve" };
     static inline const juce::String showPeakHoldCurveParamId { "showPeakHoldCurve" };
     static inline const juce::String showEnergyCurveParamId { "showEnergyCurve" };
+    static inline const juce::String showPeakDipMarkersParamId { "showPeakDipMarkers" };
+    static inline const juce::String showDifferenceCurveParamId { "showDifferenceCurve" };
     static inline const juce::String inputModeParamId { "inputMode" };
     static inline const juce::String fftSizeParamId { "fftSize" };
     static inline const juce::String peakHoldDecayParamId { "peakHoldDecay" };
@@ -82,6 +85,8 @@ public:
     static inline const juce::String slopeParamId { "slope" };
     static inline const juce::String displayResolutionParamId { "displayResolution" };
     static inline const juce::String vqtLiveCurveProfileParamId { "vqtLiveCurveProfile" };
+    static inline const juce::String peakDipSourceParamId { "peakDipSource" };
+    static inline const juce::String differenceCurveSourceParamId { "differenceCurveSource" };
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept
     {
@@ -108,9 +113,21 @@ public:
         return parameters.getRawParameterValue (showPeakHoldCurveParamId)->load() > 0.5f;
     }
 
+    bool shouldShowPeakDipMarkers() const noexcept
+    {
+        return parameters.getRawParameterValue (showPeakDipMarkersParamId)->load() > 0.5f;
+    }
+
+    bool shouldShowDifferenceCurve() const noexcept
+    {
+        return parameters.getRawParameterValue (showDifferenceCurveParamId)->load() > 0.5f;
+    }
+
     float getAnalyzerMinimumDecibels() const noexcept;
     float getAnalyzerSlopeDbPerOctave() const noexcept;
     AnalyzerDisplayResolution getAnalyzerDisplayResolution() const noexcept;
+    AnalyzerCurveSource getPeakDipSource() const noexcept;
+    AnalyzerCurveSource getDifferenceCurveSource() const noexcept;
     bool isFrequencyDependentAnalyzerResolution() const noexcept;
     bool isFrequencyDependentAnalyzerResolutionTuned() const noexcept;
     bool isVqtLikeAnalyzerFilterbank() const noexcept;

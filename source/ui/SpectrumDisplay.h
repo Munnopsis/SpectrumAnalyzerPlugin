@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../analyzer/AnalyzerCurveSource.h"
 #include "../analyzer/AnalyzerDisplayResolution.h"
 #include "../analyzer/AnalyzerFrequencyRange.h"
 
@@ -41,6 +42,17 @@ public:
     void freezeCurrentSpectrumAsReference();
     void clearFrozenReferenceSpectrum();
     bool hasFrozenReferenceSpectrum() const noexcept;
+    void addCurrentSpectrumAsReference();
+    void clearAllReferenceCurves();
+    void removeActiveReferenceCurve();
+    void setActiveReferenceIndex (int index);
+    int getNumReferenceCurves() const noexcept;
+    int getActiveReferenceIndex() const noexcept;
+    juce::String getReferenceCurveName (int index) const;
+    void setPeakDipMarkersVisible (bool shouldBeVisible);
+    void setPeakDipCurveSource (AnalyzerCurveSource source);
+    void setDifferenceCurveVisible (bool shouldBeVisible);
+    void setDifferenceCurveSource (AnalyzerCurveSource source);
 
     std::function<void (float minimumHz, float maximumHz)> onVisibleFrequencyRangeChanged;
 
@@ -72,6 +84,34 @@ private:
         juce::String noteName;
     };
 
+    enum class SpectrumExtremumKind
+    {
+        peak,
+        dip
+    };
+
+    struct SpectrumExtremumMarker
+    {
+        SpectrumExtremumKind kind = SpectrumExtremumKind::peak;
+        float frequencyHz = 0.0f;
+        float decibels = -100.0f;
+        float prominenceDb = 0.0f;
+        float x = 0.0f;
+        float y = 0.0f;
+    };
+
+    struct ReferenceCurveSnapshot
+    {
+        juce::String name;
+        float dataMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
+        float dataMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
+        std::vector<float> liveDb;
+        std::vector<float> rmsDb;
+        std::vector<float> energyDb;
+        std::vector<float> peakHoldDb;
+        bool visible = true;
+    };
+
     enum class CurveRenderMode
     {
         dataPoints,
@@ -88,6 +128,8 @@ private:
     void drawEnergyCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPeakHoldCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawRmsCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawPeakDipMarkers (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawDifferenceCurve (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawCurveFromData (juce::Graphics& g,
                             juce::Rectangle<int> bounds,
                             const std::vector<float>& values,
@@ -110,6 +152,14 @@ private:
 
     juce::Rectangle<float> getSpectrumArea (juce::Rectangle<int> bounds) const;
     std::vector<PeakNoteLabel> buildPeakNoteLabels (juce::Rectangle<float> area) const;
+    std::vector<SpectrumExtremumMarker> buildPeakDipMarkers (
+        juce::Rectangle<float> area) const;
+    const std::vector<float>* getCurveDataForSource (
+        AnalyzerCurveSource source) const noexcept;
+    const std::vector<float>* getReferenceCurveDataForSource (
+        const ReferenceCurveSnapshot& reference,
+        AnalyzerCurveSource source) const noexcept;
+    juce::String getCurveSourceLabel (AnalyzerCurveSource source) const;
     int frequencyToMidiNote (float frequencyHz) const;
     int midiNoteToPitchClass (int midiNote) const;
     float frequencyToX (float frequencyHz, juce::Rectangle<float> area) const;
@@ -149,6 +199,9 @@ private:
     juce::String formatCurveValue (const juce::String& label, float valueDb) const;
     juce::String buildCurveReadoutText (float frequencyHz) const;
     float applySlopeCorrection (float decibels, float frequencyHz) const;
+    bool getDifferenceCurveValueDb (float frequencyHz, float& differenceDb) const;
+    float differenceDecibelsToY (float differenceDb,
+                                 juce::Rectangle<float> area) const;
     void updateMouseReadout (juce::Point<float> newPosition);
     void zoomVisibleFrequencyRangeAround (float centreFrequencyHz,
                                           float zoomFactor);
@@ -162,6 +215,13 @@ private:
     static constexpr float minimumVisibleFrequencyRatio = 2.0f;
     static constexpr float maxDecibels = 0.0f;
     static constexpr float slopeReferenceFrequencyHz = 1000.0f;
+    static constexpr int peakDipSamplingPoints = 512;
+    static constexpr int maxPeakDipMarkersPerKind = 6;
+    static constexpr int maxReferenceCurves = 8;
+    static constexpr float minimumPeakDipProminenceDb = 2.5f;
+    static constexpr float minimumPeakDipSpacingOctaves = 1.0f / 12.0f;
+    static constexpr float peakDipNeighbourWindowOctaves = 1.0f / 6.0f;
+    static constexpr float differenceViewRangeDb = 24.0f;
 
     float minDecibels = -100.0f;
     float slopeDbPerOctave = 0.0f;
@@ -176,18 +236,22 @@ private:
     std::vector<float> peakHoldDb;
     std::vector<float> rmsDb;
     std::vector<float> energyDb;
-    std::vector<float> frozenReferenceDb;
-    float frozenReferenceDataMinFrequencyHz = defaultMinFrequencyHz;
-    float frozenReferenceDataMaxFrequencyHz = defaultMaxFrequencyHz;
+    std::vector<ReferenceCurveSnapshot> referenceCurves;
+    int activeReferenceIndex = -1;
     std::vector<DisplayNotePeak> notePeaks;
-    bool hasFrozenReferenceDb = false;
 
     bool showLiveCurve = true;
     bool showRmsCurve = true;
     bool showEnergyCurve = true;
     bool showPeakHoldCurve = true;
+    bool showPeakDipMarkers = false;
+    bool showPeakMarkers = true;
+    bool showDipMarkers = true;
+    bool showDifferenceCurve = false;
     bool hasMouseReadout = false;
     bool isPanningVisibleFrequencyRange = false;
+    AnalyzerCurveSource peakDipCurveSource = AnalyzerCurveSource::live;
+    AnalyzerCurveSource differenceCurveSource = AnalyzerCurveSource::live;
     float lastPanMouseX = 0.0f;
     juce::Point<float> mousePosition;
 
