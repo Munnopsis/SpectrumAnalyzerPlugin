@@ -347,8 +347,24 @@ class AnalyzerEngine : private juce::Thread
         float tonalEffectiveQ = 0.0f;
         float fastEffectiveQ = 0.0f;
         float peakShapeBlend = 0.0f;
+        float tonalToFastMeanRatioDb = 0.0f;
+        float tonalToFastPeakRatioDb = 0.0f;
+        float liveLiftFromFastDb = 0.0f;
+        float peakHoldLiftFromFastDb = 0.0f;
+        float tonalPeakToMeanDb = 0.0f;
+        float fastPeakToMeanDb = 0.0f;
+        float referenceMetricDb = -100.0f;
+        float referenceLiveDb = -100.0f;
+        float vqtMetricDb = -100.0f;
+        float vqtLiveDb = -100.0f;
+        float metricReferenceErrorDb = 0.0f;
+        float liveReferenceErrorDb = 0.0f;
+        float tonalCalibrationTrim = 1.0f;
+        float fastCalibrationTrim = 1.0f;
+        float noiseDensityTrim = 1.0f;
 
         bool isConfigured = false;
+        bool hasReferenceComparison = false;
     };
 
     struct VqtLikeFrameSummary
@@ -364,6 +380,24 @@ class AnalyzerEngine : private juce::Thread
         float averageFastBandwidthHz = 0.0f;
         float averageTonalEffectiveQ = 0.0f;
         float averageFastEffectiveQ = 0.0f;
+        float averageTonalToFastMeanRatioDb = 0.0f;
+        float averageTonalToFastPeakRatioDb = 0.0f;
+        float averageLiveLiftFromFastDb = 0.0f;
+        float averagePeakHoldLiftFromFastDb = 0.0f;
+        float averageTonalPeakToMeanDb = 0.0f;
+        float averageFastPeakToMeanDb = 0.0f;
+        float maxLiveLiftFromFastDb = 0.0f;
+        float maxPeakHoldLiftFromFastDb = 0.0f;
+        int binsWithFastLift = 0;
+        float fastLiftBinRatio = 0.0f;
+        float averageMetricReferenceErrorDb = 0.0f;
+        float averageLiveReferenceErrorDb = 0.0f;
+        float averageAbsMetricReferenceErrorDb = 0.0f;
+        float averageAbsLiveReferenceErrorDb = 0.0f;
+        float maxAbsMetricReferenceErrorDb = 0.0f;
+        float maxAbsLiveReferenceErrorDb = 0.0f;
+        int binsWithReferenceComparison = 0;
+        float referenceComparisonBinRatio = 0.0f;
     };
 
     void run() override;
@@ -477,6 +511,9 @@ class AnalyzerEngine : private juce::Thread
     void configureVqtLikeFilterBand(VqtLikeFilterBand& band,
                                     float centerFrequencyHz,
                                     float sampleRate) noexcept;
+    float powerToAnalyzerDb(float power) const noexcept;
+    float safePowerRatioDb(float numeratorPower,
+                           float denominatorPower) const noexcept;
     float getBiquadMagnitudeAtFrequency(float b0,
                                         float b1,
                                         float b2,
@@ -486,6 +523,12 @@ class AnalyzerEngine : private juce::Thread
                                         float sampleRate) const noexcept;
     float getVqtLikeLayerCalibrationPowerGain(float centerGain,
                                               float trim) const noexcept;
+    float getVqtLikeTonalCalibrationTrimForFrequency(
+        float frequencyHz) const noexcept;
+    float getVqtLikeFastCalibrationTrimForFrequency(
+        float frequencyHz) const noexcept;
+    float getVqtLikeNoiseDensityTrimForFrequency(
+        float frequencyHz) const noexcept;
     bool configureVqtLikeBandpassLayer(
         float centerFrequencyHz,
         float sampleRate,

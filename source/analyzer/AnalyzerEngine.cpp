@@ -2069,10 +2069,55 @@ void AnalyzerEngine::accumulateVqtLikeFrameSummary (
     vqtLikeFrameSummary.averageFastBandwidthHz += stats.fastBandwidthHz;
     vqtLikeFrameSummary.averageTonalEffectiveQ += stats.tonalEffectiveQ;
     vqtLikeFrameSummary.averageFastEffectiveQ += stats.fastEffectiveQ;
+    vqtLikeFrameSummary.averageTonalToFastMeanRatioDb +=
+        stats.tonalToFastMeanRatioDb;
+    vqtLikeFrameSummary.averageTonalToFastPeakRatioDb +=
+        stats.tonalToFastPeakRatioDb;
+    vqtLikeFrameSummary.averageLiveLiftFromFastDb += stats.liveLiftFromFastDb;
+    vqtLikeFrameSummary.averagePeakHoldLiftFromFastDb +=
+        stats.peakHoldLiftFromFastDb;
+    vqtLikeFrameSummary.averageTonalPeakToMeanDb += stats.tonalPeakToMeanDb;
+    vqtLikeFrameSummary.averageFastPeakToMeanDb += stats.fastPeakToMeanDb;
+    vqtLikeFrameSummary.maxLiveLiftFromFastDb =
+        juce::jmax (vqtLikeFrameSummary.maxLiveLiftFromFastDb,
+            stats.liveLiftFromFastDb);
+    vqtLikeFrameSummary.maxPeakHoldLiftFromFastDb =
+        juce::jmax (vqtLikeFrameSummary.maxPeakHoldLiftFromFastDb,
+            stats.peakHoldLiftFromFastDb);
+
+    if (stats.liveLiftFromFastDb > 0.25f
+        || stats.peakHoldLiftFromFastDb > 0.25f)
+    {
+        ++vqtLikeFrameSummary.binsWithFastLift;
+    }
+
+    if (stats.hasReferenceComparison)
+    {
+        ++vqtLikeFrameSummary.binsWithReferenceComparison;
+        vqtLikeFrameSummary.averageMetricReferenceErrorDb +=
+            stats.metricReferenceErrorDb;
+        vqtLikeFrameSummary.averageLiveReferenceErrorDb +=
+            stats.liveReferenceErrorDb;
+        vqtLikeFrameSummary.averageAbsMetricReferenceErrorDb +=
+            std::abs (stats.metricReferenceErrorDb);
+        vqtLikeFrameSummary.averageAbsLiveReferenceErrorDb +=
+            std::abs (stats.liveReferenceErrorDb);
+        vqtLikeFrameSummary.maxAbsMetricReferenceErrorDb =
+            juce::jmax (vqtLikeFrameSummary.maxAbsMetricReferenceErrorDb,
+                std::abs (stats.metricReferenceErrorDb));
+        vqtLikeFrameSummary.maxAbsLiveReferenceErrorDb =
+            juce::jmax (vqtLikeFrameSummary.maxAbsLiveReferenceErrorDb,
+                std::abs (stats.liveReferenceErrorDb));
+    }
 }
 
 void AnalyzerEngine::finalizeVqtLikeFrameSummary() noexcept
 {
+    const auto sanitizeDiagnosticValue = [] (float value) noexcept
+    {
+        return std::isfinite (value) ? value : 0.0f;
+    };
+
     const auto analysisBandCount =
         static_cast<float> (juce::jmax (1, vqtLikeAnalysisBandCount));
 
@@ -2095,6 +2140,78 @@ void AnalyzerEngine::finalizeVqtLikeFrameSummary() noexcept
     vqtLikeFrameSummary.averageFastBandwidthHz *= inverseConfiguredDisplayBins;
     vqtLikeFrameSummary.averageTonalEffectiveQ *= inverseConfiguredDisplayBins;
     vqtLikeFrameSummary.averageFastEffectiveQ *= inverseConfiguredDisplayBins;
+    vqtLikeFrameSummary.averageTonalToFastMeanRatioDb *= inverseConfiguredDisplayBins;
+    vqtLikeFrameSummary.averageTonalToFastPeakRatioDb *= inverseConfiguredDisplayBins;
+    vqtLikeFrameSummary.averageLiveLiftFromFastDb *= inverseConfiguredDisplayBins;
+    vqtLikeFrameSummary.averagePeakHoldLiftFromFastDb *= inverseConfiguredDisplayBins;
+    vqtLikeFrameSummary.averageTonalPeakToMeanDb *= inverseConfiguredDisplayBins;
+    vqtLikeFrameSummary.averageFastPeakToMeanDb *= inverseConfiguredDisplayBins;
+    vqtLikeFrameSummary.fastLiftBinRatio =
+        static_cast<float> (vqtLikeFrameSummary.binsWithFastLift)
+        * inverseConfiguredDisplayBins;
+
+    if (vqtLikeFrameSummary.binsWithReferenceComparison > 0)
+    {
+        const auto inverseReferenceBins =
+            1.0f
+            / static_cast<float> (vqtLikeFrameSummary.binsWithReferenceComparison);
+
+        vqtLikeFrameSummary.averageMetricReferenceErrorDb *= inverseReferenceBins;
+        vqtLikeFrameSummary.averageLiveReferenceErrorDb *= inverseReferenceBins;
+        vqtLikeFrameSummary.averageAbsMetricReferenceErrorDb *= inverseReferenceBins;
+        vqtLikeFrameSummary.averageAbsLiveReferenceErrorDb *= inverseReferenceBins;
+    }
+
+    vqtLikeFrameSummary.referenceComparisonBinRatio =
+        static_cast<float> (vqtLikeFrameSummary.binsWithReferenceComparison)
+        * inverseConfiguredDisplayBins;
+
+    vqtLikeFrameSummary.configuredAnalysisBandRatio =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.configuredAnalysisBandRatio);
+    vqtLikeFrameSummary.displayBinConfiguredRatio =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.displayBinConfiguredRatio);
+    vqtLikeFrameSummary.averageAnalysisBandsUsed =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageAnalysisBandsUsed);
+    vqtLikeFrameSummary.averageTonalBandwidthHz =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageTonalBandwidthHz);
+    vqtLikeFrameSummary.averageFastBandwidthHz =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageFastBandwidthHz);
+    vqtLikeFrameSummary.averageTonalEffectiveQ =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageTonalEffectiveQ);
+    vqtLikeFrameSummary.averageFastEffectiveQ =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageFastEffectiveQ);
+    vqtLikeFrameSummary.averageTonalToFastMeanRatioDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageTonalToFastMeanRatioDb);
+    vqtLikeFrameSummary.averageTonalToFastPeakRatioDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageTonalToFastPeakRatioDb);
+    vqtLikeFrameSummary.averageLiveLiftFromFastDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageLiveLiftFromFastDb);
+    vqtLikeFrameSummary.averagePeakHoldLiftFromFastDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averagePeakHoldLiftFromFastDb);
+    vqtLikeFrameSummary.averageTonalPeakToMeanDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageTonalPeakToMeanDb);
+    vqtLikeFrameSummary.averageFastPeakToMeanDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageFastPeakToMeanDb);
+    vqtLikeFrameSummary.maxLiveLiftFromFastDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.maxLiveLiftFromFastDb);
+    vqtLikeFrameSummary.maxPeakHoldLiftFromFastDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.maxPeakHoldLiftFromFastDb);
+    vqtLikeFrameSummary.fastLiftBinRatio =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.fastLiftBinRatio);
+    vqtLikeFrameSummary.averageMetricReferenceErrorDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageMetricReferenceErrorDb);
+    vqtLikeFrameSummary.averageLiveReferenceErrorDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageLiveReferenceErrorDb);
+    vqtLikeFrameSummary.averageAbsMetricReferenceErrorDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageAbsMetricReferenceErrorDb);
+    vqtLikeFrameSummary.averageAbsLiveReferenceErrorDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.averageAbsLiveReferenceErrorDb);
+    vqtLikeFrameSummary.maxAbsMetricReferenceErrorDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.maxAbsMetricReferenceErrorDb);
+    vqtLikeFrameSummary.maxAbsLiveReferenceErrorDb =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.maxAbsLiveReferenceErrorDb);
+    vqtLikeFrameSummary.referenceComparisonBinRatio =
+        sanitizeDiagnosticValue (vqtLikeFrameSummary.referenceComparisonBinRatio);
 }
 
 void AnalyzerEngine::configureVqtLikeFilterbankIfNeeded()
@@ -2157,6 +2274,39 @@ void AnalyzerEngine::configureVqtLikeFilterbankIfNeeded()
     vqtLikeFilterbankMaxFrequencyHz = currentDisplayMaxFrequencyHz;
     vqtLikeFilterbankNeedsReset = false;
     resetVqtLikeFilterbankState();
+}
+
+float AnalyzerEngine::powerToAnalyzerDb(float power) const noexcept
+{
+    const auto safePower =
+        juce::jmax (0.0f, std::isfinite (power) ? power : 0.0f);
+
+    const auto magnitude = std::sqrt (safePower);
+
+    return juce::jlimit (-100.0f,
+        0.0f,
+        juce::Decibels::gainToDecibels (magnitude, -100.0f));
+}
+
+float AnalyzerEngine::safePowerRatioDb (
+    float numeratorPower,
+    float denominatorPower) const noexcept
+{
+    constexpr auto ratioPowerFloor = 1.0e-20f;
+
+    const auto safeNumerator =
+        juce::jmax (ratioPowerFloor,
+            std::isfinite (numeratorPower) ? numeratorPower : ratioPowerFloor);
+
+    const auto safeDenominator =
+        juce::jmax (ratioPowerFloor,
+            std::isfinite (denominatorPower) ? denominatorPower : ratioPowerFloor);
+
+    const auto ratioDb = 10.0f * std::log10 (safeNumerator / safeDenominator);
+
+    return juce::jlimit (-60.0f,
+        60.0f,
+        std::isfinite (ratioDb) ? ratioDb : 0.0f);
 }
 
 float AnalyzerEngine::getBiquadMagnitudeAtFrequency (
@@ -2240,6 +2390,27 @@ float AnalyzerEngine::getVqtLikeLayerCalibrationPowerGain (
     const auto powerGain = amplitudeGain * amplitudeGain;
 
     return std::isfinite (powerGain) ? powerGain : 1.0f;
+}
+
+float AnalyzerEngine::getVqtLikeTonalCalibrationTrimForFrequency (
+    float frequencyHz) const noexcept
+{
+    juce::ignoreUnused (frequencyHz);
+    return 1.0f;
+}
+
+float AnalyzerEngine::getVqtLikeFastCalibrationTrimForFrequency (
+    float frequencyHz) const noexcept
+{
+    juce::ignoreUnused (frequencyHz);
+    return 1.0f;
+}
+
+float AnalyzerEngine::getVqtLikeNoiseDensityTrimForFrequency (
+    float frequencyHz) const noexcept
+{
+    juce::ignoreUnused (frequencyHz);
+    return 1.0f;
 }
 
 bool AnalyzerEngine::configureVqtLikeBandpassLayer (
@@ -2387,6 +2558,14 @@ void AnalyzerEngine::configureVqtLikeFilterBand (
 
     band.centerFrequencyHz = centerFrequencyHz;
 
+    const auto tonalTrim =
+        vqtLikeTonalSineCalibrationTrim
+        * getVqtLikeTonalCalibrationTrimForFrequency (centerFrequencyHz);
+
+    const auto fastTrim =
+        vqtLikeFastSineCalibrationTrim
+        * getVqtLikeFastCalibrationTrimForFrequency (centerFrequencyHz);
+
     const auto tonalLayerConfigured =
         configureVqtLikeBandpassLayer (
             centerFrequencyHz,
@@ -2399,7 +2578,7 @@ void AnalyzerEngine::configureVqtLikeFilterBand (
             vqtLikeResolutionGammaFadeEndHz,
             vqtLikeResolutionMinBandwidthHz,
             vqtLikeResolutionMaxBandwidthFractionOfCenter,
-            vqtLikeTonalSineCalibrationTrim,
+            tonalTrim,
             band.bandwidthHz,
             band.effectiveQ,
             band.b0,
@@ -2423,7 +2602,7 @@ void AnalyzerEngine::configureVqtLikeFilterBand (
             vqtLikeFastGammaFadeEndHz,
             vqtLikeFastMinBandwidthHz,
             vqtLikeFastMaxBandwidthFractionOfCenter,
-            vqtLikeFastSineCalibrationTrim,
+            fastTrim,
             band.fastBandwidthHz,
             band.fastEffectiveQ,
             band.fastB0,
@@ -2986,6 +3165,17 @@ AnalyzerEngine::VqtLikeDisplayBinStats
     const auto peakShapeBlend =
         getVqtLikeAggregationPeakShapeBlendForFrequency (centerFrequencyHz);
 
+    const auto tonalCalibrationTrim =
+        vqtLikeTonalSineCalibrationTrim
+        * getVqtLikeTonalCalibrationTrimForFrequency (centerFrequencyHz);
+
+    const auto fastCalibrationTrim =
+        vqtLikeFastSineCalibrationTrim
+        * getVqtLikeFastCalibrationTrimForFrequency (centerFrequencyHz);
+
+    const auto noiseDensityTrim =
+        getVqtLikeNoiseDensityTrimForFrequency (centerFrequencyHz);
+
     tonalPeakPower =
         juce::jlimit (tonalMeanPower,
             vqtLikeMaxDisplayPower,
@@ -3070,6 +3260,9 @@ AnalyzerEngine::VqtLikeDisplayBinStats
                 peakHoldCandidatePower,
                 peakHoldTransientMaxLiftDb));
 
+    const auto vqtMetricDb = powerToAnalyzerDb (tonalMeanPower);
+    const auto vqtLiveDb = powerToAnalyzerDb (livePower);
+
     result.metricStats = { tonalMeanPower, tonalMeanPower, 1 };
     result.liveVisualStats = { livePower, livePower, 1 };
     result.peakHoldVisualStats = { peakHoldPower, peakHoldPower, 1 };
@@ -3089,6 +3282,23 @@ AnalyzerEngine::VqtLikeDisplayBinStats
     result.tonalEffectiveQ = tonalEffectiveQ;
     result.fastEffectiveQ = fastEffectiveQ;
     result.peakShapeBlend = peakShapeBlend;
+    result.tonalToFastMeanRatioDb =
+        safePowerRatioDb (tonalMeanPower, fastMeanPower);
+    result.tonalToFastPeakRatioDb =
+        safePowerRatioDb (tonalPeakPower, fastPeakPower);
+    result.liveLiftFromFastDb =
+        safePowerRatioDb (livePower, tonalLivePower);
+    result.peakHoldLiftFromFastDb =
+        safePowerRatioDb (peakHoldPower, peakHoldPowerBase);
+    result.tonalPeakToMeanDb =
+        safePowerRatioDb (tonalPeakPower, tonalMeanPower);
+    result.fastPeakToMeanDb =
+        safePowerRatioDb (fastPeakPower, fastMeanPower);
+    result.vqtMetricDb = vqtMetricDb;
+    result.vqtLiveDb = vqtLiveDb;
+    result.tonalCalibrationTrim = tonalCalibrationTrim;
+    result.fastCalibrationTrim = fastCalibrationTrim;
+    result.noiseDensityTrim = noiseDensityTrim;
     result.isConfigured = true;
 
     return result;
@@ -3497,8 +3707,40 @@ void AnalyzerEngine::processOneFftBlock()
 
         if (currentVqtLikeFilterbankEnabled)
         {
-            const auto vqtBinStats =
+            auto vqtBinStats =
                 getVqtLikeDisplayBinStats (index);
+
+            if (vqtBinStats.isConfigured
+                && displayBinFftRanges.size() > index
+                && fftData.size() >= static_cast<size_t> (fftSizeForBlock))
+            {
+                const auto& referenceRange = displayBinFftRanges[index];
+                const auto referenceStats =
+                    getFftBinPowerStatsForRange (fftData,
+                        fftSizeForBlock,
+                        referenceRange.firstBin,
+                        referenceRange.lastBin,
+                        referenceRange.leftBin,
+                        referenceRange.rightBin);
+
+                vqtBinStats.referenceMetricDb =
+                    powerToAnalyzerDb (referenceStats.meanPower);
+                vqtBinStats.referenceLiveDb =
+                    displayBinPowerStatsToDb (referenceStats);
+                vqtBinStats.vqtMetricDb =
+                    powerToAnalyzerDb (vqtBinStats.metricStats.meanPower);
+                vqtBinStats.vqtLiveDb =
+                    displayBinPowerStatsToDb (vqtBinStats.liveVisualStats);
+                vqtBinStats.metricReferenceErrorDb =
+                    juce::jlimit (-60.0f,
+                        60.0f,
+                        vqtBinStats.vqtMetricDb - vqtBinStats.referenceMetricDb);
+                vqtBinStats.liveReferenceErrorDb =
+                    juce::jlimit (-60.0f,
+                        60.0f,
+                        vqtBinStats.vqtLiveDb - vqtBinStats.referenceLiveDb);
+                vqtBinStats.hasReferenceComparison = true;
+            }
 
             accumulateVqtLikeFrameSummary (vqtBinStats);
 
