@@ -348,6 +348,19 @@ void AnalyzerEngine::prepare (double sampleRate, AnalyzerFifo& fifoToReadFrom)
                 lines.add ("peakWidthHzAboveMinus3Db: " + juce::String (result.peakWidthHzAboveMinus3Db));
                 lines.add ("averageAbsMetricReferenceErrorDb: " + juce::String (result.averageAbsMetricReferenceErrorDb));
                 lines.add ("maxAbsMetricReferenceErrorDb: " + juce::String (result.maxAbsMetricReferenceErrorDb));
+                lines.add ("lowBandAverageMetricDb: " + juce::String (result.lowBandAverageMetricDb));
+                lines.add ("midBandAverageMetricDb: " + juce::String (result.midBandAverageMetricDb));
+                lines.add ("highBandAverageMetricDb: " + juce::String (result.highBandAverageMetricDb));
+
+                lines.add ("lowBandAverageLiveDb: " + juce::String (result.lowBandAverageLiveDb));
+                lines.add ("midBandAverageLiveDb: " + juce::String (result.midBandAverageLiveDb));
+                lines.add ("highBandAverageLiveDb: " + juce::String (result.highBandAverageLiveDb));
+
+                lines.add ("lowToMidMetricTiltDb: " + juce::String (result.lowToMidMetricTiltDb));
+                lines.add ("highToMidMetricTiltDb: " + juce::String (result.highToMidMetricTiltDb));
+
+                lines.add ("lowToMidLiveTiltDb: " + juce::String (result.lowToMidLiveTiltDb));
+                lines.add ("highToMidLiveTiltDb: " + juce::String (result.highToMidLiveTiltDb));
                 lines.add ("isValid: " + juce::String (static_cast<int> (result.isValid)));
             }
 
@@ -3623,11 +3636,13 @@ AnalyzerEngine::VqtLikeValidationResult AnalyzerEngine::runVqtLikeValidationSign
     if (displayBinCenterFrequenciesHz.size() != static_cast<size_t> (displayBinCount))
         displayBinCenterFrequenciesHz.resize (static_cast<size_t> (displayBinCount), 0.0f);
 
-    const auto displayDenominator = static_cast<float> (juce::jmax (1, displayBinCount - 1));
+    const auto displayDenominator =
+        static_cast<float> (juce::jmax (1, displayBinCount - 1));
 
     for (int i = 0; i < displayBinCount; ++i)
     {
         const auto normalisedPosition = static_cast<float> (i) / displayDenominator;
+
         displayBinCenterFrequenciesHz[static_cast<size_t> (i)] =
             logFrequencyAtNormalisedPosition (normalisedPosition,
                 currentDisplayMinFrequencyHz,
@@ -3638,6 +3653,7 @@ AnalyzerEngine::VqtLikeValidationResult AnalyzerEngine::runVqtLikeValidationSign
     vqtLikeFilterbankMinFrequencyHz = 0.0f;
     vqtLikeFilterbankMaxFrequencyHz = 0.0f;
     vqtLikeFilterbankNeedsReset = true;
+
     configureVqtLikeFilterbankIfNeeded();
     resetVqtLikeFilterbankState();
 
@@ -3650,40 +3666,57 @@ AnalyzerEngine::VqtLikeValidationResult AnalyzerEngine::runVqtLikeValidationSign
                 maximumFftHopSizeSamples));
 
     for (size_t offset = 0; offset < validationSignal.size();
-        offset += static_cast<size_t> (validationHopSize))
+         offset += static_cast<size_t> (validationHopSize))
     {
         const auto remainingSamples = validationSignal.size() - offset;
+
         const auto samplesThisBlock =
             static_cast<int> (juce::jmin (remainingSamples,
                 static_cast<size_t> (validationHopSize)));
+
         const auto frameAdvanceSeconds =
             static_cast<float> (samplesThisBlock) / validationSampleRate;
 
-        processVqtLikeFilterbankSamples (validationSignal.data() + offset,
+        processVqtLikeFilterbankSamples (
+            validationSignal.data() + offset,
             samplesThisBlock,
             frameAdvanceSeconds);
     }
 
-    auto metricDbByDisplayBin =
-        std::vector<float> (static_cast<size_t> (displayBinCount), -100.0f);
+    std::vector<float> metricDbByDisplayBin (
+        static_cast<size_t> (displayBinCount),
+        -100.0f);
+
+    std::vector<float> liveDbByDisplayBin (
+        static_cast<size_t> (displayBinCount),
+        -100.0f);
+
+    resetVqtLikeFrameSummary();
 
     auto peakBinIndex = -1;
     auto peakMetricDb = -100.0f;
     auto peakLiveDb = -100.0f;
 
-    resetVqtLikeFrameSummary();
-
     for (int i = 0; i < displayBinCount; ++i)
     {
-        const auto stats = getVqtLikeDisplayBinStats (static_cast<size_t> (i));
-        accumulateVqtLikeFrameSummary (stats);
+        const auto index = static_cast<size_t> (i);
+        const auto displayStats = getVqtLikeDisplayBinStats (index);
 
-        if (!stats.isConfigured)
+        if (!displayStats.isConfigured)
             continue;
 
-        const auto metricDb = powerToAnalyzerDb (stats.metricStats.meanPower);
-        const auto liveDb = displayBinPowerStatsToDb (stats.liveVisualStats);
-        metricDbByDisplayBin[static_cast<size_t> (i)] = metricDb;
+        const auto metricDb =
+            clampAnalyzerDisplayDb (
+                displayBinPowerStatsToDb (displayStats.metricStats));
+
+        const auto liveDb =
+            clampAnalyzerDisplayDb (
+                displayBinPowerStatsToDb (displayStats.liveVisualStats));
+
+        metricDbByDisplayBin[index] = metricDb;
+        liveDbByDisplayBin[index] = liveDb;
+
+        accumulateVqtLikeFrameSummary (displayStats);
 
         if (metricDb > peakMetricDb)
         {
@@ -3695,12 +3728,117 @@ AnalyzerEngine::VqtLikeValidationResult AnalyzerEngine::runVqtLikeValidationSign
 
     finalizeVqtLikeFrameSummary();
 
+    const auto computeAverageDbForFrequencyRange =
+        [&] (const std::vector<float>& dbValues,
+             float lowerHz,
+             float upperHz) noexcept
+    {
+        auto powerSum = 0.0f;
+        auto count = 0;
+
+        if (upperHz <= lowerHz
+            || displayBinCenterFrequenciesHz.size() != static_cast<size_t> (displayBinCount)
+            || dbValues.size() != static_cast<size_t> (displayBinCount))
+        {
+            return -100.0f;
+        }
+
+        for (int i = 0; i < displayBinCount; ++i)
+        {
+            const auto index = static_cast<size_t> (i);
+            const auto frequencyHz = displayBinCenterFrequenciesHz[index];
+
+            if (!std::isfinite (frequencyHz)
+                || frequencyHz < lowerHz
+                || frequencyHz > upperHz)
+            {
+                continue;
+            }
+
+            const auto db = dbValues[index];
+
+            if (!std::isfinite (db) || db <= -99.9f)
+                continue;
+
+            const auto magnitude = juce::Decibels::decibelsToGain (db);
+            powerSum += magnitude * magnitude;
+            ++count;
+        }
+
+        if (count <= 0 || powerSum <= 0.0f)
+            return -100.0f;
+
+        const auto averagePower = powerSum / static_cast<float> (count);
+        const auto averageMagnitude = std::sqrt (averagePower);
+
+        return clampAnalyzerDisplayDb (
+            juce::Decibels::gainToDecibels (averageMagnitude, -100.0f));
+    };
+
+    result.lowBandAverageMetricDb =
+        computeAverageDbForFrequencyRange (metricDbByDisplayBin, 40.0f, 160.0f);
+
+    result.midBandAverageMetricDb =
+        computeAverageDbForFrequencyRange (metricDbByDisplayBin, 500.0f, 2000.0f);
+
+    result.highBandAverageMetricDb =
+        computeAverageDbForFrequencyRange (metricDbByDisplayBin, 6000.0f, 14000.0f);
+
+    result.lowBandAverageLiveDb =
+        computeAverageDbForFrequencyRange (liveDbByDisplayBin, 40.0f, 160.0f);
+
+    result.midBandAverageLiveDb =
+        computeAverageDbForFrequencyRange (liveDbByDisplayBin, 500.0f, 2000.0f);
+
+    result.highBandAverageLiveDb =
+        computeAverageDbForFrequencyRange (liveDbByDisplayBin, 6000.0f, 14000.0f);
+
+    const auto safeBandDifferenceDb =
+        [] (float firstDb, float secondDb) noexcept
+    {
+        if (!std::isfinite (firstDb)
+            || !std::isfinite (secondDb)
+            || firstDb <= -99.9f
+            || secondDb <= -99.9f)
+        {
+            return 0.0f;
+        }
+
+        return juce::jlimit (-60.0f, 60.0f, firstDb - secondDb);
+    };
+
+    result.lowToMidMetricTiltDb =
+        safeBandDifferenceDb (result.lowBandAverageMetricDb,
+            result.midBandAverageMetricDb);
+
+    result.highToMidMetricTiltDb =
+        safeBandDifferenceDb (result.highBandAverageMetricDb,
+            result.midBandAverageMetricDb);
+
+    result.lowToMidLiveTiltDb =
+        safeBandDifferenceDb (result.lowBandAverageLiveDb,
+            result.midBandAverageLiveDb);
+
+    result.highToMidLiveTiltDb =
+        safeBandDifferenceDb (result.highBandAverageLiveDb,
+            result.midBandAverageLiveDb);
+
     auto targetFrequencyHz = spec.frequencyHz;
+
     if (spec.type == VqtLikeValidationSignalSpec::Type::logarithmicSweep)
-        targetFrequencyHz = std::sqrt (spec.sweepStartHz * spec.sweepEndHz);
-    else if (spec.type == VqtLikeValidationSignalSpec::Type::whiteNoise
-             || spec.type == VqtLikeValidationSignalSpec::Type::pinkNoise)
-        targetFrequencyHz = 1000.0f;
+    {
+        const auto safeStartHz =
+            std::isfinite (spec.sweepStartHz) && spec.sweepStartHz > 0.0f
+                ? spec.sweepStartHz
+                : 20.0f;
+
+        const auto safeEndHz =
+            std::isfinite (spec.sweepEndHz) && spec.sweepEndHz > safeStartHz
+                ? spec.sweepEndHz
+                : 20000.0f;
+
+        targetFrequencyHz = std::sqrt (safeStartHz * safeEndHz);
+    }
 
     if (!std::isfinite (targetFrequencyHz) || targetFrequencyHz <= 0.0f)
         targetFrequencyHz = 1000.0f;
@@ -3711,16 +3849,35 @@ AnalyzerEngine::VqtLikeValidationResult AnalyzerEngine::runVqtLikeValidationSign
     if (spec.type == VqtLikeValidationSignalSpec::Type::dualSine)
         result.expectedDb = juce::jlimit (-100.0f, 0.0f, spec.levelDb - 6.0206f);
 
+    const auto usesPointLevelError =
+        spec.type == VqtLikeValidationSignalSpec::Type::sine
+        || spec.type == VqtLikeValidationSignalSpec::Type::dualSine;
+
     if (peakBinIndex >= 0)
     {
         result.measuredPeakFrequencyHz =
             displayBinCenterFrequenciesHz[static_cast<size_t> (peakBinIndex)];
+
         result.measuredMetricDb = peakMetricDb;
         result.measuredLiveDb = peakLiveDb;
-        result.metricErrorDb =
-            juce::jlimit (-60.0f, 60.0f, result.measuredMetricDb - result.expectedDb);
-        result.liveErrorDb =
-            juce::jlimit (-60.0f, 60.0f, result.measuredLiveDb - result.expectedDb);
+
+        if (usesPointLevelError)
+        {
+            result.metricErrorDb =
+                juce::jlimit (-60.0f,
+                    60.0f,
+                    result.measuredMetricDb - result.expectedDb);
+
+            result.liveErrorDb =
+                juce::jlimit (-60.0f,
+                    60.0f,
+                    result.measuredLiveDb - result.expectedDb);
+        }
+        else
+        {
+            result.metricErrorDb = 0.0f;
+            result.liveErrorDb = 0.0f;
+        }
 
         const auto widthThresholdDb = peakMetricDb - 3.0f;
         auto leftBin = peakBinIndex;
@@ -3741,8 +3898,12 @@ AnalyzerEngine::VqtLikeValidationResult AnalyzerEngine::runVqtLikeValidationSign
         result.peakWidthBinsAboveMinus3Db =
             static_cast<float> (rightBin - leftBin + 1);
 
-        const auto leftFrequencyHz = displayBinCenterFrequenciesHz[static_cast<size_t> (leftBin)];
-        const auto rightFrequencyHz = displayBinCenterFrequenciesHz[static_cast<size_t> (rightBin)];
+        const auto leftFrequencyHz =
+            displayBinCenterFrequenciesHz[static_cast<size_t> (leftBin)];
+
+        const auto rightFrequencyHz =
+            displayBinCenterFrequenciesHz[static_cast<size_t> (rightBin)];
+
         result.peakWidthHzAboveMinus3Db =
             juce::jmax (0.0f, rightFrequencyHz - leftFrequencyHz);
 
@@ -3751,8 +3912,10 @@ AnalyzerEngine::VqtLikeValidationResult AnalyzerEngine::runVqtLikeValidationSign
 
     result.averageMetricReferenceErrorDb =
         vqtLikeFrameSummary.averageMetricReferenceErrorDb;
+
     result.averageAbsMetricReferenceErrorDb =
         vqtLikeFrameSummary.averageAbsMetricReferenceErrorDb;
+
     result.maxAbsMetricReferenceErrorDb =
         vqtLikeFrameSummary.maxAbsMetricReferenceErrorDb;
 

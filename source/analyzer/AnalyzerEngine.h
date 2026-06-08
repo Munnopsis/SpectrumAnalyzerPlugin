@@ -399,6 +399,20 @@ class AnalyzerEngine : private juce::Thread
         float maxAbsLiveReferenceErrorDb = 0.0f;
         int binsWithReferenceComparison = 0;
         float referenceComparisonBinRatio = 0.0f;
+
+        float lowBandAverageMetricDb = -100.0f;
+        float midBandAverageMetricDb = -100.0f;
+        float highBandAverageMetricDb = -100.0f;
+
+        float lowBandAverageLiveDb = -100.0f;
+        float midBandAverageLiveDb = -100.0f;
+        float highBandAverageLiveDb = -100.0f;
+
+        float lowToMidMetricTiltDb = 0.0f;
+        float highToMidMetricTiltDb = 0.0f;
+
+        float lowToMidLiveTiltDb = 0.0f;
+        float highToMidLiveTiltDb = 0.0f;
     };
 
     struct VqtLikeValidationSignalSpec
@@ -446,9 +460,23 @@ class AnalyzerEngine : private juce::Thread
         float averageAbsMetricReferenceErrorDb = 0.0f;
         float maxAbsMetricReferenceErrorDb = 0.0f;
 
+        float lowBandAverageMetricDb = -100.0f;
+        float midBandAverageMetricDb = -100.0f;
+        float highBandAverageMetricDb = -100.0f;
+
+        float lowBandAverageLiveDb = -100.0f;
+        float midBandAverageLiveDb = -100.0f;
+        float highBandAverageLiveDb = -100.0f;
+
+        float lowToMidMetricTiltDb = 0.0f;
+        float highToMidMetricTiltDb = 0.0f;
+
+        float lowToMidLiveTiltDb = 0.0f;
+        float highToMidLiveTiltDb = 0.0f;
+
         bool isValid = false;
     };
-
+    
     void run() override;
     void processOneFftBlock();
     void updateFftSizeIfNeeded();
