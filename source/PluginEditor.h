@@ -29,6 +29,8 @@ private:
     void setTooltipsEnabled (bool shouldBeEnabled);
     void updateFreezeButtonState();
     void updateReferenceControls();
+    void showReferenceMenu();
+    void showRenameReferenceDialog();
 
     PluginProcessor& processorRef;
 
@@ -83,6 +85,7 @@ private:
     juce::TextButton peakDipButton { "Peaks/Dips" };
     juce::TextButton freezeButton { "Add Ref" };
     juce::TextButton clearReferencesButton { "Clear Refs" };
+    juce::TextButton referenceMenuButton { "Ref…" };
     juce::TextButton differenceButton { "Diff" };
     juce::TextButton stereoMeterButton { "Stereo" };
     juce::TextButton loudnessMeterButton { "LUFS" };

@@ -30,6 +30,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (peakDipButton);
     addAndMakeVisible (freezeButton);
     addAndMakeVisible (clearReferencesButton);
+    addAndMakeVisible (referenceMenuButton);
     addAndMakeVisible (differenceButton);
     addAndMakeVisible (stereoMeterButton);
     addAndMakeVisible (loudnessMeterButton);
@@ -57,6 +58,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     peakDipButton.setName ("PeakDipButton");
     freezeButton.setName ("FreezeButton");
     clearReferencesButton.setName ("ClearReferencesButton");
+    referenceMenuButton.setName ("ReferenceMenuButton");
     differenceButton.setName ("DifferenceButton");
     stereoMeterButton.setName ("StereoMeterButton");
     loudnessMeterButton.setName ("LoudnessMeterButton");
@@ -84,6 +86,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     peakDipButton.setWantsKeyboardFocus (true);
     freezeButton.setWantsKeyboardFocus (true);
     clearReferencesButton.setWantsKeyboardFocus (true);
+    referenceMenuButton.setWantsKeyboardFocus (true);
     differenceButton.setWantsKeyboardFocus (true);
     stereoMeterButton.setWantsKeyboardFocus (true);
     loudnessMeterButton.setWantsKeyboardFocus (true);
@@ -111,6 +114,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     peakDipButton.setTooltip ("Show automatic peak and dip markers on the visible analyzer curve");
     freezeButton.setTooltip ("Store the current analyzer curves as a reference snapshot");
     clearReferencesButton.setTooltip ("Clear all stored reference curves");
+    referenceMenuButton.setTooltip ("Rename, remove or show/hide the selected reference curve");
     differenceButton.setTooltip ("Show difference between current analyzer curve and the active reference");
     stereoMeterButton.setTooltip ("Show stereo correlation, balance, width and phase scope");
     loudnessMeterButton.setTooltip ("Show momentary, short-term and integrated loudness metering");
@@ -141,6 +145,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         updateReferenceControls();
     };
 
+    referenceMenuButton.onClick = [this]
+    {
+        showReferenceMenu();
+    };
+
     clearReferencesButton.onClick = [this]
     {
         processorRef.clearReferenceCurves();
@@ -154,7 +163,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     peakDipButton.setClickingTogglesState (true);
     freezeButton.setClickingTogglesState (false);
     clearReferencesButton.setClickingTogglesState (false);
-    differenceButton.setClickingTogglesState (true);
+    referenceMenuButton.setClickingTogglesState (false);
+    differenceButton.setClickingTogglesState (true);differenceButton.setClickingTogglesState (true);
     stereoMeterButton.setClickingTogglesState (true);
     loudnessMeterButton.setClickingTogglesState (true);
     frequencyCorrelationButton.setClickingTogglesState (true);
@@ -415,6 +425,9 @@ void PluginEditor::resized()
     referenceBox.setBounds (firstRow.removeFromLeft (172));
     addGap (firstRow, 8);
 
+    referenceMenuButton.setBounds (firstRow.removeFromLeft (56));
+    addGap (firstRow, 8);
+
     validationSignalBox.setBounds (firstRow.removeFromLeft (116));
 
     liveButton.setBounds (secondRow.removeFromLeft (64));
@@ -649,12 +662,16 @@ void PluginEditor::updateFreezeButtonState()
     freezeButton.setButtonText ("Add Ref");
     freezeButton.setToggleState (false, juce::dontSendNotification);
     clearReferencesButton.setEnabled (hasReference);
+    referenceMenuButton.setEnabled (hasReference);
 }
 
 void PluginEditor::updateReferenceControls()
 {
-    const auto references = processorRef.getReferenceCurvesSnapshot();
-    const auto activeReferenceIndex = processorRef.getActiveReferenceIndex();
+    const auto references =
+        processorRef.getReferenceCurvesSnapshot();
+
+    const auto activeReferenceIndex =
+        processorRef.getActiveReferenceIndex();
 
     spectrumDisplay.setReferenceCurves (references, activeReferenceIndex);
 
@@ -663,7 +680,12 @@ void PluginEditor::updateReferenceControls()
 
     for (size_t i = 0; i < references.size(); ++i)
     {
-        referenceBox.addItem (references[i].name,
+        auto label = references[i].name;
+
+        if (!references[i].visible)
+            label += " (hidden)";
+
+        referenceBox.addItem (label,
                               static_cast<int> (i) + 1);
     }
 
@@ -678,11 +700,164 @@ void PluginEditor::updateReferenceControls()
         referenceBox.setSelectedItemIndex (-1, juce::dontSendNotification);
     }
 
-    referenceBox.setEnabled (!references.empty());
+    const auto hasReferences =
+        !references.empty();
+
+    referenceBox.setEnabled (hasReferences);
+    referenceMenuButton.setEnabled (hasReferences);
+
     updatingReferenceBox = false;
 
-    lastReferenceStateRevision = processorRef.getReferenceStateRevision();
+    lastReferenceStateRevision =
+        processorRef.getReferenceStateRevision();
+
     updateFreezeButtonState();
+}
+
+void PluginEditor::showReferenceMenu()
+{
+    const auto references =
+        processorRef.getReferenceCurvesSnapshot();
+
+    const auto activeReferenceIndex =
+        processorRef.getActiveReferenceIndex();
+
+    const auto hasActiveReference =
+        activeReferenceIndex >= 0
+        && activeReferenceIndex < static_cast<int> (references.size());
+
+    const auto activeReferenceVisible =
+        hasActiveReference
+            ? references[static_cast<size_t> (activeReferenceIndex)].visible
+            : false;
+
+    juce::PopupMenu menu;
+
+    menu.addItem (1,
+                  "Rename Reference",
+                  hasActiveReference);
+
+    menu.addItem (2,
+                  "Remove Reference",
+                  hasActiveReference);
+
+    menu.addSeparator();
+
+    menu.addItem (3,
+                  activeReferenceVisible ? "Hide Reference" : "Show Reference",
+                  hasActiveReference);
+
+    juce::Component::SafePointer<PluginEditor> safeThis (this);
+
+    menu.showMenuAsync (
+        juce::PopupMenu::Options()
+            .withTargetComponent (referenceMenuButton),
+        [safeThis] (int result)
+        {
+            if (safeThis == nullptr || result == 0)
+                return;
+
+            auto& editor =
+                *safeThis;
+
+            const auto currentReferences =
+                editor.processorRef.getReferenceCurvesSnapshot();
+
+            const auto currentActiveIndex =
+                editor.processorRef.getActiveReferenceIndex();
+
+            const auto hasCurrentActiveReference =
+                currentActiveIndex >= 0
+                && currentActiveIndex < static_cast<int> (currentReferences.size());
+
+            if (!hasCurrentActiveReference)
+                return;
+
+            switch (result)
+            {
+                case 1:
+                    editor.showRenameReferenceDialog();
+                    break;
+
+                case 2:
+                    editor.processorRef.removeReferenceCurve (currentActiveIndex);
+                    editor.updateReferenceControls();
+                    break;
+
+                case 3:
+                {
+                    const auto currentlyVisible =
+                        currentReferences[static_cast<size_t> (currentActiveIndex)].visible;
+
+                    editor.processorRef.setReferenceCurveVisible (
+                        currentActiveIndex,
+                        !currentlyVisible);
+
+                    editor.updateReferenceControls();
+                    break;
+                }
+
+                default:
+                    break;
+            }
+        });
+}
+
+void PluginEditor::showRenameReferenceDialog()
+{
+    const auto activeReferenceIndex =
+        processorRef.getActiveReferenceIndex();
+
+    if (activeReferenceIndex < 0)
+        return;
+
+    const auto currentName =
+        processorRef.getReferenceCurveName (activeReferenceIndex);
+
+    auto* alertWindow =
+        new juce::AlertWindow ("Rename Reference",
+                               "Enter a new name for the selected reference curve.",
+                               juce::MessageBoxIconType::NoIcon,
+                               this);
+
+    alertWindow->addTextEditor ("name",
+                                currentName,
+                                "Name:");
+
+    alertWindow->addButton ("Rename",
+                            1,
+                            juce::KeyPress (juce::KeyPress::returnKey));
+
+    alertWindow->addButton ("Cancel",
+                            0,
+                            juce::KeyPress (juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<PluginEditor> safeThis (this);
+
+    alertWindow->enterModalState (
+        true,
+        juce::ModalCallbackFunction::create (
+            [safeThis, alertWindow, activeReferenceIndex] (int result)
+            {
+                if (safeThis == nullptr)
+                    return;
+
+                if (result != 1)
+                    return;
+
+                const auto newName =
+                    alertWindow->getTextEditorContents ("name").trim();
+
+                if (newName.isEmpty())
+                    return;
+
+                safeThis->processorRef.renameReferenceCurve (
+                    activeReferenceIndex,
+                    newName);
+
+                safeThis->updateReferenceControls();
+            }),
+        true);
 }
 
 void PluginEditor::setTooltipsEnabled (bool shouldBeEnabled)

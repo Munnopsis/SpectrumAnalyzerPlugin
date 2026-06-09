@@ -224,7 +224,10 @@ public:
 
     int addReferenceFromCurrentAnalyzerFrame();
     void clearReferenceCurves();
+    bool removeReferenceCurve (int index);
     bool removeActiveReferenceCurve();
+    bool renameReferenceCurve (int index, const juce::String& name);
+    bool setReferenceCurveVisible (int index, bool visible);
     bool setActiveReferenceIndex (int index);
     int getNumReferenceCurves() const;
     int getActiveReferenceIndex() const;

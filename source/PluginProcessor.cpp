@@ -524,7 +524,10 @@ int PluginProcessor::addReferenceFromCurrentAnalyzerFrame()
         return getActiveReferenceIndex();
 
     std::lock_guard<std::mutex> lock (referenceMutex);
-    const auto index = referenceManager.addReferenceFromFrame (frame, {});
+
+    const auto index =
+        referenceManager.addReferenceFromFrame (frame, {});
+
     referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
 
     return index;
@@ -533,15 +536,20 @@ int PluginProcessor::addReferenceFromCurrentAnalyzerFrame()
 void PluginProcessor::clearReferenceCurves()
 {
     std::lock_guard<std::mutex> lock (referenceMutex);
+
+    if (referenceManager.getNumReferences() <= 0)
+        return;
+
     referenceManager.clear();
     referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
 }
 
-bool PluginProcessor::removeActiveReferenceCurve()
+bool PluginProcessor::removeReferenceCurve (int index)
 {
     std::lock_guard<std::mutex> lock (referenceMutex);
+
     const auto removed =
-        referenceManager.removeReference (referenceManager.getActiveReferenceIndex());
+        referenceManager.removeReference (index);
 
     if (removed)
         referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
@@ -549,10 +557,61 @@ bool PluginProcessor::removeActiveReferenceCurve()
     return removed;
 }
 
+bool PluginProcessor::removeActiveReferenceCurve()
+{
+    std::lock_guard<std::mutex> lock (referenceMutex);
+
+    const auto removed =
+        referenceManager.removeReference (
+            referenceManager.getActiveReferenceIndex());
+
+    if (removed)
+        referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
+
+    return removed;
+}
+
+bool PluginProcessor::renameReferenceCurve (
+    int index,
+    const juce::String& name)
+{
+    const auto trimmedName = name.trim();
+
+    if (trimmedName.isEmpty())
+        return false;
+
+    std::lock_guard<std::mutex> lock (referenceMutex);
+
+    const auto renamed =
+        referenceManager.renameReference (index, trimmedName);
+
+    if (renamed)
+        referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
+
+    return renamed;
+}
+
+bool PluginProcessor::setReferenceCurveVisible (
+    int index,
+    bool visible)
+{
+    std::lock_guard<std::mutex> lock (referenceMutex);
+
+    const auto changed =
+        referenceManager.setReferenceVisible (index, visible);
+
+    if (changed)
+        referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
+
+    return changed;
+}
+
 bool PluginProcessor::setActiveReferenceIndex (int index)
 {
     std::lock_guard<std::mutex> lock (referenceMutex);
-    const auto changed = referenceManager.setActiveReferenceIndex (index);
+
+    const auto changed =
+        referenceManager.setActiveReferenceIndex (index);
 
     if (changed)
         referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
