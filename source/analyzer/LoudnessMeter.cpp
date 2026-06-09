@@ -74,6 +74,11 @@ void LoudnessMeter::reset() noexcept
     std::fill (lraShortTermMeanSquares.begin(), lraShortTermMeanSquares.end(), 0.0);
     std::fill (lraLoudnessScratch.begin(), lraLoudnessScratch.end(), 0.0);
 
+    for (auto& history : truePeakHistory)
+        history.fill (0.0f);
+
+    truePeakHistoryCount.fill (0);
+
     recentWriteIndex = 0;
     recentBlockCount = 0;
     integratedWriteIndex = 0;
@@ -87,7 +92,9 @@ void LoudnessMeter::reset() noexcept
     currentKWeightedEnergySum = 0.0;
     currentRawRmsSum = 0.0;
     currentBlockSamplePeak = 0.0f;
+    currentBlockTruePeak = 0.0f;
     peakHoldLinear = 0.0f;
+    truePeakHoldLinear = 0.0f;
 
     momentaryLufs.store (-100.0f, std::memory_order_relaxed);
     shortTermLufs.store (-100.0f, std::memory_order_relaxed);
@@ -104,16 +111,11 @@ void LoudnessMeter::reset() noexcept
 }
 
 void LoudnessMeter::processBlock (
-    const juce::AudioBuffer<float>& buffer) noexcept
-{
-    processBlock (buffer, buffer.getNumChannels());
-}
-
-void LoudnessMeter::processBlock (
     const juce::AudioBuffer<float>& buffer,
     int numInputChannels) noexcept
 {
     const auto numSamples = buffer.getNumSamples();
+
     const auto numChannels =
         juce::jmin (maxChannels,
                     juce::jmin (numInputChannels, buffer.getNumChannels()));
@@ -137,10 +139,13 @@ void LoudnessMeter::processBlock (
         auto kWeightedEnergyForSample = 0.0;
         auto rawEnergyForSample = 0.0;
         auto samplePeak = 0.0f;
+        auto truePeak = 0.0f;
 
         for (int channel = 0; channel < numChannels; ++channel)
         {
-            const auto input = inputSamples[static_cast<size_t> (channel)];
+            const auto input =
+                inputSamples[static_cast<size_t> (channel)];
+
             const auto shelfed =
                 highShelfFilters[static_cast<size_t> (channel)].process (input);
 
@@ -153,17 +158,30 @@ void LoudnessMeter::processBlock (
             rawEnergyForSample +=
                 static_cast<double> (input) * input;
 
-            samplePeak = juce::jmax (samplePeak, std::abs (input));
+            samplePeak =
+                juce::jmax (samplePeak, std::abs (input));
+
+            truePeak =
+                juce::jmax (truePeak,
+                            processTruePeakSample (input, channel));
         }
 
         currentKWeightedEnergySum += kWeightedEnergyForSample;
         currentRawRmsSum += rawEnergyForSample;
         rawRmsSamplesInCurrentBlock += numChannels;
+        samplesInCurrentBlock += 1;
+
         currentBlockSamplePeak =
             juce::jmax (currentBlockSamplePeak, samplePeak);
-        peakHoldLinear = juce::jmax (peakHoldLinear, samplePeak);
 
-        ++samplesInCurrentBlock;
+        currentBlockTruePeak =
+            juce::jmax (currentBlockTruePeak, truePeak);
+
+        peakHoldLinear =
+            juce::jmax (peakHoldLinear, samplePeak);
+
+        truePeakHoldLinear =
+            juce::jmax (truePeakHoldLinear, truePeak);
 
         if (samplesInCurrentBlock >= samplesPerMeasurementBlock)
             finishMeasurementBlock();
@@ -309,6 +327,82 @@ void LoudnessMeter::updateKWeightingCoefficients() noexcept
                                 highPass[4]);
         filter.reset();
     }
+}
+
+float LoudnessMeter::estimateCubicInterpolatedPeak (
+    float previousPreviousSample,
+    float previousSample,
+    float currentSample,
+    float nextSample) noexcept
+{
+    auto peak =
+        juce::jmax (std::abs (previousSample),
+                    std::abs (currentSample));
+
+    constexpr std::array<float, 3> interpolationPositions {{
+        0.25f,
+        0.50f,
+        0.75f
+    }};
+
+    for (const auto position : interpolationPositions)
+    {
+        const auto t = static_cast<double> (position);
+
+        const auto l0 =
+            -t * (t - 1.0) * (t - 2.0) / 6.0;
+
+        const auto l1 =
+            (t + 1.0) * (t - 1.0) * (t - 2.0) / 2.0;
+
+        const auto l2 =
+            -(t + 1.0) * t * (t - 2.0) / 2.0;
+
+        const auto l3 =
+            (t + 1.0) * t * (t - 1.0) / 6.0;
+
+        const auto interpolated =
+            l0 * static_cast<double> (previousPreviousSample)
+            + l1 * static_cast<double> (previousSample)
+            + l2 * static_cast<double> (currentSample)
+            + l3 * static_cast<double> (nextSample);
+
+        peak =
+            juce::jmax (peak,
+                        static_cast<float> (std::abs (interpolated)));
+    }
+
+    return peak;
+}
+
+float LoudnessMeter::processTruePeakSample (
+    float input,
+    int channel) noexcept
+{
+    if (channel < 0 || channel >= maxChannels)
+        return std::abs (input);
+
+    auto& history =
+        truePeakHistory[static_cast<size_t> (channel)];
+
+    auto& historyCount =
+        truePeakHistoryCount[static_cast<size_t> (channel)];
+
+    history[0] = history[1];
+    history[1] = history[2];
+    history[2] = history[3];
+    history[3] = input;
+
+    if (historyCount < 4)
+    {
+        ++historyCount;
+        return std::abs (input);
+    }
+
+    return estimateCubicInterpolatedPeak (history[0],
+                                          history[1],
+                                          history[2],
+                                          history[3]);
 }
 
 void LoudnessMeter::finishMeasurementBlock() noexcept

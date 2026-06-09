@@ -62,6 +62,11 @@ private:
     static double lufsFromMeanSquare (double meanSquare) noexcept;
     static float decibelsFromGain (float gain) noexcept;
 
+    static float estimateCubicInterpolatedPeak (float previousPreviousSample,
+                                                float previousSample,
+                                                float currentSample,
+                                                float nextSample) noexcept;
+
     static double percentileFromSortedValues (
         const std::array<double, maxLraBlocks>& sortedValues,
         int count,
@@ -75,6 +80,7 @@ private:
     void pushLoudnessRangeBlock (double shortTermMeanSquare) noexcept;
     void updateLoudnessRange() noexcept;
     void storeSnapshotValue (std::atomic<float>& target, double value) noexcept;
+    float processTruePeakSample (float input, int channel) noexcept;
 
     double currentSampleRate = 44100.0;
     int samplesPerMeasurementBlock = 4410;
@@ -83,7 +89,9 @@ private:
     double currentKWeightedEnergySum = 0.0;
     double currentRawRmsSum = 0.0;
     float currentBlockSamplePeak = 0.0f;
+    float currentBlockTruePeak = 0.0f;
     float peakHoldLinear = 0.0f;
+    float truePeakHoldLinear = 0.0f;
 
     std::array<Biquad, maxChannels> highShelfFilters {};
     std::array<Biquad, maxChannels> highPassFilters {};
@@ -92,6 +100,9 @@ private:
     std::array<double, maxIntegratedBlocks> integratedMeanSquares {};
     std::array<double, maxLraBlocks> lraShortTermMeanSquares {};
     std::array<double, maxLraBlocks> lraLoudnessScratch {};
+
+    std::array<std::array<float, 4>, maxChannels> truePeakHistory {};
+    std::array<int, maxChannels> truePeakHistoryCount {};
 
     int recentWriteIndex = 0;
     int recentBlockCount = 0;
