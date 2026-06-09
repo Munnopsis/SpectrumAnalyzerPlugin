@@ -71,11 +71,17 @@ void LoudnessMeter::reset() noexcept
 
     std::fill (recentMeanSquares.begin(), recentMeanSquares.end(), 0.0);
     std::fill (integratedMeanSquares.begin(), integratedMeanSquares.end(), 0.0);
+    std::fill (lraShortTermMeanSquares.begin(), lraShortTermMeanSquares.end(), 0.0);
+    std::fill (lraLoudnessScratch.begin(), lraLoudnessScratch.end(), 0.0);
 
     recentWriteIndex = 0;
     recentBlockCount = 0;
     integratedWriteIndex = 0;
     integratedBlockCount = 0;
+    lraWriteIndex = 0;
+    lraBlockCount = 0;
+    lraBlocksSinceLastUpdate = 0;
+
     samplesInCurrentBlock = 0;
     rawRmsSamplesInCurrentBlock = 0;
     currentKWeightedEnergySum = 0.0;
@@ -334,6 +340,14 @@ void LoudnessMeter::finishMeasurementBlock() noexcept
     if (recentBlockCount >= momentaryBlockCount)
         pushIntegratedBlock (momentaryMeanSquare);
 
+    if (recentBlockCount >= shortTermBlockCount)
+        pushLoudnessRangeBlock (shortTermMeanSquare);
+    else
+    {
+        loudnessRangeLu.store (0.0f, std::memory_order_relaxed);
+        hasLoudnessRange.store (false, std::memory_order_relaxed);
+    }
+
     const auto rmsGain =
         rawRmsSamplesInCurrentBlock > 0
             ? std::sqrt (currentRawRmsSum
@@ -346,13 +360,16 @@ void LoudnessMeter::finishMeasurementBlock() noexcept
     const auto heldPeakDb = decibelsFromGain (peakHoldLinear);
 
     samplePeakDb.store (samplePeakDecibels, std::memory_order_relaxed);
-    // TODO: Add validated 4x true-peak oversampling before reporting dBTP.
+
+    // True Peak wird im nächsten Patch durch validiertes 4x Oversampling ersetzt.
+    // Bis dahin bleibt truePeakDb bewusst Sample-Peak-Fallback und hasTruePeak false.
     truePeakDb.store (samplePeakDecibels, std::memory_order_relaxed);
+    hasTruePeak.store (false, std::memory_order_relaxed);
+
     rmsDb.store (rmsDecibels, std::memory_order_relaxed);
     peakHoldDb.store (heldPeakDb, std::memory_order_relaxed);
     crestDb.store (juce::jmax (0.0f, heldPeakDb - rmsDecibels),
                    std::memory_order_relaxed);
-    hasTruePeak.store (false, std::memory_order_relaxed);
 
     samplesInCurrentBlock = 0;
     rawRmsSamplesInCurrentBlock = 0;
@@ -439,7 +456,8 @@ void LoudnessMeter::updateIntegratedLoudness() noexcept
     const auto preliminaryMeanSquare =
         preliminaryEnergySum / static_cast<double> (preliminaryCount);
 
-    const auto relativeGate = lufsFromMeanSquare (preliminaryMeanSquare) - 10.0;
+    const auto relativeGate =
+        lufsFromMeanSquare (preliminaryMeanSquare) - 10.0;
 
     auto gatedEnergySum = 0.0;
     auto gatedCount = 0;
@@ -470,9 +488,158 @@ void LoudnessMeter::updateIntegratedLoudness() noexcept
                         lufsFromMeanSquare (integratedMeanSquare));
 
     hasIntegratedMeasurement.store (true, std::memory_order_relaxed);
-    // TODO: Add BS.1770 loudness-range histogram/percentile gating once validated.
-    hasLoudnessRange.store (false, std::memory_order_relaxed);
-    loudnessRangeLu.store (0.0f, std::memory_order_relaxed);
+}
+
+void LoudnessMeter::pushLoudnessRangeBlock (
+    double shortTermMeanSquare) noexcept
+{
+    const auto shortTermBlockLufs =
+        lufsFromMeanSquare (shortTermMeanSquare);
+
+    if (!std::isfinite (shortTermMeanSquare)
+        || shortTermMeanSquare <= silenceMeanSquare
+        || shortTermBlockLufs < absoluteGateLufs)
+    {
+        return;
+    }
+
+    lraShortTermMeanSquares[static_cast<size_t> (lraWriteIndex)] =
+        shortTermMeanSquare;
+
+    lraWriteIndex = (lraWriteIndex + 1) % maxLraBlocks;
+    lraBlockCount = juce::jmin (maxLraBlocks, lraBlockCount + 1);
+
+    ++lraBlocksSinceLastUpdate;
+
+    if (lraBlockCount < 10
+        || lraBlocksSinceLastUpdate >= lraUpdateIntervalBlocks)
+    {
+        updateLoudnessRange();
+    }
+}
+
+void LoudnessMeter::updateLoudnessRange() noexcept
+{
+    lraBlocksSinceLastUpdate = 0;
+
+    if (lraBlockCount < 2)
+    {
+        loudnessRangeLu.store (0.0f, std::memory_order_relaxed);
+        hasLoudnessRange.store (false, std::memory_order_relaxed);
+        return;
+    }
+
+    auto absoluteGatedEnergySum = 0.0;
+    auto absoluteGatedCount = 0;
+
+    for (int i = 0; i < lraBlockCount; ++i)
+    {
+        const auto energy =
+            lraShortTermMeanSquares[static_cast<size_t> (i)];
+
+        const auto loudness = lufsFromMeanSquare (energy);
+
+        if (loudness >= absoluteGateLufs)
+        {
+            absoluteGatedEnergySum += energy;
+            ++absoluteGatedCount;
+        }
+    }
+
+    if (absoluteGatedCount < 2)
+    {
+        loudnessRangeLu.store (0.0f, std::memory_order_relaxed);
+        hasLoudnessRange.store (false, std::memory_order_relaxed);
+        return;
+    }
+
+    const auto absoluteGatedMeanSquare =
+        absoluteGatedEnergySum / static_cast<double> (absoluteGatedCount);
+
+    const auto relativeGate =
+        lufsFromMeanSquare (absoluteGatedMeanSquare) - 20.0;
+
+    auto gatedLoudnessCount = 0;
+
+    for (int i = 0; i < lraBlockCount; ++i)
+    {
+        const auto energy =
+            lraShortTermMeanSquares[static_cast<size_t> (i)];
+
+        const auto loudness = lufsFromMeanSquare (energy);
+
+        if (loudness >= absoluteGateLufs && loudness >= relativeGate)
+        {
+            lraLoudnessScratch[static_cast<size_t> (gatedLoudnessCount)] =
+                loudness;
+
+            ++gatedLoudnessCount;
+        }
+    }
+
+    if (gatedLoudnessCount < 2)
+    {
+        loudnessRangeLu.store (0.0f, std::memory_order_relaxed);
+        hasLoudnessRange.store (false, std::memory_order_relaxed);
+        return;
+    }
+
+    std::sort (lraLoudnessScratch.begin(),
+               lraLoudnessScratch.begin() + gatedLoudnessCount);
+
+    const auto lower =
+        percentileFromSortedValues (lraLoudnessScratch,
+                                    gatedLoudnessCount,
+                                    0.10);
+
+    const auto upper =
+        percentileFromSortedValues (lraLoudnessScratch,
+                                    gatedLoudnessCount,
+                                    0.95);
+
+    const auto range =
+        juce::jmax (0.0, upper - lower);
+
+    loudnessRangeLu.store (
+        static_cast<float> (std::isfinite (range) ? range : 0.0),
+        std::memory_order_relaxed);
+
+    hasLoudnessRange.store (true, std::memory_order_relaxed);
+}
+
+double LoudnessMeter::percentileFromSortedValues (
+    const std::array<double, maxLraBlocks>& sortedValues,
+    int count,
+    double percentile0To1) noexcept
+{
+    if (count <= 0)
+        return 0.0;
+
+    if (count == 1)
+        return sortedValues[0];
+
+    const auto clampedPercentile =
+        juce::jlimit (0.0, 1.0, percentile0To1);
+
+    const auto position =
+        clampedPercentile * static_cast<double> (count - 1);
+
+    const auto lowerIndex =
+        static_cast<int> (std::floor (position));
+
+    const auto upperIndex =
+        juce::jmin (count - 1, lowerIndex + 1);
+
+    const auto alpha =
+        position - static_cast<double> (lowerIndex);
+
+    const auto lower =
+        sortedValues[static_cast<size_t> (lowerIndex)];
+
+    const auto upper =
+        sortedValues[static_cast<size_t> (upperIndex)];
+
+    return lower + alpha * (upper - lower);
 }
 
 void LoudnessMeter::storeSnapshotValue (
@@ -482,3 +649,5 @@ void LoudnessMeter::storeSnapshotValue (
     target.store (static_cast<float> (std::isfinite (value) ? value : -100.0),
                   std::memory_order_relaxed);
 }
+
+

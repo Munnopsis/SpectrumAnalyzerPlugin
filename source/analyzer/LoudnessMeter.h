@@ -55,15 +55,25 @@ private:
     static constexpr int momentaryBlockCount = 4;
     static constexpr int shortTermBlockCount = 30;
     static constexpr int maxIntegratedBlocks = 7200;
+    static constexpr int maxLraBlocks = maxIntegratedBlocks;
+    static constexpr int lraUpdateIntervalBlocks = 10;
     static constexpr double silenceMeanSquare = 1.0e-12;
 
     static double lufsFromMeanSquare (double meanSquare) noexcept;
     static float decibelsFromGain (float gain) noexcept;
+
+    static double percentileFromSortedValues (
+        const std::array<double, maxLraBlocks>& sortedValues,
+        int count,
+        double percentile0To1) noexcept;
+
     void updateKWeightingCoefficients() noexcept;
     void finishMeasurementBlock() noexcept;
     double getRecentMeanSquare (int numBlocks) const noexcept;
     void pushIntegratedBlock (double meanSquare) noexcept;
     void updateIntegratedLoudness() noexcept;
+    void pushLoudnessRangeBlock (double shortTermMeanSquare) noexcept;
+    void updateLoudnessRange() noexcept;
     void storeSnapshotValue (std::atomic<float>& target, double value) noexcept;
 
     double currentSampleRate = 44100.0;
@@ -79,12 +89,17 @@ private:
     std::array<Biquad, maxChannels> highPassFilters {};
 
     std::array<double, shortTermBlockCount> recentMeanSquares {};
+    std::array<double, maxIntegratedBlocks> integratedMeanSquares {};
+    std::array<double, maxLraBlocks> lraShortTermMeanSquares {};
+    std::array<double, maxLraBlocks> lraLoudnessScratch {};
+
     int recentWriteIndex = 0;
     int recentBlockCount = 0;
-
-    std::array<double, maxIntegratedBlocks> integratedMeanSquares {};
     int integratedWriteIndex = 0;
     int integratedBlockCount = 0;
+    int lraWriteIndex = 0;
+    int lraBlockCount = 0;
+    int lraBlocksSinceLastUpdate = 0;
 
     std::atomic<float> momentaryLufs { -100.0f };
     std::atomic<float> shortTermLufs { -100.0f };
