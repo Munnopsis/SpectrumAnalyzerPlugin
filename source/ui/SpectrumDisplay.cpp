@@ -597,6 +597,40 @@ void SpectrumDisplay::resized()
 {
 }
 
+bool SpectrumDisplay::isInterestedInFileDrag (
+    const juce::StringArray& files)
+{
+    for (const auto& path : files)
+    {
+        const auto file =
+            juce::File (path);
+
+        const auto extension =
+            file.getFileExtension().toLowerCase();
+
+        if (extension == ".wav"
+            || extension == ".wave"
+            || extension == ".aif"
+            || extension == ".aiff")
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void SpectrumDisplay::filesDropped (
+    const juce::StringArray& files,
+    int x,
+    int y)
+{
+    juce::ignoreUnused (x, y);
+
+    if (onAudioFilesDropped)
+        onAudioFilesDropped (files);
+}
+
 void SpectrumDisplay::mouseDown (const juce::MouseEvent& event)
 {
     const auto area = getSpectrumArea (getLocalBounds());

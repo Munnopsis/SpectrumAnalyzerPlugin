@@ -10,7 +10,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
 
-class SpectrumDisplay : public juce::Component
+class SpectrumDisplay : public juce::Component,
+                        public juce::FileDragAndDropTarget
 {
 public:
     SpectrumDisplay();
@@ -124,6 +125,13 @@ public:
                                     const juce::String& expectedBehaviourLabel);
 
     std::function<void (float minimumHz, float maximumHz)> onVisibleFrequencyRangeChanged;
+
+    std::function<void (const juce::StringArray& files)> onAudioFilesDropped;
+
+    bool isInterestedInFileDrag (const juce::StringArray& files) override;
+    void filesDropped (const juce::StringArray& files,
+                       int x,
+                       int y) override;
 
     void setCurveVisibility (bool shouldShowLive,
                              bool shouldShowRms,

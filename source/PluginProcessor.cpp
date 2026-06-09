@@ -1,11 +1,45 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-
 #include <cmath>
+#include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_dsp/juce_dsp.h>
 
 namespace
 {
     const juce::Identifier analyzerReferencesStateId { "AnalyzerReferences" };
+    constexpr int offlineReferenceFftOrder = 13;
+    constexpr int offlineReferenceFftSize = 1 << offlineReferenceFftOrder;
+    constexpr int offlineReferenceHopSize = offlineReferenceFftSize / 2;
+    constexpr int offlineReferenceBinCount = 512;
+
+    bool isSupportedReferenceAudioFile (const juce::File& file)
+    {
+        const auto extension = file.getFileExtension().toLowerCase();
+
+        return extension == ".wav"
+               || extension == ".wave"
+               || extension == ".aif"
+               || extension == ".aiff";
+    }
+
+    float offlineReferenceGainToDecibels (float gain) noexcept
+    {
+        if (!std::isfinite (gain) || gain <= 0.0f)
+            return -100.0f;
+
+        return juce::jmax (-100.0f, 20.0f * std::log10 (gain));
+    }
+
+    float getOfflineReferenceBinFrequency (int binIndex,
+                                           float minimumHz,
+                                           float maximumHz) noexcept
+    {
+        const auto normalised =
+            static_cast<float> (binIndex)
+            / static_cast<float> (juce::jmax (1, offlineReferenceBinCount - 1));
+
+        return minimumHz * std::pow (maximumHz / minimumHz, normalised);
+    }
 }
 
 //==============================================================================
@@ -527,6 +561,251 @@ int PluginProcessor::addReferenceFromCurrentAnalyzerFrame()
 
     const auto index =
         referenceManager.addReferenceFromFrame (frame, {});
+
+    referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
+
+    return index;
+}
+
+int PluginProcessor::addReferenceFromAudioFile (
+    const juce::File& audioFile)
+{
+    if (!audioFile.existsAsFile()
+        || !isSupportedReferenceAudioFile (audioFile))
+    {
+        return getActiveReferenceIndex();
+    }
+
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
+
+    std::unique_ptr<juce::AudioFormatReader> reader (
+        formatManager.createReaderFor (audioFile));
+
+    if (reader == nullptr
+        || reader->lengthInSamples <= 0
+        || reader->sampleRate <= 0.0
+        || reader->numChannels <= 0)
+    {
+        return getActiveReferenceIndex();
+    }
+
+    const auto sampleRate =
+        reader->sampleRate;
+
+    const auto nyquist =
+        static_cast<float> (sampleRate * 0.5);
+
+    const auto minimumFrequencyHz =
+        AnalyzerFrequencyRange::minimumHz;
+
+    const auto maximumFrequencyHz =
+        juce::jlimit (minimumFrequencyHz + 1.0f,
+                      AnalyzerFrequencyRange::maximumHz,
+                      nyquist);
+
+    if (maximumFrequencyHz <= minimumFrequencyHz)
+        return getActiveReferenceIndex();
+
+    juce::dsp::FFT fft (offlineReferenceFftOrder);
+
+    std::vector<float> window (
+        static_cast<size_t> (offlineReferenceFftSize),
+        0.0f);
+
+    auto windowSum = 0.0f;
+
+    for (int i = 0; i < offlineReferenceFftSize; ++i)
+    {
+        const auto phase =
+            juce::MathConstants<float>::twoPi
+            * static_cast<float> (i)
+            / static_cast<float> (offlineReferenceFftSize - 1);
+
+        const auto value =
+            0.5f - 0.5f * std::cos (phase);
+
+        window[static_cast<size_t> (i)] = value;
+        windowSum += value;
+    }
+
+    const auto amplitudeScale =
+        windowSum > 0.0f ? 2.0f / windowSum : 1.0f;
+
+    std::vector<float> fftData (
+        static_cast<size_t> (offlineReferenceFftSize * 2),
+        0.0f);
+
+    std::vector<double> accumulatedPower (
+        static_cast<size_t> (offlineReferenceBinCount),
+        0.0);
+
+    std::vector<int> accumulatedCount (
+        static_cast<size_t> (offlineReferenceBinCount),
+        0);
+
+    juce::AudioBuffer<float> readBuffer (
+        static_cast<int> (reader->numChannels),
+        offlineReferenceFftSize);
+
+    const auto totalSamples =
+        static_cast<int64_t> (reader->lengthInSamples);
+
+    auto analysisPosition = static_cast<int64_t> (0);
+    auto analysedBlocks = 0;
+
+    while (analysisPosition < totalSamples)
+    {
+        readBuffer.clear();
+
+        const auto remainingSamples =
+            totalSamples - analysisPosition;
+
+        const auto samplesToRead =
+            static_cast<int> (juce::jmin (
+                static_cast<int64_t> (offlineReferenceFftSize),
+                remainingSamples));
+
+        if (samplesToRead <= 0)
+            break;
+
+        if (!reader->read (&readBuffer,
+                           0,
+                           samplesToRead,
+                           analysisPosition,
+                           true,
+                           true))
+        {
+            break;
+        }
+
+        std::fill (fftData.begin(), fftData.end(), 0.0f);
+
+        for (int sample = 0; sample < offlineReferenceFftSize; ++sample)
+        {
+            auto monoSample = 0.0f;
+
+            if (sample < samplesToRead)
+            {
+                for (int channel = 0;
+                     channel < static_cast<int> (reader->numChannels);
+                     ++channel)
+                {
+                    monoSample += readBuffer.getSample (channel, sample);
+                }
+
+                monoSample /= static_cast<float> (reader->numChannels);
+            }
+
+            fftData[static_cast<size_t> (sample)] =
+                monoSample * window[static_cast<size_t> (sample)];
+        }
+
+        fft.performFrequencyOnlyForwardTransform (fftData.data());
+
+        const auto numFrequencyBins =
+            offlineReferenceFftSize / 2;
+
+        for (int fftBin = 1; fftBin < numFrequencyBins; ++fftBin)
+        {
+            const auto frequencyHz =
+                static_cast<float> (fftBin)
+                * static_cast<float> (sampleRate)
+                / static_cast<float> (offlineReferenceFftSize);
+
+            if (frequencyHz < minimumFrequencyHz
+                || frequencyHz > maximumFrequencyHz)
+            {
+                continue;
+            }
+
+            const auto magnitude =
+                fftData[static_cast<size_t> (fftBin)];
+
+            const auto amplitude =
+                magnitude * amplitudeScale;
+
+            const auto power =
+                static_cast<double> (amplitude) * amplitude;
+
+            const auto normalisedLogPosition =
+                std::log (frequencyHz / minimumFrequencyHz)
+                / std::log (maximumFrequencyHz / minimumFrequencyHz);
+
+            const auto referenceBin =
+                juce::jlimit (
+                    0,
+                    offlineReferenceBinCount - 1,
+                    juce::roundToInt (
+                        normalisedLogPosition
+                        * static_cast<float> (offlineReferenceBinCount - 1)));
+
+            accumulatedPower[static_cast<size_t> (referenceBin)] += power;
+            ++accumulatedCount[static_cast<size_t> (referenceBin)];
+        }
+
+        ++analysedBlocks;
+        analysisPosition += offlineReferenceHopSize;
+    }
+
+    if (analysedBlocks <= 0)
+        return getActiveReferenceIndex();
+
+    std::vector<float> referenceDb (
+        static_cast<size_t> (offlineReferenceBinCount),
+        -100.0f);
+
+    auto lastValidDb = -100.0f;
+
+    for (int bin = 0; bin < offlineReferenceBinCount; ++bin)
+    {
+        const auto index =
+            static_cast<size_t> (bin);
+
+        if (accumulatedCount[index] > 0)
+        {
+            const auto meanPower =
+                accumulatedPower[index]
+                / static_cast<double> (accumulatedCount[index]);
+
+            const auto meanAmplitude =
+                std::sqrt (juce::jmax (0.0, meanPower));
+
+            lastValidDb =
+                offlineReferenceGainToDecibels (
+                    static_cast<float> (meanAmplitude));
+        }
+
+        referenceDb[index] = lastValidDb;
+    }
+
+    for (int bin = offlineReferenceBinCount - 2; bin >= 0; --bin)
+    {
+        const auto index =
+            static_cast<size_t> (bin);
+
+        if (referenceDb[index] <= -99.9f)
+            referenceDb[index] = referenceDb[index + 1];
+    }
+
+    AnalyzerEngine::Frame frame;
+    frame.dataMinFrequencyHz = minimumFrequencyHz;
+    frame.dataMaxFrequencyHz = maximumFrequencyHz;
+    frame.liveDb = referenceDb;
+    frame.rmsDb = referenceDb;
+    frame.energyDb = referenceDb;
+    frame.peakHoldDb = referenceDb;
+    frame.notePeaks.clear();
+
+    std::lock_guard<std::mutex> lock (referenceMutex);
+
+    const auto referenceName =
+        audioFile.getFileNameWithoutExtension().isNotEmpty()
+            ? audioFile.getFileNameWithoutExtension()
+            : juce::String ("Audio Reference");
+
+    const auto index =
+        referenceManager.addReferenceFromFrame (frame, referenceName);
 
     referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
 

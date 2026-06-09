@@ -17,6 +17,50 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     addAndMakeVisible (spectrumDisplay);
     spectrumDisplay.setName ("SpectrumDisplay");
+    spectrumDisplay.onAudioFilesDropped =
+    [this] (const juce::StringArray& files)
+    {
+        auto addedReference = false;
+
+        for (const auto& path : files)
+        {
+            const auto file =
+                juce::File (path);
+
+            const auto extension =
+                file.getFileExtension().toLowerCase();
+
+            if (extension != ".wav"
+                && extension != ".wave"
+                && extension != ".aif"
+                && extension != ".aiff")
+            {
+                continue;
+            }
+
+            const auto newReferenceIndex =
+                processorRef.addReferenceFromAudioFile (file);
+
+            if (newReferenceIndex >= 0)
+            {
+                processorRef.setActiveReferenceIndex (newReferenceIndex);
+                addedReference = true;
+                break;
+            }
+        }
+
+        if (addedReference)
+        {
+            updateReferenceControls();
+            return;
+        }
+
+        juce::AlertWindow::showMessageBoxAsync (
+            juce::MessageBoxIconType::WarningIcon,
+            "Audio Reference",
+            "Could not create a reference from the dropped file. "
+            "Please use a WAV, AIFF or AIF file.");
+    };
     processorRef.setAnalyzerDisplayFrequencyRange (AnalyzerFrequencyRange::minimumHz,
                                                    AnalyzerFrequencyRange::maximumHz);
 

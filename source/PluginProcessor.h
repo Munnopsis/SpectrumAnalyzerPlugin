@@ -223,6 +223,7 @@ public:
     }
 
     int addReferenceFromCurrentAnalyzerFrame();
+    int addReferenceFromAudioFile (const juce::File& audioFile);
     void clearReferenceCurves();
     bool removeReferenceCurve (int index);
     bool removeActiveReferenceCurve();
