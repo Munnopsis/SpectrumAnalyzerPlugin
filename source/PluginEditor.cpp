@@ -22,8 +22,20 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     {
         auto supportedFileCount = 0;
         auto addedReferenceCount = 0;
+        auto failedReferenceCount = 0;
+
         auto lastAddedReferenceIndex = -1;
         juce::String lastAddedReferenceName;
+        double lastDurationSeconds = 0.0;
+        double lastSampleRate = 0.0;
+        int lastNumChannels = 0;
+        int lastAnalysedBlocks = 0;
+        int lastSelectedBlocks = 0;
+
+        juce::String firstErrorMessage;
+
+        setAudioReferenceDropStatus ("Analysing audio reference...",
+                                     120);
 
         for (const auto& path : files)
         {
@@ -43,15 +55,26 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
             ++supportedFileCount;
 
-            const auto newReferenceIndex =
-                processorRef.addReferenceFromAudioFile (file);
+            const auto importResult =
+                processorRef.addReferenceFromAudioFileWithDetails (file);
 
-            if (newReferenceIndex < 0)
+            if (! importResult.succeeded())
+            {
+                ++failedReferenceCount;
+
+                if (firstErrorMessage.isEmpty())
+                    firstErrorMessage = importResult.errorMessage;
+
                 continue;
+            }
 
-            lastAddedReferenceIndex = newReferenceIndex;
-            lastAddedReferenceName =
-                file.getFileNameWithoutExtension();
+            lastAddedReferenceIndex = importResult.referenceIndex;
+            lastAddedReferenceName = importResult.referenceName;
+            lastDurationSeconds = importResult.durationSeconds;
+            lastSampleRate = importResult.sampleRate;
+            lastNumChannels = importResult.numChannels;
+            lastAnalysedBlocks = importResult.analysedBlocks;
+            lastSelectedBlocks = importResult.selectedBlocks;
 
             ++addedReferenceCount;
         }
@@ -65,9 +88,41 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
             if (addedReferenceCount == 1)
             {
-                setAudioReferenceDropStatus (
-                    "Added Reference: " + lastAddedReferenceName,
-                    120);
+                auto status =
+                    "Added Reference: "
+                    + lastAddedReferenceName;
+
+                if (lastDurationSeconds > 0.0)
+                {
+                    status += " • "
+                              + juce::String (lastDurationSeconds, 1)
+                              + " s";
+                }
+
+                if (lastSampleRate > 0.0)
+                {
+                    status += " • "
+                              + juce::String (lastSampleRate / 1000.0, 1)
+                              + " kHz";
+                }
+
+                if (lastNumChannels > 0)
+                {
+                    status += " • "
+                              + juce::String (lastNumChannels)
+                              + " ch";
+                }
+
+                if (lastAnalysedBlocks > 0)
+                {
+                    status += " • "
+                              + juce::String (lastAnalysedBlocks)
+                              + "/"
+                              + juce::String (lastSelectedBlocks)
+                              + " blocks";
+                }
+
+                setAudioReferenceDropStatus (status, 160);
             }
             else
             {
@@ -75,7 +130,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                     "Added "
                     + juce::String (addedReferenceCount)
                     + " audio References",
-                    120);
+                    160);
             }
 
             return;
@@ -85,7 +140,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         {
             setAudioReferenceDropStatus (
                 "Unsupported file. Drop WAV or AIFF files.",
-                120);
+                140);
 
             juce::AlertWindow::showMessageBoxAsync (
                 juce::MessageBoxIconType::WarningIcon,
@@ -95,15 +150,17 @@ PluginEditor::PluginEditor (PluginProcessor& p)
             return;
         }
 
-        setAudioReferenceDropStatus (
-            "Could not analyse dropped audio file.",
-            120);
+        const auto message =
+            firstErrorMessage.isNotEmpty()
+                ? firstErrorMessage
+                : juce::String ("Could not analyse dropped audio file.");
+
+        setAudioReferenceDropStatus (message, 160);
 
         juce::AlertWindow::showMessageBoxAsync (
             juce::MessageBoxIconType::WarningIcon,
             "Audio Reference",
-            "Could not create a reference from the dropped audio file. "
-            "The file may be empty, unreadable or unsupported.");
+            message);
     };
 
     processorRef.setAnalyzerDisplayFrequencyRange (AnalyzerFrequencyRange::minimumHz,

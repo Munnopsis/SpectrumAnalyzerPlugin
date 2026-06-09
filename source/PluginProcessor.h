@@ -104,6 +104,25 @@ public:
         float monoCompatibilityDb = 0.0f;
     };
 
+    struct AudioReferenceImportResult
+    {
+        int referenceIndex = -1;
+        juce::String referenceName;
+        juce::String errorMessage;
+
+        int analysedBlocks = 0;
+        int selectedBlocks = 0;
+
+        double durationSeconds = 0.0;
+        double sampleRate = 0.0;
+        int numChannels = 0;
+
+        bool succeeded() const noexcept
+        {
+            return referenceIndex >= 0;
+        }
+    };
+
     static inline const juce::String showLiveCurveParamId { "showLiveCurve" };
     static inline const juce::String showRmsCurveParamId { "showRmsCurve" };
     static inline const juce::String showPeakHoldCurveParamId { "showPeakHoldCurve" };
@@ -224,6 +243,7 @@ public:
 
     int addReferenceFromCurrentAnalyzerFrame();
     int addReferenceFromAudioFile (const juce::File& audioFile);
+    AudioReferenceImportResult addReferenceFromAudioFileWithDetails (const juce::File& audioFile);
     void clearReferenceCurves();
     bool removeReferenceCurve (int index);
     bool removeActiveReferenceCurve();

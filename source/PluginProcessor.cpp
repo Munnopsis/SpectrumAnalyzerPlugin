@@ -3,6 +3,8 @@
 #include <cmath>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_dsp/juce_dsp.h>
+#include <cmath>
+#include <vector>
 
 namespace
 {
@@ -11,6 +13,7 @@ namespace
     constexpr int offlineReferenceFftSize = 1 << offlineReferenceFftOrder;
     constexpr int offlineReferenceHopSize = offlineReferenceFftSize / 2;
     constexpr int offlineReferenceBinCount = 512;
+    constexpr int offlineReferenceMaxAnalysisBlocks = 900;
 
     bool isSupportedReferenceAudioFile (const juce::File& file)
     {
@@ -39,6 +42,75 @@ namespace
             / static_cast<float> (juce::jmax (1, offlineReferenceBinCount - 1));
 
         return minimumHz * std::pow (maximumHz / minimumHz, normalised);
+    }
+
+    std::vector<int64_t> buildOfflineReferenceAnalysisPositions (
+    int64_t totalSamples)
+    {
+        std::vector<int64_t> positions;
+
+        if (totalSamples <= 0)
+            return positions;
+
+        const auto maxStartSample =
+            juce::jmax (static_cast<int64_t> (0),
+                        totalSamples
+                            - static_cast<int64_t> (offlineReferenceFftSize));
+
+        const auto totalCandidateBlocks =
+            juce::jmax (
+                static_cast<int64_t> (1),
+                (maxStartSample
+                    / static_cast<int64_t> (offlineReferenceHopSize))
+                    + static_cast<int64_t> (1));
+
+        if (totalCandidateBlocks
+            <= static_cast<int64_t> (offlineReferenceMaxAnalysisBlocks))
+        {
+            positions.reserve (static_cast<size_t> (totalCandidateBlocks));
+
+            for (int64_t block = 0; block < totalCandidateBlocks; ++block)
+            {
+                positions.push_back (
+                    block * static_cast<int64_t> (offlineReferenceHopSize));
+            }
+
+            return positions;
+        }
+
+        positions.reserve (
+            static_cast<size_t> (offlineReferenceMaxAnalysisBlocks));
+
+        for (int block = 0; block < offlineReferenceMaxAnalysisBlocks; ++block)
+        {
+            const auto normalised =
+                offlineReferenceMaxAnalysisBlocks > 1
+                    ? static_cast<double> (block)
+                        / static_cast<double> (offlineReferenceMaxAnalysisBlocks - 1)
+                    : 0.0;
+
+            auto position =
+                static_cast<int64_t> (
+                    std::llround (
+                        normalised * static_cast<double> (maxStartSample)));
+
+            position =
+                (position / static_cast<int64_t> (offlineReferenceHopSize))
+                * static_cast<int64_t> (offlineReferenceHopSize);
+
+            position =
+                juce::jlimit (static_cast<int64_t> (0),
+                              maxStartSample,
+                              position);
+
+            if (positions.empty() || positions.back() != position)
+                positions.push_back (position);
+        }
+
+        if (positions.empty())
+            positions.push_back (0);
+
+        return positions;
     }
 }
 
@@ -570,10 +642,29 @@ int PluginProcessor::addReferenceFromCurrentAnalyzerFrame()
 int PluginProcessor::addReferenceFromAudioFile (
     const juce::File& audioFile)
 {
-    if (!audioFile.existsAsFile()
-        || !isSupportedReferenceAudioFile (audioFile))
+    return addReferenceFromAudioFileWithDetails (audioFile).referenceIndex;
+}
+
+PluginProcessor::AudioReferenceImportResult
+PluginProcessor::addReferenceFromAudioFileWithDetails (
+    const juce::File& audioFile)
+{
+    AudioReferenceImportResult result;
+    result.referenceName = audioFile.getFileNameWithoutExtension();
+
+    if (result.referenceName.isEmpty())
+        result.referenceName = "Audio Reference";
+
+    if (! audioFile.existsAsFile())
     {
-        return -1;
+        result.errorMessage = "File does not exist.";
+        return result;
+    }
+
+    if (! isSupportedReferenceAudioFile (audioFile))
+    {
+        result.errorMessage = "Unsupported file type. Use WAV or AIFF.";
+        return result;
     }
 
     juce::AudioFormatManager formatManager;
@@ -582,12 +673,37 @@ int PluginProcessor::addReferenceFromAudioFile (
     std::unique_ptr<juce::AudioFormatReader> reader (
         formatManager.createReaderFor (audioFile));
 
-    if (reader == nullptr
-        || reader->lengthInSamples <= 0
-        || reader->sampleRate <= 0.0
-        || reader->numChannels <= 0)
+    if (reader == nullptr)
     {
-        return -1;
+        result.errorMessage = "Could not open audio file.";
+        return result;
+    }
+
+    result.durationSeconds =
+        reader->sampleRate > 0.0
+            ? static_cast<double> (reader->lengthInSamples)
+                / reader->sampleRate
+            : 0.0;
+
+    result.sampleRate = reader->sampleRate;
+    result.numChannels = static_cast<int> (reader->numChannels);
+
+    if (reader->lengthInSamples <= 0)
+    {
+        result.errorMessage = "Audio file is empty.";
+        return result;
+    }
+
+    if (reader->sampleRate <= 0.0)
+    {
+        result.errorMessage = "Audio file has an invalid sample rate.";
+        return result;
+    }
+
+    if (reader->numChannels <= 0)
+    {
+        result.errorMessage = "Audio file has no audio channels.";
+        return result;
     }
 
     const auto sampleRate =
@@ -605,7 +721,24 @@ int PluginProcessor::addReferenceFromAudioFile (
                       nyquist);
 
     if (maximumFrequencyHz <= minimumFrequencyHz)
-        return -1;
+    {
+        result.errorMessage =
+            "Audio file sample rate is too low for the analyzer range.";
+
+        return result;
+    }
+
+    const auto analysisPositions =
+        buildOfflineReferenceAnalysisPositions (reader->lengthInSamples);
+
+    result.selectedBlocks =
+        static_cast<int> (analysisPositions.size());
+
+    if (analysisPositions.empty())
+    {
+        result.errorMessage = "No analysis positions could be created.";
+        return result;
+    }
 
     juce::dsp::FFT fft (offlineReferenceFftOrder);
 
@@ -644,39 +777,42 @@ int PluginProcessor::addReferenceFromAudioFile (
         static_cast<size_t> (offlineReferenceBinCount),
         0);
 
+    const auto analysisChannelCount =
+        juce::jlimit (1,
+                      2,
+                      static_cast<int> (reader->numChannels));
+
     juce::AudioBuffer<float> readBuffer (
-        static_cast<int> (reader->numChannels),
+        analysisChannelCount,
         offlineReferenceFftSize);
 
-    const auto totalSamples =
-        static_cast<int64_t> (reader->lengthInSamples);
+    auto hadReadError = false;
 
-    auto analysisPosition = static_cast<int64_t> (0);
-    auto analysedBlocks = 0;
-
-    while (analysisPosition < totalSamples)
+    for (const auto analysisPosition : analysisPositions)
     {
         readBuffer.clear();
 
         const auto remainingSamples =
-            totalSamples - analysisPosition;
+            reader->lengthInSamples - analysisPosition;
 
         const auto samplesToRead =
-            static_cast<int> (juce::jmin (
-                static_cast<int64_t> (offlineReferenceFftSize),
-                remainingSamples));
+            static_cast<int> (
+                juce::jmin (
+                    static_cast<int64_t> (offlineReferenceFftSize),
+                    remainingSamples));
 
         if (samplesToRead <= 0)
-            break;
+            continue;
 
-        if (!reader->read (&readBuffer,
-                           0,
-                           samplesToRead,
-                           analysisPosition,
-                           true,
-                           true))
+        if (! reader->read (&readBuffer,
+                            0,
+                            samplesToRead,
+                            analysisPosition,
+                            true,
+                            analysisChannelCount > 1))
         {
-            break;
+            hadReadError = true;
+            continue;
         }
 
         std::fill (fftData.begin(), fftData.end(), 0.0f);
@@ -688,13 +824,14 @@ int PluginProcessor::addReferenceFromAudioFile (
             if (sample < samplesToRead)
             {
                 for (int channel = 0;
-                     channel < static_cast<int> (reader->numChannels);
+                     channel < analysisChannelCount;
                      ++channel)
                 {
                     monoSample += readBuffer.getSample (channel, sample);
                 }
 
-                monoSample /= static_cast<float> (reader->numChannels);
+                monoSample /=
+                    static_cast<float> (analysisChannelCount);
             }
 
             fftData[static_cast<size_t> (sample)] =
@@ -744,12 +881,18 @@ int PluginProcessor::addReferenceFromAudioFile (
             ++accumulatedCount[static_cast<size_t> (referenceBin)];
         }
 
-        ++analysedBlocks;
-        analysisPosition += offlineReferenceHopSize;
+        ++result.analysedBlocks;
     }
 
-    if (analysedBlocks <= 0)
-        return -1;
+    if (result.analysedBlocks <= 0)
+    {
+        result.errorMessage =
+            hadReadError
+                ? "Could not read audio data from the file."
+                : "No audio blocks could be analysed.";
+
+        return result;
+    }
 
     std::vector<float> referenceDb (
         static_cast<size_t> (offlineReferenceBinCount),
@@ -799,17 +942,14 @@ int PluginProcessor::addReferenceFromAudioFile (
 
     std::lock_guard<std::mutex> lock (referenceMutex);
 
-    const auto referenceName =
-        audioFile.getFileNameWithoutExtension().isNotEmpty()
-            ? audioFile.getFileNameWithoutExtension()
-            : juce::String ("Audio Reference");
-
-    const auto index =
-        referenceManager.addReferenceFromFrame (frame, referenceName);
+    result.referenceIndex =
+        referenceManager.addReferenceFromFrame (
+            frame,
+            result.referenceName);
 
     referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
 
-    return index;
+    return result;
 }
 
 void PluginProcessor::clearReferenceCurves()
