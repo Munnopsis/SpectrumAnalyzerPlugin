@@ -98,6 +98,7 @@ private:
     juce::ComboBox displayResolutionBox;
     juce::ComboBox vqtLiveCurveBox;
     juce::ComboBox referenceBox;
+    juce::ComboBox validationSignalBox;
 
     // Attachments
     std::unique_ptr<ButtonAttachment> liveButtonAttachment;
@@ -117,6 +118,7 @@ private:
     std::unique_ptr<ComboBoxAttachment> slopeAttachment;
     std::unique_ptr<ComboBoxAttachment> displayResolutionAttachment;
     std::unique_ptr<ComboBoxAttachment> vqtLiveCurveAttachment;
+    std::unique_ptr<ComboBoxAttachment> validationSignalAttachment;
 
     SpectrumDisplay spectrumDisplay;
     PluginProcessor::AnalyzerFrameBundle analyzerFrameBundle;

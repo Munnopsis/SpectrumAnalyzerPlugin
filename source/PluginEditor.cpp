@@ -7,6 +7,7 @@
 #include "analyzer/AnalyzerDbRange.h"
 #include "analyzer/AnalyzerSlope.h"
 #include "analyzer/AnalyzerDisplayResolution.h"
+#include "analyzer/AnalyzerValidationSignal.h"
 #include "analyzer/AnalyzerVqtLiveCurveProfile.h"
 
 PluginEditor::PluginEditor (PluginProcessor& p)
@@ -44,6 +45,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (displayResolutionBox);
     addAndMakeVisible (vqtLiveCurveBox);
     addAndMakeVisible (referenceBox);
+    addAndMakeVisible (validationSignalBox);
 
     inspectButton.setName ("InspectButton");
     liveButton.setName ("LiveButton");
@@ -70,6 +72,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     displayResolutionBox.setName ("DisplayResolutionBox");
     vqtLiveCurveBox.setName ("VqtLiveCurveBox");
     referenceBox.setName ("ReferenceBox");
+    validationSignalBox.setName ("ValidationSignalBox");
 
     inspectButton.setWantsKeyboardFocus (true);
     liveButton.setWantsKeyboardFocus (true);
@@ -96,6 +99,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     displayResolutionBox.setWantsKeyboardFocus (true);
     vqtLiveCurveBox.setWantsKeyboardFocus (true);
     referenceBox.setWantsKeyboardFocus (true);
+    validationSignalBox.setWantsKeyboardFocus (true);
 
     inspectButton.setTooltip ("Open the Melatonin UI inspector");
     liveButton.setTooltip ("Show or hide the live spectrum curve");
@@ -113,6 +117,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     frequencyCorrelationButton.setTooltip ("Show 31-band stereo frequency correlation");
     resetLoudnessButton.setTooltip ("Reset integrated loudness and peak hold metering");
     tooltipButton.setTooltip ("Show or hide tooltips");
+    validationSignalBox.setTooltip (
+        "Internal analyzer-only validation signal. Does not affect audio output.");
 
     clearPeakButton.onClick = [this]
     {
@@ -245,6 +251,15 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         state,
         PluginProcessor::vqtLiveCurveProfileParamId,
         vqtLiveCurveBox);
+
+    validationSignalBox.addItemList (getAnalyzerValidationSignalChoices(), 1);
+    validationSignalBox.setJustificationType (juce::Justification::centred);
+    validationSignalBox.setTextWhenNothingSelected ("Test");
+
+    validationSignalAttachment = std::make_unique<ComboBoxAttachment> (
+        state,
+        PluginProcessor::validationSignalParamId,
+        validationSignalBox);
 
     referenceBox.setJustificationType (juce::Justification::centred);
     referenceBox.setTextWhenNothingSelected ("Reference");
@@ -398,6 +413,9 @@ void PluginEditor::resized()
     addGap (firstRow, 8);
 
     referenceBox.setBounds (firstRow.removeFromLeft (172));
+    addGap (firstRow, 8);
+
+    validationSignalBox.setBounds (firstRow.removeFromLeft (116));
 
     liveButton.setBounds (secondRow.removeFromLeft (64));
     addGap (secondRow, 6);
@@ -459,6 +477,13 @@ void PluginEditor::timerCallback()
     spectrumDisplay.setSlopeDbPerOctave (processorRef.getAnalyzerSlopeDbPerOctave());
     spectrumDisplay.setDisplayResolution (
         processorRef.getAnalyzerDisplayResolution());
+
+    const auto validationSignal =
+        processorRef.getAnalyzerValidationSignal();
+
+    spectrumDisplay.setValidationSignalLabels (
+        getAnalyzerValidationSignalLabel (validationSignal),
+        getAnalyzerValidationExpectedLabel (validationSignal));
 
     spectrumDisplay.setCurveVisibility (
         processorRef.shouldShowLiveCurve(),

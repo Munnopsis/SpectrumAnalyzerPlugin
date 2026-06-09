@@ -470,6 +470,21 @@ void SpectrumDisplay::setFrequencyCorrelationVisible (bool shouldBeVisible)
     repaint();
 }
 
+void SpectrumDisplay::setValidationSignalLabels (
+    const juce::String& activeSignalLabel,
+    const juce::String& expectedBehaviourLabel)
+{
+    if (validationSignalLabel == activeSignalLabel
+        && validationExpectedLabel == expectedBehaviourLabel)
+    {
+        return;
+    }
+
+    validationSignalLabel = activeSignalLabel;
+    validationExpectedLabel = expectedBehaviourLabel;
+    repaint();
+}
+
 void SpectrumDisplay::setCurveVisibility (bool shouldShowLive,
                                           bool shouldShowRms,
                                           bool shouldShowEnergy,
@@ -550,6 +565,7 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
     g.drawText ("FullSpectrum", bounds.reduced (16), juce::Justification::topLeft);
 
+    drawValidationSignalBanner (g, bounds);
     drawMouseReadout (g, bounds);
 }
 
@@ -1750,6 +1766,56 @@ void SpectrumDisplay::drawInputLevelMeter (juce::Graphics& g, juce::Rectangle<in
     g.drawText ("Input: " + juce::String (inputLevelDb, 1) + " dB",
                 meterBounds.toNearestInt().reduced (6, 0),
                 juce::Justification::centredLeft);
+}
+
+void SpectrumDisplay::drawValidationSignalBanner (
+    juce::Graphics& g,
+    juce::Rectangle<int> bounds)
+{
+    if (validationSignalLabel.isEmpty())
+        return;
+
+    const auto area = bounds.reduced (16).toFloat();
+
+    if (area.getWidth() <= 280.0f)
+        return;
+
+    const auto bannerWidth = juce::jmin (560.0f, area.getWidth() - 220.0f);
+
+    if (bannerWidth < 260.0f)
+        return;
+
+    auto bannerBounds =
+        juce::Rectangle<float> (area.getCentreX() - bannerWidth * 0.5f,
+                                area.getY() + 8.0f,
+                                bannerWidth,
+                                validationExpectedLabel.isNotEmpty()
+                                    ? 42.0f
+                                    : 24.0f);
+
+    g.setColour (juce::Colour::fromRGB (255, 198, 74).withAlpha (0.88f));
+    g.fillRoundedRectangle (bannerBounds, 5.0f);
+
+    g.setColour (juce::Colours::black.withAlpha (0.22f));
+    g.drawRoundedRectangle (bannerBounds, 5.0f, 1.0f);
+
+    auto content = bannerBounds.reduced (10.0f, 4.0f);
+
+    g.setColour (juce::Colours::black.withAlpha (0.86f));
+    g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
+    g.drawText ("TEST: " + validationSignalLabel,
+                content.removeFromTop (17.0f),
+                juce::Justification::centred,
+                true);
+
+    if (validationExpectedLabel.isNotEmpty())
+    {
+        g.setFont (juce::FontOptions (9.6f));
+        g.drawText (validationExpectedLabel,
+                    content,
+                    juce::Justification::centred,
+                    true);
+    }
 }
 
 bool SpectrumDisplay::hasAnyVisibleSpectrumCurve() const noexcept

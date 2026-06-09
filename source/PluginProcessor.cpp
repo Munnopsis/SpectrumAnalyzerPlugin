@@ -30,6 +30,8 @@ PluginProcessor::PluginProcessor()
         parameters.getRawParameterValue (displayResolutionParamId);
     vqtLiveCurveProfileParameter =
         parameters.getRawParameterValue (vqtLiveCurveProfileParamId);
+    validationSignalParameter =
+        parameters.getRawParameterValue (validationSignalParamId);
 
     jassert (inputModeParameter != nullptr);
     jassert (fftSizeParameter != nullptr);
@@ -39,6 +41,7 @@ PluginProcessor::PluginProcessor()
     jassert (slopeParameter != nullptr);
     jassert (displayResolutionParameter != nullptr);
     jassert (vqtLiveCurveProfileParameter != nullptr);
+    jassert (validationSignalParameter != nullptr);
 
     validateRestoredAnalyzerState();
 }
@@ -153,6 +156,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         "Show Frequency Correlation",
         true));
 
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { validationSignalParamId, 1 },
+        "Analyzer Validation Signal",
+        getAnalyzerValidationSignalChoices(),
+        0));
+
     return { params.begin(), params.end() };
 }
 
@@ -234,6 +243,138 @@ AnalyzerInputMode PluginProcessor::getAnalyzerInputMode() const noexcept
 
     return analyzerInputModeFromParameterValue (
         inputModeParameter->load (std::memory_order_relaxed));
+}
+
+AnalyzerValidationSignal PluginProcessor::getAnalyzerValidationSignal() const noexcept
+{
+    if (validationSignalParameter == nullptr)
+        return AnalyzerValidationSignal::off;
+
+    return analyzerValidationSignalFromParameterValue (
+        validationSignalParameter->load (std::memory_order_relaxed));
+}
+
+void PluginProcessor::fillAnalyzerValidationBuffer (
+    juce::AudioBuffer<float>& destination,
+    int numSamples,
+    AnalyzerValidationSignal signal,
+    double sampleRate) noexcept
+{
+    if (destination.getNumChannels() < 2
+        || numSamples <= 0
+        || numSamples > destination.getNumSamples())
+    {
+        return;
+    }
+
+    destination.clear (0, 0, numSamples);
+    destination.clear (1, 0, numSamples);
+
+    if (signal == AnalyzerValidationSignal::off)
+        return;
+
+    const auto safeSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
+    const auto mainIncrement =
+        juce::MathConstants<double>::twoPi * 1000.0 / safeSampleRate;
+
+    const auto lowIncrement =
+        juce::MathConstants<double>::twoPi * 220.0 / safeSampleRate;
+
+    const auto highIncrement =
+        juce::MathConstants<double>::twoPi * 3300.0 / safeSampleRate;
+
+    auto* left = destination.getWritePointer (0);
+    auto* right = destination.getWritePointer (1);
+
+    constexpr auto amplitude = 0.125f;
+    constexpr auto musicLowAmplitude = 0.10f;
+    constexpr auto musicMidLeftAmplitude = 0.07f;
+    constexpr auto musicMidRightAmplitude = 0.05f;
+    constexpr auto musicHighAmplitude = 0.03f;
+    constexpr auto rightMidPhaseOffset = 0.45;
+
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        const auto sine =
+            amplitude * static_cast<float> (std::sin (validationPhase));
+
+        auto leftSample = 0.0f;
+        auto rightSample = 0.0f;
+
+        switch (signal)
+        {
+            case AnalyzerValidationSignal::monoSine:
+            case AnalyzerValidationSignal::stereoSineInPhase:
+            case AnalyzerValidationSignal::midOnlySine:
+                leftSample = sine;
+                rightSample = sine;
+                break;
+
+            case AnalyzerValidationSignal::stereoSineOutOfPhase:
+            case AnalyzerValidationSignal::sideOnlySine:
+                leftSample = sine;
+                rightSample = -sine;
+                break;
+
+            case AnalyzerValidationSignal::leftOnlySine:
+                leftSample = sine;
+                rightSample = 0.0f;
+                break;
+
+            case AnalyzerValidationSignal::rightOnlySine:
+                leftSample = 0.0f;
+                rightSample = sine;
+                break;
+
+            case AnalyzerValidationSignal::stereoMusicLike:
+            {
+                const auto low =
+                    static_cast<float> (std::sin (validationPhase2));
+
+                const auto midLeft =
+                    static_cast<float> (std::sin (validationPhase));
+
+                const auto midRight =
+                    static_cast<float> (std::sin (validationPhase
+                                                  + rightMidPhaseOffset));
+
+                const auto high =
+                    static_cast<float> (std::sin (validationPhase3));
+
+                leftSample =
+                    musicLowAmplitude * low
+                    + musicMidLeftAmplitude * midLeft
+                    + musicHighAmplitude * high;
+
+                rightSample =
+                    musicLowAmplitude * low
+                    + musicMidRightAmplitude * midRight
+                    - musicHighAmplitude * high;
+
+                break;
+            }
+
+            case AnalyzerValidationSignal::off:
+            case AnalyzerValidationSignal::count:
+                break;
+        }
+
+        left[sample] = leftSample;
+        right[sample] = rightSample;
+
+        validationPhase += mainIncrement;
+        validationPhase2 += lowIncrement;
+        validationPhase3 += highIncrement;
+
+        if (validationPhase >= juce::MathConstants<double>::twoPi)
+            validationPhase -= juce::MathConstants<double>::twoPi;
+
+        if (validationPhase2 >= juce::MathConstants<double>::twoPi)
+            validationPhase2 -= juce::MathConstants<double>::twoPi;
+
+        if (validationPhase3 >= juce::MathConstants<double>::twoPi)
+            validationPhase3 -= juce::MathConstants<double>::twoPi;
+    }
 }
 
 juce::String PluginProcessor::getAnalyzerCurveLabelForMode (AnalyzerInputMode mode)
@@ -610,10 +751,18 @@ void PluginProcessor::updateStereoMeterData (
 
     auto correlation = 1.0f;
 
-    if (numInputChannels > 1 && sumL2 > epsilon && sumR2 > epsilon)
+    if (numInputChannels <= 1)
+    {
+        correlation = 1.0f;
+    }
+    else if (sumL2 > epsilon && sumR2 > epsilon)
     {
         correlation = static_cast<float> (
             sumLR / std::sqrt (sumL2 * sumR2));
+    }
+    else
+    {
+        correlation = 0.0f;
     }
 
     correlation = juce::jlimit (-1.0f, 1.0f, correlation);
@@ -699,6 +848,15 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     secondaryAnalyzerFifo.prepare (sampleRate, samplesPerBlock);
     loudnessMeter.prepare (sampleRate, samplesPerBlock);
     frequencyCorrelationMeter.prepare (sampleRate, samplesPerBlock);
+    validationBuffer.setSize (2,
+                              juce::jmax (samplesPerBlock, 32768),
+                              false,
+                              false,
+                              true);
+    validationBuffer.clear();
+    validationPhase = 0.0;
+    validationPhase2 = 0.0;
+    validationPhase3 = 0.0;
 
     configureAnalyzerEngineForCurrentSettings (analyzerEngine);
     configureAnalyzerEngineForCurrentSettings (secondaryAnalyzerEngine);
@@ -734,6 +892,10 @@ void PluginProcessor::releaseResources()
     secondaryAnalyzerFifo.reset();
     loudnessMeter.reset();
     frequencyCorrelationMeter.reset();
+    validationBuffer.clear();
+    validationPhase = 0.0;
+    validationPhase2 = 0.0;
+    validationPhase3 = 0.0;
     secondaryAnalyzerEnabled.store (false, std::memory_order_relaxed);
     secondaryAnalyzerThreadStarted.store (false, std::memory_order_relaxed);
 }
@@ -772,24 +934,59 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    float maxSample = 0.0f;
-
     const auto numChannelsToAnalyse =
         juce::jmin (totalNumInputChannels, buffer.getNumChannels());
 
-    for (int channel = 0; channel < numChannelsToAnalyse; ++channel)
+    const auto validationSignal = getAnalyzerValidationSignal();
+    const auto validationEnabled =
+        validationSignal != AnalyzerValidationSignal::off
+        && buffer.getNumSamples() <= validationBuffer.getNumSamples()
+        && validationBuffer.getNumChannels() >= 2;
+
+    const juce::AudioBuffer<float>* analyzerInputBuffer = &buffer;
+    auto analyzerInputChannels = numChannelsToAnalyse;
+
+    std::array<float*, 2> validationChannelPointers {};
+    juce::AudioBuffer<float> validationBufferView;
+
+    if (validationEnabled)
+    {
+        validationChannelPointers[0] = validationBuffer.getWritePointer (0);
+        validationChannelPointers[1] = validationBuffer.getWritePointer (1);
+
+        validationBufferView.setDataToReferTo (
+            validationChannelPointers.data(),
+            2,
+            buffer.getNumSamples());
+
+        fillAnalyzerValidationBuffer (validationBufferView,
+                                      buffer.getNumSamples(),
+                                      validationSignal,
+                                      getSampleRate());
+
+        analyzerInputBuffer = &validationBufferView;
+        analyzerInputChannels = 2;
+    }
+
+    float maxSample = 0.0f;
+
+    for (int channel = 0; channel < analyzerInputChannels; ++channel)
     {
         maxSample = juce::jmax (
             maxSample,
-            buffer.getMagnitude (channel, 0, buffer.getNumSamples()));
+            analyzerInputBuffer->getMagnitude (
+                channel,
+                0,
+                analyzerInputBuffer->getNumSamples()));
     }
 
     const auto levelDb = juce::Decibels::gainToDecibels (maxSample, -100.0f);
     inputLevelDb.store (levelDb, std::memory_order_relaxed);
 
-    updateStereoMeterData (buffer, numChannelsToAnalyse);
-    loudnessMeter.processBlock (buffer, numChannelsToAnalyse);
-    frequencyCorrelationMeter.processBlock (buffer, numChannelsToAnalyse);
+    updateStereoMeterData (*analyzerInputBuffer, analyzerInputChannels);
+    loudnessMeter.processBlock (*analyzerInputBuffer, analyzerInputChannels);
+    frequencyCorrelationMeter.processBlock (*analyzerInputBuffer,
+                                            analyzerInputChannels);
 
     configureAnalyzerEngineForCurrentSettings (analyzerEngine);
     configureAnalyzerEngineForCurrentSettings (secondaryAnalyzerEngine);
@@ -807,15 +1004,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     secondaryAnalyzerEnabled.store (dualEnabled, std::memory_order_relaxed);
 
     analyzerFifo.pushMonoFromBuffer (
-        buffer,
-        numChannelsToAnalyse,
+        *analyzerInputBuffer,
+        analyzerInputChannels,
         primaryMode);
 
     if (dualEnabled)
     {
         secondaryAnalyzerFifo.pushMonoFromBuffer (
-            buffer,
-            numChannelsToAnalyse,
+            *analyzerInputBuffer,
+            analyzerInputChannels,
             secondaryMode);
     }
 }

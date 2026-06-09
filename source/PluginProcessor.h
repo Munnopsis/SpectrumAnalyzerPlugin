@@ -16,6 +16,7 @@
 #include "analyzer/AnalyzerDisplayResolution.h"
 #include "analyzer/AnalyzerCurveSource.h"
 #include "analyzer/AnalyzerReferenceManager.h"
+#include "analyzer/AnalyzerValidationSignal.h"
 #include "analyzer/AnalyzerVqtLiveCurveProfile.h"
 #include "analyzer/FrequencyCorrelationMeter.h"
 #include "analyzer/LoudnessMeter.h"
@@ -122,6 +123,7 @@ public:
     static inline const juce::String vqtLiveCurveProfileParamId { "vqtLiveCurveProfile" };
     static inline const juce::String peakDipSourceParamId { "peakDipSource" };
     static inline const juce::String differenceCurveSourceParamId { "differenceCurveSource" };
+    static inline const juce::String validationSignalParamId { "validationSignal" };
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept
     {
@@ -171,6 +173,13 @@ public:
     bool shouldShowFrequencyCorrelation() const noexcept
     {
         return parameters.getRawParameterValue (showFrequencyCorrelationParamId)->load() > 0.5f;
+    }
+
+    AnalyzerValidationSignal getAnalyzerValidationSignal() const noexcept;
+
+    bool isAnalyzerValidationSignalEnabled() const noexcept
+    {
+        return getAnalyzerValidationSignal() != AnalyzerValidationSignal::off;
     }
 
     void validateRestoredAnalyzerState();
@@ -254,6 +263,10 @@ private:
     void configureAnalyzerEngineForCurrentSettings (AnalyzerEngine& engine) noexcept;
     void updateStereoMeterData (const juce::AudioBuffer<float>& buffer,
                                 int numInputChannels) noexcept;
+    void fillAnalyzerValidationBuffer (juce::AudioBuffer<float>& destination,
+                                       int numSamples,
+                                       AnalyzerValidationSignal signal,
+                                       double sampleRate) noexcept;
     static juce::String getAnalyzerCurveLabelForMode (AnalyzerInputMode mode);
 
     // cached parameters
@@ -266,6 +279,7 @@ private:
     std::atomic<float>* slopeParameter = nullptr;
     std::atomic<float>* displayResolutionParameter = nullptr;
     std::atomic<float>* vqtLiveCurveProfileParameter = nullptr;
+    std::atomic<float>* validationSignalParameter = nullptr;
 
     AnalyzerFifo analyzerFifo;
     AnalyzerEngine analyzerEngine;
@@ -274,6 +288,10 @@ private:
     LoudnessMeter loudnessMeter;
     FrequencyCorrelationMeter frequencyCorrelationMeter;
     AnalyzerReferenceManager referenceManager;
+    juce::AudioBuffer<float> validationBuffer;
+    double validationPhase = 0.0;
+    double validationPhase2 = 0.0;
+    double validationPhase3 = 0.0;
     mutable std::mutex referenceMutex;
     std::atomic<uint64_t> referenceStateRevision { 1 };
     std::atomic<bool> secondaryAnalyzerEnabled { false };

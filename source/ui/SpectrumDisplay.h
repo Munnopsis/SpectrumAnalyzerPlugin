@@ -119,6 +119,8 @@ public:
     void setFrequencyCorrelationData (
         const FrequencyCorrelationDisplayData& data);
     void setFrequencyCorrelationVisible (bool shouldBeVisible);
+    void setValidationSignalLabels (const juce::String& activeSignalLabel,
+                                    const juce::String& expectedBehaviourLabel);
 
     std::function<void (float minimumHz, float maximumHz)> onVisibleFrequencyRangeChanged;
 
@@ -218,6 +220,8 @@ private:
                                              juce::Rectangle<int> bounds);
     void drawMouseReadout (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPeakNoteLabels (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawValidationSignalBanner (juce::Graphics& g,
+                                     juce::Rectangle<int> bounds);
     bool hasAnyVisibleSpectrumCurve() const noexcept;
     void drawNoVisibleCurvesHint (juce::Graphics& g,
                                   juce::Rectangle<int> bounds);
@@ -349,6 +353,8 @@ private:
     StereoMeterDisplayData stereoMeterData;
     LoudnessMeterDisplayData loudnessMeterData;
     FrequencyCorrelationDisplayData frequencyCorrelationData;
+    juce::String validationSignalLabel;
+    juce::String validationExpectedLabel;
     float lastPanMouseX = 0.0f;
     juce::Point<float> mousePosition;
 
