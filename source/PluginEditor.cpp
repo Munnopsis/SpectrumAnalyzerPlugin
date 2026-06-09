@@ -324,13 +324,20 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         if (updatingReferenceBox)
             return;
 
-        const auto selectedIndex = referenceBox.getSelectedId() - 1;
+        const auto references =
+            processorRef.getReferenceCurvesSnapshot();
 
-        if (selectedIndex >= 0)
+        const auto selectedIndex =
+            referenceBox.getSelectedId() - 1;
+
+        if (selectedIndex < 0
+            || selectedIndex >= static_cast<int> (references.size()))
         {
-            processorRef.setActiveReferenceIndex (selectedIndex);
-            updateReferenceControls();
+            return;
         }
+
+        processorRef.setActiveReferenceIndex (selectedIndex);
+        updateReferenceControls();
     };
 
     liveButtonAttachment = std::make_unique<ButtonAttachment> (
@@ -758,38 +765,78 @@ void PluginEditor::updateReferenceControls()
     updateFreezeButtonState();
 }
 
+int PluginEditor::getSelectedReferenceIndex() const
+{
+    const auto references =
+        processorRef.getReferenceCurvesSnapshot();
+
+    const auto selectedIndex =
+        referenceBox.getSelectedId() - 1;
+
+    if (selectedIndex >= 0
+        && selectedIndex < static_cast<int> (references.size()))
+    {
+        return selectedIndex;
+    }
+
+    const auto activeIndex =
+        processorRef.getActiveReferenceIndex();
+
+    if (activeIndex >= 0
+        && activeIndex < static_cast<int> (references.size()))
+    {
+        return activeIndex;
+    }
+
+    return -1;
+}
+
 void PluginEditor::showReferenceMenu()
 {
     const auto references =
         processorRef.getReferenceCurvesSnapshot();
 
-    const auto activeReferenceIndex =
-        processorRef.getActiveReferenceIndex();
+    const auto targetReferenceIndex =
+        getSelectedReferenceIndex();
 
-    const auto hasActiveReference =
-        activeReferenceIndex >= 0
-        && activeReferenceIndex < static_cast<int> (references.size());
+    const auto hasTargetReference =
+        targetReferenceIndex >= 0
+        && targetReferenceIndex < static_cast<int> (references.size());
 
-    const auto activeReferenceVisible =
-        hasActiveReference
-            ? references[static_cast<size_t> (activeReferenceIndex)].visible
+    const auto targetReferenceVisible =
+        hasTargetReference
+            ? references[static_cast<size_t> (targetReferenceIndex)].visible
             : false;
+
+    const auto targetReferenceName =
+        hasTargetReference
+            ? references[static_cast<size_t> (targetReferenceIndex)].name
+            : juce::String {};
+
+    if (hasTargetReference)
+        processorRef.setActiveReferenceIndex (targetReferenceIndex);
 
     juce::PopupMenu menu;
 
     menu.addItem (1,
-                  "Rename Reference",
-                  hasActiveReference);
+                  targetReferenceName.isNotEmpty()
+                      ? "Umbenennen: \"" + targetReferenceName + "\"..."
+                      : "Ausgewählte Reference umbenennen...",
+                  hasTargetReference);
 
     menu.addItem (2,
-                  "Remove Reference",
-                  hasActiveReference);
+                  targetReferenceName.isNotEmpty()
+                      ? "Entfernen: \"" + targetReferenceName + "\""
+                      : "Ausgewählte Reference entfernen",
+                  hasTargetReference);
 
     menu.addSeparator();
 
     menu.addItem (3,
-                  activeReferenceVisible ? "Hide Reference" : "Show Reference",
-                  hasActiveReference);
+                  targetReferenceVisible
+                      ? "Ausgewählte Reference ausblenden"
+                      : "Ausgewählte Reference anzeigen",
+                  hasTargetReference);
 
     juce::Component::SafePointer<PluginEditor> safeThis (this);
 
@@ -807,15 +854,17 @@ void PluginEditor::showReferenceMenu()
             const auto currentReferences =
                 editor.processorRef.getReferenceCurvesSnapshot();
 
-            const auto currentActiveIndex =
-                editor.processorRef.getActiveReferenceIndex();
+            const auto currentTargetIndex =
+                editor.getSelectedReferenceIndex();
 
-            const auto hasCurrentActiveReference =
-                currentActiveIndex >= 0
-                && currentActiveIndex < static_cast<int> (currentReferences.size());
+            const auto hasCurrentTargetReference =
+                currentTargetIndex >= 0
+                && currentTargetIndex < static_cast<int> (currentReferences.size());
 
-            if (!hasCurrentActiveReference)
+            if (!hasCurrentTargetReference)
                 return;
+
+            editor.processorRef.setActiveReferenceIndex (currentTargetIndex);
 
             switch (result)
             {
@@ -824,17 +873,17 @@ void PluginEditor::showReferenceMenu()
                     break;
 
                 case 2:
-                    editor.processorRef.removeReferenceCurve (currentActiveIndex);
+                    editor.processorRef.removeReferenceCurve (currentTargetIndex);
                     editor.updateReferenceControls();
                     break;
 
                 case 3:
                 {
                     const auto currentlyVisible =
-                        currentReferences[static_cast<size_t> (currentActiveIndex)].visible;
+                        currentReferences[static_cast<size_t> (currentTargetIndex)].visible;
 
                     editor.processorRef.setReferenceCurveVisible (
-                        currentActiveIndex,
+                        currentTargetIndex,
                         !currentlyVisible);
 
                     editor.updateReferenceControls();
@@ -849,14 +898,16 @@ void PluginEditor::showReferenceMenu()
 
 void PluginEditor::showRenameReferenceDialog()
 {
-    const auto activeReferenceIndex =
-        processorRef.getActiveReferenceIndex();
+    const auto referenceIndex =
+        getSelectedReferenceIndex();
 
-    if (activeReferenceIndex < 0)
+    if (referenceIndex < 0)
         return;
 
+    processorRef.setActiveReferenceIndex (referenceIndex);
+
     const auto currentName =
-        processorRef.getReferenceCurveName (activeReferenceIndex);
+        processorRef.getReferenceCurveName (referenceIndex);
 
     auto* alertWindow =
         new juce::AlertWindow ("Rename Reference",
@@ -881,7 +932,7 @@ void PluginEditor::showRenameReferenceDialog()
     alertWindow->enterModalState (
         true,
         juce::ModalCallbackFunction::create (
-            [safeThis, alertWindow, activeReferenceIndex] (int result)
+            [safeThis, alertWindow, referenceIndex] (int result)
             {
                 if (safeThis == nullptr)
                     return;
@@ -896,8 +947,11 @@ void PluginEditor::showRenameReferenceDialog()
                     return;
 
                 safeThis->processorRef.renameReferenceCurve (
-                    activeReferenceIndex,
+                    referenceIndex,
                     newName);
+
+                safeThis->processorRef.setActiveReferenceIndex (
+                    referenceIndex);
 
                 safeThis->updateReferenceControls();
             }),

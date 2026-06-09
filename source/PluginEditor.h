@@ -31,6 +31,7 @@ private:
     void updateReferenceControls();
     void showReferenceMenu();
     void showRenameReferenceDialog();
+    int getSelectedReferenceIndex() const;
 
     PluginProcessor& processorRef;
 
