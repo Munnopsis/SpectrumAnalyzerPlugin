@@ -130,10 +130,39 @@ void SpectrumDisplay::setSecondaryAnalyzerFrameData (
     const std::vector<float>& newSecondaryRmsDb,
     const std::vector<float>& newSecondaryEnergyDb)
 {
-    showSecondaryAnalyzerCurves = shouldShowSecondary;
-    primaryCurveLabel = newPrimaryLabel.isNotEmpty() ? newPrimaryLabel : "Main";
-    secondaryCurveLabel =
+    const auto resolvedPrimaryLabel =
+        newPrimaryLabel.isNotEmpty() ? newPrimaryLabel : "Main";
+
+    const auto resolvedSecondaryLabel =
         newSecondaryLabel.isNotEmpty() ? newSecondaryLabel : "Secondary";
+
+    if (!shouldShowSecondary)
+    {
+        const auto alreadyHidden =
+            !showSecondaryAnalyzerCurves
+            && primaryCurveLabel == resolvedPrimaryLabel
+            && secondaryLiveDb.empty()
+            && secondaryPeakHoldDb.empty()
+            && secondaryRmsDb.empty()
+            && secondaryEnergyDb.empty();
+
+        primaryCurveLabel = resolvedPrimaryLabel;
+        secondaryCurveLabel = resolvedSecondaryLabel;
+
+        if (alreadyHidden)
+            return;
+
+        showSecondaryAnalyzerCurves = false;
+        secondaryDataMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
+        secondaryDataMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
+        secondaryLiveDb.clear();
+        secondaryPeakHoldDb.clear();
+        secondaryRmsDb.clear();
+        secondaryEnergyDb.clear();
+
+        repaint();
+        return;
+    }
 
     const auto clampedMinimum =
         juce::jlimit (AnalyzerFrequencyRange::minimumHz,
@@ -145,20 +174,15 @@ void SpectrumDisplay::setSecondaryAnalyzerFrameData (
                       AnalyzerFrequencyRange::maximumHz,
                       secondaryDataMaximumFrequencyHz);
 
+    showSecondaryAnalyzerCurves = true;
+    primaryCurveLabel = resolvedPrimaryLabel;
+    secondaryCurveLabel = resolvedSecondaryLabel;
     secondaryDataMinFrequencyHz = clampedMinimum;
     secondaryDataMaxFrequencyHz = clampedMaximum;
     secondaryLiveDb = newSecondaryLiveDb;
     secondaryPeakHoldDb = newSecondaryPeakHoldDb;
     secondaryRmsDb = newSecondaryRmsDb;
     secondaryEnergyDb = newSecondaryEnergyDb;
-
-    if (!showSecondaryAnalyzerCurves)
-    {
-        secondaryLiveDb.clear();
-        secondaryPeakHoldDb.clear();
-        secondaryRmsDb.clear();
-        secondaryEnergyDb.clear();
-    }
 
     repaint();
 }
@@ -1925,9 +1949,11 @@ void SpectrumDisplay::drawStereoMeterPanel (
                 false);
 
     const auto correlationText =
-        juce::String ("Corr ")
-        + juce::String (stereoMeterData.smoothedCorrelation >= 0.0f ? "+" : "")
-        + juce::String (stereoMeterData.smoothedCorrelation, 2);
+        stereoMeterData.correlationValid
+            ? juce::String ("Corr ")
+              + juce::String (stereoMeterData.smoothedCorrelation >= 0.0f ? "+" : "")
+              + juce::String (stereoMeterData.smoothedCorrelation, 2)
+            : juce::String::fromUTF8 ("Corr \xe2\x80\x94");
 
     g.drawText (correlationText,
                 header,
@@ -1958,7 +1984,9 @@ void SpectrumDisplay::drawLoudnessMeterPanel (
     if (showStereoMeter)
         availableArea.removeFromBottom (156.0f);
 
-    const auto panelWidth = juce::jmin (320.0f, availableArea.getWidth() - 24.0f);
+    const auto panelWidth =
+        juce::jmin (320.0f, availableArea.getWidth() - 24.0f);
+
     constexpr auto panelHeight = 118.0f;
 
     if (panelWidth < 260.0f || availableArea.getHeight() < panelHeight + 40.0f)
@@ -2001,42 +2029,52 @@ void SpectrumDisplay::drawLoudnessMeterPanel (
     const auto peakLabel =
         loudnessMeterData.hasTruePeak ? "TP " : "Peak ";
 
+    const auto loudnessRange =
+        loudnessMeterData.hasLoudnessRange
+            ? juce::String (loudnessMeterData.loudnessRangeLu, 1)
+            : juce::String ("--");
+
     const std::array<juce::String, 4> rows {{
         juce::String ("M ")
             + formatLoudnessValue (loudnessMeterData.momentaryLufs)
             + "  S "
             + formatLoudnessValue (loudnessMeterData.shortTermLufs)
             + " LUFS",
+
         juce::String ("I ")
             + integrated
             + "  LRA "
-            + (loudnessMeterData.hasLoudnessRange
-                   ? juce::String (loudnessMeterData.loudnessRangeLu, 1)
-                   : juce::String ("--"))
+            + loudnessRange
             + " LU",
+
         juce::String (peakLabel)
-            + formatMeterDb (loudnessMeterData.hasTruePeak
-                                 ? loudnessMeterData.truePeakDb
-                                 : loudnessMeterData.samplePeakDb)
+            + formatMeterDb (
+                loudnessMeterData.hasTruePeak
+                    ? loudnessMeterData.truePeakDb
+                    : loudnessMeterData.samplePeakDb)
             + "  Hold "
-            + formatMeterDb (loudnessMeterData.peakHoldDb),
+            + formatMeterDb (loudnessMeterData.peakHoldDb)
+            + " dB",
+
         juce::String ("RMS ")
             + formatMeterDb (loudnessMeterData.rmsDb)
             + "  Crest "
-            + juce::String (loudnessMeterData.crestDb, 1)
+            + formatSignedMeterDb (loudnessMeterData.crestDb)
             + " dB"
     }};
 
     g.setFont (juce::FontOptions (10.8f));
-    g.setColour (juce::Colours::white.withAlpha (0.74f));
+    g.setColour (juce::Colours::white.withAlpha (0.76f));
 
-    for (const auto& row : rows)
+    const auto rowHeight =
+        content.getHeight() / static_cast<float> (rows.size());
+
+    for (size_t row = 0; row < rows.size(); ++row)
     {
-        if (content.getHeight() < 13.0f)
-            break;
+        auto rowArea = content.removeFromTop (rowHeight);
 
-        g.drawText (row,
-                    content.removeFromTop (16.0f),
+        g.drawText (rows[row],
+                    rowArea,
                     juce::Justification::centredLeft,
                     false);
     }
@@ -2253,44 +2291,56 @@ void SpectrumDisplay::drawCorrelationMeter (
                     trackArea.getX(),
                     trackArea.getRight());
 
-    const auto markerX =
-        juce::jmap (juce::jlimit (-1.0f,
-                                  1.0f,
-                                  stereoMeterData.smoothedCorrelation),
-                    -1.0f,
-                    1.0f,
-                    trackArea.getX(),
-                    trackArea.getRight());
-
-    const auto fillX = juce::jmin (zeroX, markerX);
-    const auto fillWidth = std::abs (markerX - zeroX);
-
-    if (fillWidth > 0.5f)
-    {
-        const auto fillColour =
-            markerX >= zeroX
-                ? juce::Colour::fromRGB (120, 255, 160).withAlpha (0.76f)
-                : juce::Colour::fromRGB (255, 110, 110).withAlpha (0.82f);
-
-        g.setColour (fillColour);
-        g.fillRoundedRectangle (fillX,
-                                trackArea.getY(),
-                                fillWidth,
-                                trackArea.getHeight(),
-                                3.0f);
-    }
-
     g.setColour (juce::Colours::white.withAlpha (0.28f));
     g.drawVerticalLine (juce::roundToInt (zeroX),
                         trackArea.getY() - 4.0f,
                         trackArea.getBottom() + 4.0f);
 
-    g.setColour (juce::Colours::white.withAlpha (0.88f));
-    g.drawLine (markerX,
-                trackArea.getY() - 5.0f,
-                markerX,
-                trackArea.getBottom() + 5.0f,
-                1.6f);
+    if (stereoMeterData.correlationValid)
+    {
+        const auto markerX =
+            juce::jmap (juce::jlimit (-1.0f,
+                                      1.0f,
+                                      stereoMeterData.smoothedCorrelation),
+                        -1.0f,
+                        1.0f,
+                        trackArea.getX(),
+                        trackArea.getRight());
+
+        const auto fillX = juce::jmin (zeroX, markerX);
+        const auto fillWidth = std::abs (markerX - zeroX);
+
+        if (fillWidth > 0.5f)
+        {
+            const auto fillColour =
+                markerX >= zeroX
+                    ? juce::Colour::fromRGB (120, 255, 160).withAlpha (0.76f)
+                    : juce::Colour::fromRGB (255, 110, 110).withAlpha (0.82f);
+
+            g.setColour (fillColour);
+            g.fillRoundedRectangle (fillX,
+                                    trackArea.getY(),
+                                    fillWidth,
+                                    trackArea.getHeight(),
+                                    3.0f);
+        }
+
+        g.setColour (juce::Colours::white.withAlpha (0.88f));
+        g.drawLine (markerX,
+                    trackArea.getY() - 5.0f,
+                    markerX,
+                    trackArea.getBottom() + 5.0f,
+                    1.6f);
+    }
+    else
+    {
+        g.setColour (juce::Colours::white.withAlpha (0.46f));
+        g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        g.drawText (juce::String::fromUTF8 ("\xe2\x80\x94"),
+                    trackArea,
+                    juce::Justification::centred,
+                    false);
+    }
 
     g.setFont (juce::FontOptions (9.0f));
     g.setColour (juce::Colours::white.withAlpha (0.54f));

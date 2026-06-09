@@ -94,6 +94,7 @@ public:
     {
         float correlation = 0.0f;
         float smoothedCorrelation = 0.0f;
+        bool correlationValid = false;
         float leftLevelDb = -100.0f;
         float rightLevelDb = -100.0f;
         float midLevelDb = -100.0f;
@@ -304,6 +305,7 @@ private:
 
     std::atomic<float> stereoCorrelation { 0.0f };
     std::atomic<float> stereoSmoothedCorrelation { 0.0f };
+    std::atomic<bool> stereoCorrelationValid { false };
     std::atomic<float> stereoLeftLevelDb { -100.0f };
     std::atomic<float> stereoRightLevelDb { -100.0f };
     std::atomic<float> stereoMidLevelDb { -100.0f };

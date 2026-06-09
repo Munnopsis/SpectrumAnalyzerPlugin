@@ -466,6 +466,8 @@ PluginProcessor::StereoMeterSnapshot PluginProcessor::getStereoMeterSnapshot() c
     snapshot.correlation = stereoCorrelation.load (std::memory_order_relaxed);
     snapshot.smoothedCorrelation =
         stereoSmoothedCorrelation.load (std::memory_order_relaxed);
+    snapshot.correlationValid =
+        stereoCorrelationValid.load (std::memory_order_relaxed);
     snapshot.leftLevelDb = stereoLeftLevelDb.load (std::memory_order_relaxed);
     snapshot.rightLevelDb = stereoRightLevelDb.load (std::memory_order_relaxed);
     snapshot.midLevelDb = stereoMidLevelDb.load (std::memory_order_relaxed);
@@ -684,13 +686,20 @@ void PluginProcessor::updateStereoMeterData (
     const auto numSamples = buffer.getNumSamples();
 
     if (numSamples <= 0 || numInputChannels <= 0 || buffer.getNumChannels() <= 0)
+    {
+        stereoCorrelation.store (0.0f, std::memory_order_relaxed);
+        stereoSmoothedCorrelation.store (0.0f, std::memory_order_relaxed);
+        stereoCorrelationValid.store (false, std::memory_order_relaxed);
         return;
+    }
+
+    const auto hasStereoInput =
+        numInputChannels > 1 && buffer.getNumChannels() > 1;
 
     const auto* left = buffer.getReadPointer (0);
-    const auto* right =
-        numInputChannels > 1 && buffer.getNumChannels() > 1
-            ? buffer.getReadPointer (1)
-            : left;
+    const auto* right = hasStereoInput
+                            ? buffer.getReadPointer (1)
+                            : left;
 
     double sumL2 = 0.0;
     double sumR2 = 0.0;
@@ -744,28 +753,34 @@ void PluginProcessor::updateStereoMeterData (
 
     constexpr auto epsilon = 1.0e-9;
     const auto sampleCount = static_cast<double> (numSamples);
+
     const auto leftRms = std::sqrt (sumL2 / sampleCount);
     const auto rightRms = std::sqrt (sumR2 / sampleCount);
     const auto midRms = std::sqrt (sumMid2 / sampleCount);
     const auto sideRms = std::sqrt (sumSide2 / sampleCount);
 
-    auto correlation = 1.0f;
+    const auto leftHasEnergy = sumL2 > epsilon;
+    const auto rightHasEnergy = sumR2 > epsilon;
 
-    if (numInputChannels <= 1)
+    auto correlation = 0.0f;
+    auto correlationValid = false;
+
+    if (!hasStereoInput)
     {
-        correlation = 1.0f;
+        if (leftHasEnergy)
+        {
+            correlation = 1.0f;
+            correlationValid = true;
+        }
     }
-    else if (sumL2 > epsilon && sumR2 > epsilon)
+    else if (leftHasEnergy && rightHasEnergy)
     {
         correlation = static_cast<float> (
             sumLR / std::sqrt (sumL2 * sumR2));
-    }
-    else
-    {
-        correlation = 0.0f;
-    }
 
-    correlation = juce::jlimit (-1.0f, 1.0f, correlation);
+        correlation = juce::jlimit (-1.0f, 1.0f, correlation);
+        correlationValid = true;
+    }
 
     const auto leftDb =
         juce::Decibels::gainToDecibels (static_cast<float> (leftRms), -100.0f);
@@ -783,10 +798,12 @@ void PluginProcessor::updateStereoMeterData (
         stereoSmoothedCorrelation.load (std::memory_order_relaxed);
 
     const auto smoothed =
-        previousSmoothed + 0.08f * (correlation - previousSmoothed);
+        correlationValid
+            ? previousSmoothed + 0.08f * (correlation - previousSmoothed)
+            : 0.0f;
 
     const auto widthPercent =
-        numInputChannels > 1
+        hasStereoInput
             ? juce::jlimit (0.0f,
                   300.0f,
                   100.0f * static_cast<float> (
@@ -798,12 +815,13 @@ void PluginProcessor::updateStereoMeterData (
 
     stereoCorrelation.store (correlation, std::memory_order_relaxed);
     stereoSmoothedCorrelation.store (smoothed, std::memory_order_relaxed);
+    stereoCorrelationValid.store (correlationValid, std::memory_order_relaxed);
     stereoLeftLevelDb.store (leftDb, std::memory_order_relaxed);
     stereoRightLevelDb.store (rightDb, std::memory_order_relaxed);
     stereoMidLevelDb.store (midDb, std::memory_order_relaxed);
-    stereoSideLevelDb.store (numInputChannels > 1 ? sideDb : -100.0f,
+    stereoSideLevelDb.store (hasStereoInput ? sideDb : -100.0f,
         std::memory_order_relaxed);
-    stereoBalanceDb.store (numInputChannels > 1 ? rightDb - leftDb : 0.0f,
+    stereoBalanceDb.store (hasStereoInput ? rightDb - leftDb : 0.0f,
         std::memory_order_relaxed);
     stereoWidthPercent.store (widthPercent, std::memory_order_relaxed);
     stereoMonoCompatibilityDb.store (monoCompatibilityDb, std::memory_order_relaxed);
@@ -1083,6 +1101,9 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
 
 void PluginProcessor::validateRestoredAnalyzerState()
 {
+    if (parameters.getRawParameterValue (validationSignalParamId) != nullptr)
+        parameters.getParameterAsValue (validationSignalParamId).setValue (0);
+
     const auto liveVisible = shouldShowLiveCurve();
     const auto rmsVisible = shouldShowRmsCurve();
     const auto energyVisible = shouldShowEnergyCurve();

@@ -512,6 +512,7 @@ void PluginEditor::timerCallback()
 
         stereoMeterDisplayData.correlation = snapshot.correlation;
         stereoMeterDisplayData.smoothedCorrelation = snapshot.smoothedCorrelation;
+        stereoMeterDisplayData.correlationValid = snapshot.correlationValid;
         stereoMeterDisplayData.leftLevelDb = snapshot.leftLevelDb;
         stereoMeterDisplayData.rightLevelDb = snapshot.rightLevelDb;
         stereoMeterDisplayData.midLevelDb = snapshot.midLevelDb;

@@ -28,6 +28,7 @@ public:
     {
         float correlation = 0.0f;
         float smoothedCorrelation = 0.0f;
+        bool correlationValid = false;
         float leftLevelDb = -100.0f;
         float rightLevelDb = -100.0f;
         float midLevelDb = -100.0f;
