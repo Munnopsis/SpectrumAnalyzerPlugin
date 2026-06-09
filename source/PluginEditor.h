@@ -32,6 +32,9 @@ private:
     void showReferenceMenu();
     void showRenameReferenceDialog();
     int getSelectedReferenceIndex() const;
+    void setAudioReferenceDropStatus (const juce::String& message,
+                                      int framesToShow);
+    void clearAudioReferenceDropStatus();
 
     PluginProcessor& processorRef;
 
@@ -130,6 +133,7 @@ private:
     SpectrumDisplay::LoudnessMeterDisplayData loudnessMeterDisplayData;
     SpectrumDisplay::FrequencyCorrelationDisplayData frequencyCorrelationDisplayData;
     uint64_t lastReferenceStateRevision = 0;
+    int audioReferenceDropStatusFramesRemaining = 0;
     bool updatingReferenceBox = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)

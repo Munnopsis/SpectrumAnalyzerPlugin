@@ -20,7 +20,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     spectrumDisplay.onAudioFilesDropped =
     [this] (const juce::StringArray& files)
     {
-        auto addedReference = false;
+        auto supportedFileCount = 0;
+        auto addedReferenceCount = 0;
+        auto lastAddedReferenceIndex = -1;
+        juce::String lastAddedReferenceName;
 
         for (const auto& path : files)
         {
@@ -38,29 +41,71 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                 continue;
             }
 
+            ++supportedFileCount;
+
             const auto newReferenceIndex =
                 processorRef.addReferenceFromAudioFile (file);
 
-            if (newReferenceIndex >= 0)
-            {
-                processorRef.setActiveReferenceIndex (newReferenceIndex);
-                addedReference = true;
-                break;
-            }
+            if (newReferenceIndex < 0)
+                continue;
+
+            lastAddedReferenceIndex = newReferenceIndex;
+            lastAddedReferenceName =
+                file.getFileNameWithoutExtension();
+
+            ++addedReferenceCount;
         }
 
-        if (addedReference)
+        if (addedReferenceCount > 0)
         {
+            if (lastAddedReferenceIndex >= 0)
+                processorRef.setActiveReferenceIndex (lastAddedReferenceIndex);
+
             updateReferenceControls();
+
+            if (addedReferenceCount == 1)
+            {
+                setAudioReferenceDropStatus (
+                    "Added Reference: " + lastAddedReferenceName,
+                    120);
+            }
+            else
+            {
+                setAudioReferenceDropStatus (
+                    "Added "
+                    + juce::String (addedReferenceCount)
+                    + " audio References",
+                    120);
+            }
+
             return;
         }
+
+        if (supportedFileCount <= 0)
+        {
+            setAudioReferenceDropStatus (
+                "Unsupported file. Drop WAV or AIFF files.",
+                120);
+
+            juce::AlertWindow::showMessageBoxAsync (
+                juce::MessageBoxIconType::WarningIcon,
+                "Audio Reference",
+                "Unsupported file type. Please drop a WAV, AIFF or AIF file.");
+
+            return;
+        }
+
+        setAudioReferenceDropStatus (
+            "Could not analyse dropped audio file.",
+            120);
 
         juce::AlertWindow::showMessageBoxAsync (
             juce::MessageBoxIconType::WarningIcon,
             "Audio Reference",
-            "Could not create a reference from the dropped file. "
-            "Please use a WAV, AIFF or AIF file.");
+            "Could not create a reference from the dropped audio file. "
+            "The file may be empty, unreadable or unsupported.");
     };
+
     processorRef.setAnalyzerDisplayFrequencyRange (AnalyzerFrequencyRange::minimumHz,
                                                    AnalyzerFrequencyRange::maximumHz);
 
@@ -529,12 +574,39 @@ void PluginEditor::resized()
     inspectButton.setBounds (secondRow.removeFromLeft (128));
 }
 
+void PluginEditor::setAudioReferenceDropStatus (
+    const juce::String& message,
+    int framesToShow)
+{
+    if (message.isEmpty())
+    {
+        clearAudioReferenceDropStatus();
+        return;
+    }
+
+    audioReferenceDropStatusFramesRemaining =
+        juce::jmax (1, framesToShow);
+
+    spectrumDisplay.setAudioReferenceDropStatus (message);
+}
+
+void PluginEditor::clearAudioReferenceDropStatus()
+{
+    audioReferenceDropStatusFramesRemaining = 0;
+    spectrumDisplay.clearAudioReferenceDropStatus();
+}
+
 void PluginEditor::timerCallback()
 {
-    processorRef.syncSecondaryAnalyzerRuntimeForCurrentInputMode();
+    if (audioReferenceDropStatusFramesRemaining > 0)
+    {
+        --audioReferenceDropStatusFramesRemaining;
 
-    if (lastReferenceStateRevision != processorRef.getReferenceStateRevision())
-        updateReferenceControls();
+        if (audioReferenceDropStatusFramesRemaining <= 0)
+            spectrumDisplay.clearAudioReferenceDropStatus();
+    }
+
+    processorRef.syncSecondaryAnalyzerRuntimeForCurrentInputMode();
 
     spectrumDisplay.setInputLevelDb (processorRef.getInputLevelDb());
     spectrumDisplay.setMinimumDecibels (processorRef.getAnalyzerMinimumDecibels());

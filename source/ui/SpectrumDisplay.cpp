@@ -591,33 +591,89 @@ void SpectrumDisplay::paint (juce::Graphics& g)
 
     drawValidationSignalBanner (g, bounds);
     drawMouseReadout (g, bounds);
+    drawAudioReferenceDropOverlay (g, bounds);
 }
 
 void SpectrumDisplay::resized()
 {
 }
 
-bool SpectrumDisplay::isInterestedInFileDrag (
-    const juce::StringArray& files)
+bool SpectrumDisplay::isSupportedDroppedAudioFile (
+    const juce::File& file)
+{
+    const auto extension =
+        file.getFileExtension().toLowerCase();
+
+    return extension == ".wav"
+           || extension == ".wave"
+           || extension == ".aif"
+           || extension == ".aiff";
+}
+
+bool SpectrumDisplay::containsSupportedDroppedAudioFile (
+    const juce::StringArray& files) const
 {
     for (const auto& path : files)
     {
-        const auto file =
-            juce::File (path);
-
-        const auto extension =
-            file.getFileExtension().toLowerCase();
-
-        if (extension == ".wav"
-            || extension == ".wave"
-            || extension == ".aif"
-            || extension == ".aiff")
-        {
+        if (isSupportedDroppedAudioFile (juce::File (path)))
             return true;
-        }
     }
 
     return false;
+}
+
+void SpectrumDisplay::setAudioReferenceDropStatus (
+    const juce::String& message)
+{
+    if (audioReferenceDropStatus == message)
+        return;
+
+    audioReferenceDropStatus = message;
+    repaint();
+}
+
+void SpectrumDisplay::clearAudioReferenceDropStatus()
+{
+    if (audioReferenceDropStatus.isEmpty())
+        return;
+
+    audioReferenceDropStatus.clear();
+    repaint();
+}
+
+bool SpectrumDisplay::isInterestedInFileDrag (
+    const juce::StringArray& files)
+{
+    return containsSupportedDroppedAudioFile (files);
+}
+
+void SpectrumDisplay::fileDragEnter (
+    const juce::StringArray& files,
+    int x,
+    int y)
+{
+    juce::ignoreUnused (x, y);
+
+    const auto shouldShowDropOverlay =
+        containsSupportedDroppedAudioFile (files);
+
+    if (isAudioFileDragOver == shouldShowDropOverlay)
+        return;
+
+    isAudioFileDragOver = shouldShowDropOverlay;
+    repaint();
+}
+
+void SpectrumDisplay::fileDragExit (
+    const juce::StringArray& files)
+{
+    juce::ignoreUnused (files);
+
+    if (! isAudioFileDragOver)
+        return;
+
+    isAudioFileDragOver = false;
+    repaint();
 }
 
 void SpectrumDisplay::filesDropped (
@@ -626,6 +682,9 @@ void SpectrumDisplay::filesDropped (
     int y)
 {
     juce::ignoreUnused (x, y);
+
+    isAudioFileDragOver = false;
+    repaint();
 
     if (onAudioFilesDropped)
         onAudioFilesDropped (files);
@@ -3239,4 +3298,64 @@ void SpectrumDisplay::drawMouseReadout (juce::Graphics& g, juce::Rectangle<int> 
                     juce::Justification::centredLeft,
                     true);
     }
+}
+
+void SpectrumDisplay::drawAudioReferenceDropOverlay (
+    juce::Graphics& g,
+    juce::Rectangle<int> bounds)
+{
+    if (! isAudioFileDragOver && audioReferenceDropStatus.isEmpty())
+        return;
+
+    const auto spectrumArea =
+        getSpectrumArea (bounds);
+
+    auto overlayArea =
+        spectrumArea.reduced (28.0f);
+
+    overlayArea =
+        overlayArea.withSizeKeepingCentre (
+            juce::jmin (560.0f, overlayArea.getWidth()),
+            isAudioFileDragOver ? 104.0f : 64.0f);
+
+    g.setColour (
+        juce::Colours::black.withAlpha (
+            isAudioFileDragOver ? 0.74f : 0.58f));
+
+    g.fillRoundedRectangle (overlayArea, 14.0f);
+
+    g.setColour (
+        juce::Colours::white.withAlpha (
+            isAudioFileDragOver ? 0.85f : 0.55f));
+
+    g.drawRoundedRectangle (overlayArea, 14.0f, 1.4f);
+
+    auto textArea =
+        overlayArea.reduced (18.0f, 12.0f);
+
+    if (isAudioFileDragOver)
+    {
+        g.setColour (juce::Colours::white.withAlpha (0.94f));
+        g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
+
+        g.drawText ("Drop WAV/AIFF to create Reference",
+                    textArea.removeFromTop (28.0f),
+                    juce::Justification::centred);
+
+        g.setColour (juce::Colours::white.withAlpha (0.70f));
+        g.setFont (juce::FontOptions (13.0f));
+
+        g.drawText ("The file will be analysed offline and added to the Reference list.",
+                    textArea,
+                    juce::Justification::centred);
+
+        return;
+    }
+
+    g.setColour (juce::Colours::white.withAlpha (0.88f));
+    g.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+
+    g.drawText (audioReferenceDropStatus,
+                textArea,
+                juce::Justification::centred);
 }

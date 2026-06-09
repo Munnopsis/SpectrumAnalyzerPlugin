@@ -573,7 +573,7 @@ int PluginProcessor::addReferenceFromAudioFile (
     if (!audioFile.existsAsFile()
         || !isSupportedReferenceAudioFile (audioFile))
     {
-        return getActiveReferenceIndex();
+        return -1;
     }
 
     juce::AudioFormatManager formatManager;
@@ -587,7 +587,7 @@ int PluginProcessor::addReferenceFromAudioFile (
         || reader->sampleRate <= 0.0
         || reader->numChannels <= 0)
     {
-        return getActiveReferenceIndex();
+        return -1;
     }
 
     const auto sampleRate =
@@ -605,7 +605,7 @@ int PluginProcessor::addReferenceFromAudioFile (
                       nyquist);
 
     if (maximumFrequencyHz <= minimumFrequencyHz)
-        return getActiveReferenceIndex();
+        return -1;
 
     juce::dsp::FFT fft (offlineReferenceFftOrder);
 
@@ -749,7 +749,7 @@ int PluginProcessor::addReferenceFromAudioFile (
     }
 
     if (analysedBlocks <= 0)
-        return getActiveReferenceIndex();
+        return -1;
 
     std::vector<float> referenceDb (
         static_cast<size_t> (offlineReferenceBinCount),

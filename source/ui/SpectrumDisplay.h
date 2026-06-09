@@ -128,7 +128,17 @@ public:
 
     std::function<void (const juce::StringArray& files)> onAudioFilesDropped;
 
+    void setAudioReferenceDropStatus (const juce::String& message);
+    void clearAudioReferenceDropStatus();
+
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
+
+    void fileDragEnter (const juce::StringArray& files,
+                        int x,
+                        int y) override;
+
+    void fileDragExit (const juce::StringArray& files) override;
+
     void filesDropped (const juce::StringArray& files,
                        int x,
                        int y) override;
@@ -303,6 +313,10 @@ private:
     void panVisibleFrequencyRangeByPixels (float deltaPixels,
                                            juce::Rectangle<float> area);
     void resetVisibleFrequencyRangeToDefault();
+    static bool isSupportedDroppedAudioFile (const juce::File& file);
+    bool containsSupportedDroppedAudioFile (const juce::StringArray& files) const;
+    void drawAudioReferenceDropOverlay (juce::Graphics& g,
+                                        juce::Rectangle<int> bounds);
 
     static constexpr float defaultMinFrequencyHz = AnalyzerFrequencyRange::minimumHz;
     static constexpr float defaultMaxFrequencyHz = AnalyzerFrequencyRange::maximumHz;
@@ -357,6 +371,8 @@ private:
     bool showFrequencyCorrelation = true;
     bool hasMouseReadout = false;
     bool isPanningVisibleFrequencyRange = false;
+    bool isAudioFileDragOver = false;
+    juce::String audioReferenceDropStatus;
     AnalyzerCurveSource peakDipCurveSource = AnalyzerCurveSource::live;
     AnalyzerCurveSource differenceCurveSource = AnalyzerCurveSource::live;
     StereoMeterDisplayData stereoMeterData;
