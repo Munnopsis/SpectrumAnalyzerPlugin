@@ -31,6 +31,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (clearReferencesButton);
     addAndMakeVisible (differenceButton);
     addAndMakeVisible (stereoMeterButton);
+    addAndMakeVisible (loudnessMeterButton);
+    addAndMakeVisible (frequencyCorrelationButton);
+    addAndMakeVisible (resetLoudnessButton);
     addAndMakeVisible (tooltipButton);
     addAndMakeVisible (inputModeBox);
     addAndMakeVisible (fftSizeBox);
@@ -40,6 +43,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (slopeBox);
     addAndMakeVisible (displayResolutionBox);
     addAndMakeVisible (vqtLiveCurveBox);
+    addAndMakeVisible (referenceBox);
 
     inspectButton.setName ("InspectButton");
     liveButton.setName ("LiveButton");
@@ -53,6 +57,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     clearReferencesButton.setName ("ClearReferencesButton");
     differenceButton.setName ("DifferenceButton");
     stereoMeterButton.setName ("StereoMeterButton");
+    loudnessMeterButton.setName ("LoudnessMeterButton");
+    frequencyCorrelationButton.setName ("FrequencyCorrelationButton");
+    resetLoudnessButton.setName ("ResetLoudnessButton");
     tooltipButton.setName ("TooltipButton");
     inputModeBox.setName ("InputModeBox");
     fftSizeBox.setName ("FftSizeBox");
@@ -62,6 +69,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     slopeBox.setName ("SlopeBox");
     displayResolutionBox.setName ("DisplayResolutionBox");
     vqtLiveCurveBox.setName ("VqtLiveCurveBox");
+    referenceBox.setName ("ReferenceBox");
 
     inspectButton.setWantsKeyboardFocus (true);
     liveButton.setWantsKeyboardFocus (true);
@@ -75,6 +83,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     clearReferencesButton.setWantsKeyboardFocus (true);
     differenceButton.setWantsKeyboardFocus (true);
     stereoMeterButton.setWantsKeyboardFocus (true);
+    loudnessMeterButton.setWantsKeyboardFocus (true);
+    frequencyCorrelationButton.setWantsKeyboardFocus (true);
+    resetLoudnessButton.setWantsKeyboardFocus (true);
     tooltipButton.setWantsKeyboardFocus (true);
     inputModeBox.setWantsKeyboardFocus (true);
     fftSizeBox.setWantsKeyboardFocus (true);
@@ -84,6 +95,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     slopeBox.setWantsKeyboardFocus (true);
     displayResolutionBox.setWantsKeyboardFocus (true);
     vqtLiveCurveBox.setWantsKeyboardFocus (true);
+    referenceBox.setWantsKeyboardFocus (true);
 
     inspectButton.setTooltip ("Open the Melatonin UI inspector");
     liveButton.setTooltip ("Show or hide the live spectrum curve");
@@ -97,6 +109,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     clearReferencesButton.setTooltip ("Clear all stored reference curves");
     differenceButton.setTooltip ("Show difference between current analyzer curve and the active reference");
     stereoMeterButton.setTooltip ("Show stereo correlation, balance, width and phase scope");
+    loudnessMeterButton.setTooltip ("Show momentary, short-term and integrated loudness metering");
+    frequencyCorrelationButton.setTooltip ("Show 31-band stereo frequency correlation");
+    resetLoudnessButton.setTooltip ("Reset integrated loudness and peak hold metering");
     tooltipButton.setTooltip ("Show or hide tooltips");
 
     clearPeakButton.onClick = [this]
@@ -109,18 +124,21 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         processorRef.requestClearEnergy();
     };
 
+    resetLoudnessButton.onClick = [this]
+    {
+        processorRef.resetLoudnessMeter();
+    };
+
     freezeButton.onClick = [this]
     {
-        spectrumDisplay.addCurrentSpectrumAsReference();
-
-        updateFreezeButtonState();
+        processorRef.addReferenceFromCurrentAnalyzerFrame();
+        updateReferenceControls();
     };
 
     clearReferencesButton.onClick = [this]
     {
-        spectrumDisplay.clearAllReferenceCurves();
-
-        updateFreezeButtonState();
+        processorRef.clearReferenceCurves();
+        updateReferenceControls();
     };
 
     liveButton.setClickingTogglesState (true);
@@ -132,6 +150,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     clearReferencesButton.setClickingTogglesState (false);
     differenceButton.setClickingTogglesState (true);
     stereoMeterButton.setClickingTogglesState (true);
+    loudnessMeterButton.setClickingTogglesState (true);
+    frequencyCorrelationButton.setClickingTogglesState (true);
+    resetLoudnessButton.setClickingTogglesState (false);
     tooltipButton.setClickingTogglesState (true);
     tooltipButton.setToggleState (true, juce::dontSendNotification);
 
@@ -225,6 +246,24 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         PluginProcessor::vqtLiveCurveProfileParamId,
         vqtLiveCurveBox);
 
+    referenceBox.setJustificationType (juce::Justification::centred);
+    referenceBox.setTextWhenNothingSelected ("Reference");
+    referenceBox.setTooltip ("Select the active reference curve for Difference view");
+
+    referenceBox.onChange = [this]
+    {
+        if (updatingReferenceBox)
+            return;
+
+        const auto selectedIndex = referenceBox.getSelectedId() - 1;
+
+        if (selectedIndex >= 0)
+        {
+            processorRef.setActiveReferenceIndex (selectedIndex);
+            updateReferenceControls();
+        }
+    };
+
     liveButtonAttachment = std::make_unique<ButtonAttachment> (
         state,
         PluginProcessor::showLiveCurveParamId,
@@ -260,6 +299,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         PluginProcessor::showStereoMeterParamId,
         stereoMeterButton);
 
+    loudnessMeterButtonAttachment = std::make_unique<ButtonAttachment> (
+        state,
+        PluginProcessor::showLoudnessMeterParamId,
+        loudnessMeterButton);
+
+    frequencyCorrelationButtonAttachment = std::make_unique<ButtonAttachment> (
+        state,
+        PluginProcessor::showFrequencyCorrelationParamId,
+        frequencyCorrelationButton);
+
     spectrumDisplay.setCurveVisibility (
         processorRef.shouldShowLiveCurve(),
         processorRef.shouldShowRmsCurve(),
@@ -269,7 +318,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     spectrumDisplay.setStereoMeterVisible (
         processorRef.shouldShowStereoMeter());
 
-    updateFreezeButtonState();
+    spectrumDisplay.setLoudnessMeterVisible (
+        processorRef.shouldShowLoudnessMeter());
+
+    spectrumDisplay.setFrequencyCorrelationVisible (
+        processorRef.shouldShowFrequencyCorrelation());
+
+    updateReferenceControls();
 
     inspectButton.onClick = [&]
     {
@@ -282,7 +337,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         inspector->setVisible (true);
     };
 
-    setSize (1360, 680);
+    setSize (1520, 680);
 
     startTimerHz (30);
 }
@@ -340,6 +395,9 @@ void PluginEditor::resized()
     addGap (firstRow, 8);
 
     vqtLiveCurveBox.setBounds (firstRow.removeFromLeft (128));
+    addGap (firstRow, 8);
+
+    referenceBox.setBounds (firstRow.removeFromLeft (172));
 
     liveButton.setBounds (secondRow.removeFromLeft (64));
     addGap (secondRow, 6);
@@ -374,6 +432,15 @@ void PluginEditor::resized()
     stereoMeterButton.setBounds (secondRow.removeFromLeft (72));
     addGap (secondRow, 8);
 
+    loudnessMeterButton.setBounds (secondRow.removeFromLeft (58));
+    addGap (secondRow, 8);
+
+    frequencyCorrelationButton.setBounds (secondRow.removeFromLeft (58));
+    addGap (secondRow, 8);
+
+    resetLoudnessButton.setBounds (secondRow.removeFromLeft (74));
+    addGap (secondRow, 8);
+
     tooltipButton.setBounds (secondRow.removeFromLeft (54));
     addGap (secondRow, 8);
 
@@ -383,6 +450,9 @@ void PluginEditor::resized()
 void PluginEditor::timerCallback()
 {
     processorRef.syncSecondaryAnalyzerRuntimeForCurrentInputMode();
+
+    if (lastReferenceStateRevision != processorRef.getReferenceStateRevision())
+        updateReferenceControls();
 
     spectrumDisplay.setInputLevelDb (processorRef.getInputLevelDb());
     spectrumDisplay.setMinimumDecibels (processorRef.getAnalyzerMinimumDecibels());
@@ -430,6 +500,58 @@ void PluginEditor::timerCallback()
             stereoMeterDisplayData.goniometerPoints);
 
         spectrumDisplay.setStereoMeterData (stereoMeterDisplayData);
+    }
+
+    const auto loudnessMeterVisible =
+        processorRef.shouldShowLoudnessMeter();
+
+    spectrumDisplay.setLoudnessMeterVisible (loudnessMeterVisible);
+
+    if (loudnessMeterVisible)
+    {
+        const auto snapshot = processorRef.getLoudnessSnapshot();
+
+        loudnessMeterDisplayData.momentaryLufs = snapshot.momentaryLufs;
+        loudnessMeterDisplayData.shortTermLufs = snapshot.shortTermLufs;
+        loudnessMeterDisplayData.integratedLufs = snapshot.integratedLufs;
+        loudnessMeterDisplayData.loudnessRangeLu = snapshot.loudnessRangeLu;
+        loudnessMeterDisplayData.samplePeakDb = snapshot.samplePeakDb;
+        loudnessMeterDisplayData.truePeakDb = snapshot.truePeakDb;
+        loudnessMeterDisplayData.rmsDb = snapshot.rmsDb;
+        loudnessMeterDisplayData.crestDb = snapshot.crestDb;
+        loudnessMeterDisplayData.peakHoldDb = snapshot.peakHoldDb;
+        loudnessMeterDisplayData.hasIntegratedMeasurement =
+            snapshot.hasIntegratedMeasurement;
+        loudnessMeterDisplayData.hasLoudnessRange =
+            snapshot.hasLoudnessRange;
+        loudnessMeterDisplayData.hasTruePeak = snapshot.hasTruePeak;
+
+        spectrumDisplay.setLoudnessMeterData (loudnessMeterDisplayData);
+    }
+
+    const auto frequencyCorrelationVisible =
+        processorRef.shouldShowFrequencyCorrelation();
+
+    spectrumDisplay.setFrequencyCorrelationVisible (
+        frequencyCorrelationVisible);
+
+    if (frequencyCorrelationVisible)
+    {
+        const auto snapshot = processorRef.getFrequencyCorrelationSnapshot();
+
+        for (size_t i = 0; i < frequencyCorrelationDisplayData.bands.size(); ++i)
+        {
+            const auto& source = snapshot.bands[i];
+            auto& destination = frequencyCorrelationDisplayData.bands[i];
+
+            destination.centreFrequencyHz = source.centreFrequencyHz;
+            destination.correlation = source.correlation;
+            destination.smoothedCorrelation = source.smoothedCorrelation;
+            destination.valid = source.valid;
+        }
+
+        spectrumDisplay.setFrequencyCorrelationData (
+            frequencyCorrelationDisplayData);
     }
 
     if (processorRef.copyLatestAnalyzerFrameBundle (analyzerFrameBundle))
@@ -496,12 +618,45 @@ void PluginEditor::timerCallback()
 
 void PluginEditor::updateFreezeButtonState()
 {
-    const auto hasReference =
-        spectrumDisplay.hasFrozenReferenceSpectrum();
+    const auto hasReference = processorRef.getNumReferenceCurves() > 0;
 
     freezeButton.setButtonText ("Add Ref");
     freezeButton.setToggleState (false, juce::dontSendNotification);
     clearReferencesButton.setEnabled (hasReference);
+}
+
+void PluginEditor::updateReferenceControls()
+{
+    const auto references = processorRef.getReferenceCurvesSnapshot();
+    const auto activeReferenceIndex = processorRef.getActiveReferenceIndex();
+
+    spectrumDisplay.setReferenceCurves (references, activeReferenceIndex);
+
+    updatingReferenceBox = true;
+    referenceBox.clear (juce::dontSendNotification);
+
+    for (size_t i = 0; i < references.size(); ++i)
+    {
+        referenceBox.addItem (references[i].name,
+                              static_cast<int> (i) + 1);
+    }
+
+    if (activeReferenceIndex >= 0
+        && activeReferenceIndex < static_cast<int> (references.size()))
+    {
+        referenceBox.setSelectedId (activeReferenceIndex + 1,
+                                    juce::dontSendNotification);
+    }
+    else
+    {
+        referenceBox.setSelectedItemIndex (-1, juce::dontSendNotification);
+    }
+
+    referenceBox.setEnabled (!references.empty());
+    updatingReferenceBox = false;
+
+    lastReferenceStateRevision = processorRef.getReferenceStateRevision();
+    updateFreezeButtonState();
 }
 
 void PluginEditor::setTooltipsEnabled (bool shouldBeEnabled)

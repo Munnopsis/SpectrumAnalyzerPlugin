@@ -82,12 +82,12 @@ juce_add_plugin("${PROJECT_NAME}"
     # Change me!
     # A four-character plugin id
     # First character MUST be uppercase for AU formats
-    PLUGIN_MANUFACTURER_CODE Jakob
+    PLUGIN_MANUFACTURER_CODE Jkob
 
     # Change me!
     # A unique four-character plugin id
     # Note: this must have at least one upper-case character
-    PLUGIN_CODE Fsp001
+    PLUGIN_CODE Fsp1
     FORMATS "${FORMATS}"
 
     # The name of your final executable
@@ -153,6 +153,7 @@ target_link_libraries(SharedCode
     melatonin_inspector
     juce_audio_utils
     juce_audio_processors
+    juce_data_structures
     juce_dsp
     juce_gui_basics
     juce_gui_extra

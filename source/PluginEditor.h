@@ -28,6 +28,7 @@ private:
     void timerCallback() override;
     void setTooltipsEnabled (bool shouldBeEnabled);
     void updateFreezeButtonState();
+    void updateReferenceControls();
 
     PluginProcessor& processorRef;
 
@@ -84,6 +85,9 @@ private:
     juce::TextButton clearReferencesButton { "Clear Refs" };
     juce::TextButton differenceButton { "Diff" };
     juce::TextButton stereoMeterButton { "Stereo" };
+    juce::TextButton loudnessMeterButton { "LUFS" };
+    juce::TextButton frequencyCorrelationButton { "Corr" };
+    juce::TextButton resetLoudnessButton { "Reset LU" };
     juce::TextButton tooltipButton { "Tips" };
     juce::ComboBox inputModeBox;
     juce::ComboBox fftSizeBox;
@@ -93,6 +97,7 @@ private:
     juce::ComboBox slopeBox;
     juce::ComboBox displayResolutionBox;
     juce::ComboBox vqtLiveCurveBox;
+    juce::ComboBox referenceBox;
 
     // Attachments
     std::unique_ptr<ButtonAttachment> liveButtonAttachment;
@@ -102,6 +107,8 @@ private:
     std::unique_ptr<ButtonAttachment> peakDipButtonAttachment;
     std::unique_ptr<ButtonAttachment> differenceButtonAttachment;
     std::unique_ptr<ButtonAttachment> stereoMeterButtonAttachment;
+    std::unique_ptr<ButtonAttachment> loudnessMeterButtonAttachment;
+    std::unique_ptr<ButtonAttachment> frequencyCorrelationButtonAttachment;
     std::unique_ptr<ComboBoxAttachment> inputModeAttachment;
     std::unique_ptr<ComboBoxAttachment> fftSizeAttachment;
     std::unique_ptr<ComboBoxAttachment> peakHoldDecayAttachment;
@@ -114,6 +121,10 @@ private:
     SpectrumDisplay spectrumDisplay;
     PluginProcessor::AnalyzerFrameBundle analyzerFrameBundle;
     SpectrumDisplay::StereoMeterDisplayData stereoMeterDisplayData;
+    SpectrumDisplay::LoudnessMeterDisplayData loudnessMeterDisplayData;
+    SpectrumDisplay::FrequencyCorrelationDisplayData frequencyCorrelationDisplayData;
+    uint64_t lastReferenceStateRevision = 0;
+    bool updatingReferenceBox = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

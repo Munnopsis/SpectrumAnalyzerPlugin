@@ -3,6 +3,11 @@
 
 #include <cmath>
 
+namespace
+{
+    const juce::Identifier analyzerReferencesStateId { "AnalyzerReferences" };
+}
+
 //==============================================================================
 PluginProcessor::PluginProcessor()
     : AudioProcessor (BusesProperties()
@@ -34,6 +39,8 @@ PluginProcessor::PluginProcessor()
     jassert (slopeParameter != nullptr);
     jassert (displayResolutionParameter != nullptr);
     jassert (vqtLiveCurveProfileParameter != nullptr);
+
+    validateRestoredAnalyzerState();
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
@@ -58,7 +65,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { showEnergyCurveParamId, 1 },
         "Show Energy Curve",
-        true));
+        false));
 
     params.push_back (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { showPeakDipMarkersParamId, 1 },
@@ -134,6 +141,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { showStereoMeterParamId, 1 },
         "Show Stereo Meter",
+        true));
+
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { showLoudnessMeterParamId, 1 },
+        "Show Loudness Meter",
+        true));
+
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { showFrequencyCorrelationParamId, 1 },
+        "Show Frequency Correlation",
         true));
 
     return { params.begin(), params.end() };
@@ -343,6 +360,90 @@ void PluginProcessor::copyGoniometerPoints (
             goniometerY[index].load (std::memory_order_relaxed)
         };
     }
+}
+
+LoudnessMeter::Snapshot PluginProcessor::getLoudnessSnapshot() const noexcept
+{
+    return loudnessMeter.getSnapshot();
+}
+
+FrequencyCorrelationMeter::Snapshot
+PluginProcessor::getFrequencyCorrelationSnapshot() const noexcept
+{
+    return frequencyCorrelationMeter.getSnapshot();
+}
+
+int PluginProcessor::addReferenceFromCurrentAnalyzerFrame()
+{
+    AnalyzerEngine::Frame frame;
+
+    if (!analyzerEngine.copyLatestFrame (frame))
+        return getActiveReferenceIndex();
+
+    std::lock_guard<std::mutex> lock (referenceMutex);
+    const auto index = referenceManager.addReferenceFromFrame (frame, {});
+    referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
+
+    return index;
+}
+
+void PluginProcessor::clearReferenceCurves()
+{
+    std::lock_guard<std::mutex> lock (referenceMutex);
+    referenceManager.clear();
+    referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
+}
+
+bool PluginProcessor::removeActiveReferenceCurve()
+{
+    std::lock_guard<std::mutex> lock (referenceMutex);
+    const auto removed =
+        referenceManager.removeReference (referenceManager.getActiveReferenceIndex());
+
+    if (removed)
+        referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
+
+    return removed;
+}
+
+bool PluginProcessor::setActiveReferenceIndex (int index)
+{
+    std::lock_guard<std::mutex> lock (referenceMutex);
+    const auto changed = referenceManager.setActiveReferenceIndex (index);
+
+    if (changed)
+        referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
+
+    return changed;
+}
+
+int PluginProcessor::getNumReferenceCurves() const
+{
+    std::lock_guard<std::mutex> lock (referenceMutex);
+    return referenceManager.getNumReferences();
+}
+
+int PluginProcessor::getActiveReferenceIndex() const
+{
+    std::lock_guard<std::mutex> lock (referenceMutex);
+    return referenceManager.getActiveReferenceIndex();
+}
+
+juce::String PluginProcessor::getReferenceCurveName (int index) const
+{
+    std::lock_guard<std::mutex> lock (referenceMutex);
+
+    if (const auto* reference = referenceManager.getReference (index))
+        return reference->name;
+
+    return {};
+}
+
+std::vector<AnalyzerReferenceCurve>
+PluginProcessor::getReferenceCurvesSnapshot() const
+{
+    std::lock_guard<std::mutex> lock (referenceMutex);
+    return referenceManager.getReferencesCopy();
 }
 
 float PluginProcessor::getPeakHoldDecayDbPerSecond() const noexcept
@@ -596,6 +697,8 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     analyzerFifo.prepare (sampleRate, samplesPerBlock);
     secondaryAnalyzerFifo.prepare (sampleRate, samplesPerBlock);
+    loudnessMeter.prepare (sampleRate, samplesPerBlock);
+    frequencyCorrelationMeter.prepare (sampleRate, samplesPerBlock);
 
     configureAnalyzerEngineForCurrentSettings (analyzerEngine);
     configureAnalyzerEngineForCurrentSettings (secondaryAnalyzerEngine);
@@ -629,6 +732,8 @@ void PluginProcessor::releaseResources()
     secondaryAnalyzerEngine.stop();
     analyzerFifo.reset();
     secondaryAnalyzerFifo.reset();
+    loudnessMeter.reset();
+    frequencyCorrelationMeter.reset();
     secondaryAnalyzerEnabled.store (false, std::memory_order_relaxed);
     secondaryAnalyzerThreadStarted.store (false, std::memory_order_relaxed);
 }
@@ -683,6 +788,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     inputLevelDb.store (levelDb, std::memory_order_relaxed);
 
     updateStereoMeterData (buffer, numChannelsToAnalyse);
+    loudnessMeter.processBlock (buffer, numChannelsToAnalyse);
+    frequencyCorrelationMeter.processBlock (buffer, numChannelsToAnalyse);
 
     configureAnalyzerEngineForCurrentSettings (analyzerEngine);
     configureAnalyzerEngineForCurrentSettings (secondaryAnalyzerEngine);
@@ -732,6 +839,19 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
     // as intermediaries to make it easy to save and load complex data.
 
     auto state = parameters.copyState();
+
+    if (const auto existingReferences =
+            state.getChildWithName (analyzerReferencesStateId);
+        existingReferences.isValid())
+    {
+        state.removeChild (existingReferences, nullptr);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock (referenceMutex);
+        state.addChild (referenceManager.toValueTree(), -1, nullptr);
+    }
+
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
 
     copyXmlToBinary (*xml, destData);
@@ -746,8 +866,35 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (xmlState != nullptr)
     {
         if (xmlState->hasTagName (parameters.state.getType()))
-            parameters.replaceState (juce::ValueTree::fromXml (*xmlState));
+        {
+            auto restoredState = juce::ValueTree::fromXml (*xmlState);
+            auto restoredReferences =
+                restoredState.getChildWithName (analyzerReferencesStateId);
+
+            parameters.replaceState (restoredState);
+
+            {
+                std::lock_guard<std::mutex> lock (referenceMutex);
+                referenceManager.restoreFromValueTree (restoredReferences);
+                referenceStateRevision.fetch_add (1, std::memory_order_relaxed);
+            }
+        }
     }
+
+    validateRestoredAnalyzerState();
+}
+
+void PluginProcessor::validateRestoredAnalyzerState()
+{
+    const auto liveVisible = shouldShowLiveCurve();
+    const auto rmsVisible = shouldShowRmsCurve();
+    const auto energyVisible = shouldShowEnergyCurve();
+    const auto peakVisible = shouldShowPeakHoldCurve();
+
+    if (liveVisible || rmsVisible || energyVisible || peakVisible)
+        return;
+
+    parameters.getParameterAsValue (showLiveCurveParamId).setValue (true);
 }
 
 int PluginProcessor::getAnalyzerFftOrder() const noexcept

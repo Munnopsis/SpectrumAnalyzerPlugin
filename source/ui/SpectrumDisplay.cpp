@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 namespace
@@ -41,6 +42,14 @@ namespace
 
         return juce::String (decibels >= 0.0f ? "+" : "")
                + juce::String (decibels, 1);
+    }
+
+    juce::String formatLoudnessValue (float loudness)
+    {
+        if (!std::isfinite (loudness) || loudness <= -99.9f)
+            return "-inf";
+
+        return juce::String (loudness, 1);
     }
 }
 
@@ -274,9 +283,43 @@ void SpectrumDisplay::addCurrentSpectrumAsReference()
     snapshot.energyDb = energyDb;
     snapshot.peakHoldDb = peakHoldDb;
     snapshot.visible = true;
+    snapshot.colour = juce::Colours::white;
 
     referenceCurves.push_back (std::move (snapshot));
     activeReferenceIndex = static_cast<int> (referenceCurves.size()) - 1;
+
+    repaint();
+}
+
+void SpectrumDisplay::setReferenceCurves (
+    const std::vector<AnalyzerReferenceCurve>& references,
+    int activeIndex)
+{
+    referenceCurves.clear();
+    referenceCurves.reserve (references.size());
+
+    for (const auto& reference : references)
+    {
+        ReferenceCurveSnapshot snapshot;
+        snapshot.name = reference.name;
+        snapshot.dataMinFrequencyHz = reference.dataMinFrequencyHz;
+        snapshot.dataMaxFrequencyHz = reference.dataMaxFrequencyHz;
+        snapshot.liveDb = reference.liveDb;
+        snapshot.rmsDb = reference.rmsDb;
+        snapshot.energyDb = reference.energyDb;
+        snapshot.peakHoldDb = reference.peakHoldDb;
+        snapshot.visible = reference.visible;
+        snapshot.colour = reference.colour;
+
+        referenceCurves.push_back (std::move (snapshot));
+    }
+
+    activeReferenceIndex =
+        referenceCurves.empty()
+            ? -1
+            : juce::jlimit (0,
+                            static_cast<int> (referenceCurves.size()) - 1,
+                            activeIndex);
 
     repaint();
 }
@@ -395,6 +438,38 @@ void SpectrumDisplay::setStereoMeterVisible (bool shouldBeVisible)
     repaint();
 }
 
+void SpectrumDisplay::setLoudnessMeterData (
+    const LoudnessMeterDisplayData& data)
+{
+    loudnessMeterData = data;
+    repaint();
+}
+
+void SpectrumDisplay::setLoudnessMeterVisible (bool shouldBeVisible)
+{
+    if (showLoudnessMeter == shouldBeVisible)
+        return;
+
+    showLoudnessMeter = shouldBeVisible;
+    repaint();
+}
+
+void SpectrumDisplay::setFrequencyCorrelationData (
+    const FrequencyCorrelationDisplayData& data)
+{
+    frequencyCorrelationData = data;
+    repaint();
+}
+
+void SpectrumDisplay::setFrequencyCorrelationVisible (bool shouldBeVisible)
+{
+    if (showFrequencyCorrelation == shouldBeVisible)
+        return;
+
+    showFrequencyCorrelation = shouldBeVisible;
+    repaint();
+}
+
 void SpectrumDisplay::setCurveVisibility (bool shouldShowLive,
                                           bool shouldShowRms,
                                           bool shouldShowEnergy,
@@ -451,7 +526,22 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     drawLegend (g, bounds);
     drawVisibleFrequencyRangeIndicator (g, bounds);
 
+    if (!hasAnyVisibleSpectrumCurve())
+        drawNoVisibleCurvesHint (g, bounds);
+    else if (showDifferenceCurve
+             && (activeReferenceIndex < 0
+                 || activeReferenceIndex >= static_cast<int> (referenceCurves.size())))
+    {
+        drawMissingDifferenceReferenceHint (g, bounds);
+    }
+
     drawInputLevelMeter (g, bounds);
+
+    if (showFrequencyCorrelation)
+        drawFrequencyCorrelationPanel (g, bounds);
+
+    if (showLoudnessMeter)
+        drawLoudnessMeterPanel (g, bounds);
 
     if (showStereoMeter)
         drawStereoMeterPanel (g, bounds);
@@ -1448,15 +1538,15 @@ std::vector<SpectrumDisplay::SpectrumExtremumMarker>
             dipCandidates.push_back (marker);
     }
 
-    const auto maxMarkersPerKind =
-        static_cast<size_t> (maxPeakDipMarkersPerKind);
-
     const auto minimumSpacingOctaves = minimumPeakDipSpacingOctaves;
 
     const auto selectMarkers =
-        [maxMarkersPerKind, minimumSpacingOctaves] (
+        [minimumSpacingOctaves] (
             std::vector<SpectrumExtremumMarker>& candidates)
         {
+            constexpr auto maxMarkersPerKind =
+                static_cast<size_t> (maxPeakDipMarkersPerKind);
+
             std::sort (candidates.begin(),
                        candidates.end(),
                        [] (const auto& first, const auto& second)
@@ -1662,6 +1752,77 @@ void SpectrumDisplay::drawInputLevelMeter (juce::Graphics& g, juce::Rectangle<in
                 juce::Justification::centredLeft);
 }
 
+bool SpectrumDisplay::hasAnyVisibleSpectrumCurve() const noexcept
+{
+    if (showLiveCurve || showRmsCurve || showEnergyCurve || showPeakHoldCurve)
+        return true;
+
+    return showDifferenceCurve
+           && activeReferenceIndex >= 0
+           && activeReferenceIndex < static_cast<int> (referenceCurves.size());
+}
+
+void SpectrumDisplay::drawNoVisibleCurvesHint (
+    juce::Graphics& g,
+    juce::Rectangle<int> bounds)
+{
+    const auto area = getSpectrumArea (bounds);
+    auto hintBounds = area.withSizeKeepingCentre (
+        juce::jmin (360.0f, area.getWidth() - 24.0f),
+        58.0f);
+
+    if (hintBounds.getWidth() <= 180.0f)
+        return;
+
+    g.setColour (juce::Colours::black.withAlpha (0.64f));
+    g.fillRoundedRectangle (hintBounds, 6.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.16f));
+    g.drawRoundedRectangle (hintBounds, 6.0f, 1.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.84f));
+    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    g.drawText ("All spectrum curves are hidden",
+                hintBounds.removeFromTop (28.0f).toNearestInt(),
+                juce::Justification::centred,
+                false);
+
+    g.setColour (juce::Colours::white.withAlpha (0.62f));
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawText ("Enable Live, RMS, Energy or Peak",
+                hintBounds.toNearestInt(),
+                juce::Justification::centred,
+                false);
+}
+
+void SpectrumDisplay::drawMissingDifferenceReferenceHint (
+    juce::Graphics& g,
+    juce::Rectangle<int> bounds)
+{
+    const auto area = getSpectrumArea (bounds);
+    auto hintBounds = area.withSizeKeepingCentre (
+        juce::jmin (320.0f, area.getWidth() - 24.0f),
+        44.0f);
+
+    if (hintBounds.getWidth() <= 180.0f)
+        return;
+
+    hintBounds.translate (0.0f, 44.0f);
+
+    g.setColour (juce::Colours::black.withAlpha (0.58f));
+    g.fillRoundedRectangle (hintBounds, 6.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.14f));
+    g.drawRoundedRectangle (hintBounds, 6.0f, 1.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.76f));
+    g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    g.drawText ("Add a reference to use Diff",
+                hintBounds.toNearestInt().reduced (10, 0),
+                juce::Justification::centred,
+                false);
+}
+
 void SpectrumDisplay::drawStereoMeterPanel (
     juce::Graphics& g,
     juce::Rectangle<int> bounds)
@@ -1719,6 +1880,289 @@ void SpectrumDisplay::drawStereoMeterPanel (
 
     content.removeFromTop (7.0f);
     drawStereoBalanceAndWidthText (g, content);
+}
+
+void SpectrumDisplay::drawLoudnessMeterPanel (
+    juce::Graphics& g,
+    juce::Rectangle<int> bounds)
+{
+    auto availableArea = bounds.reduced (16).toFloat();
+    availableArea.removeFromBottom (34.0f);
+
+    if (showStereoMeter)
+        availableArea.removeFromBottom (156.0f);
+
+    const auto panelWidth = juce::jmin (320.0f, availableArea.getWidth() - 24.0f);
+    constexpr auto panelHeight = 118.0f;
+
+    if (panelWidth < 260.0f || availableArea.getHeight() < panelHeight + 40.0f)
+        return;
+
+    juce::Rectangle<float> panelBounds (
+        availableArea.getRight() - panelWidth,
+        availableArea.getBottom() - panelHeight,
+        panelWidth,
+        panelHeight);
+
+    g.setColour (juce::Colours::black.withAlpha (0.62f));
+    g.fillRoundedRectangle (panelBounds, 6.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.14f));
+    g.drawRoundedRectangle (panelBounds, 6.0f, 1.0f);
+
+    auto content = panelBounds.reduced (10.0f);
+    auto header = content.removeFromTop (18.0f);
+
+    g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    g.setColour (juce::Colours::white.withAlpha (0.86f));
+    g.drawText ("Loudness",
+                header,
+                juce::Justification::centredLeft,
+                false);
+
+    const auto integrated =
+        loudnessMeterData.hasIntegratedMeasurement
+            ? formatLoudnessValue (loudnessMeterData.integratedLufs)
+            : juce::String ("--");
+
+    g.drawText (juce::String ("I ") + integrated,
+                header,
+                juce::Justification::centredRight,
+                false);
+
+    content.removeFromTop (8.0f);
+
+    const auto peakLabel =
+        loudnessMeterData.hasTruePeak ? "TP " : "Peak ";
+
+    const std::array<juce::String, 4> rows {{
+        juce::String ("M ")
+            + formatLoudnessValue (loudnessMeterData.momentaryLufs)
+            + "  S "
+            + formatLoudnessValue (loudnessMeterData.shortTermLufs)
+            + " LUFS",
+        juce::String ("I ")
+            + integrated
+            + "  LRA "
+            + (loudnessMeterData.hasLoudnessRange
+                   ? juce::String (loudnessMeterData.loudnessRangeLu, 1)
+                   : juce::String ("--"))
+            + " LU",
+        juce::String (peakLabel)
+            + formatMeterDb (loudnessMeterData.hasTruePeak
+                                 ? loudnessMeterData.truePeakDb
+                                 : loudnessMeterData.samplePeakDb)
+            + "  Hold "
+            + formatMeterDb (loudnessMeterData.peakHoldDb),
+        juce::String ("RMS ")
+            + formatMeterDb (loudnessMeterData.rmsDb)
+            + "  Crest "
+            + juce::String (loudnessMeterData.crestDb, 1)
+            + " dB"
+    }};
+
+    g.setFont (juce::FontOptions (10.8f));
+    g.setColour (juce::Colours::white.withAlpha (0.74f));
+
+    for (const auto& row : rows)
+    {
+        if (content.getHeight() < 13.0f)
+            break;
+
+        g.drawText (row,
+                    content.removeFromTop (16.0f),
+                    juce::Justification::centredLeft,
+                    false);
+    }
+}
+
+void SpectrumDisplay::drawFrequencyCorrelationPanel (
+    juce::Graphics& g,
+    juce::Rectangle<int> bounds)
+{
+    auto availableArea = bounds.reduced (16).toFloat();
+    availableArea.removeFromBottom (34.0f);
+
+    const auto panelWidth =
+        juce::jmin (430.0f, availableArea.getWidth() - 360.0f);
+
+    constexpr auto panelHeight = 94.0f;
+
+    if (panelWidth < 280.0f || availableArea.getHeight() < panelHeight + 60.0f)
+        return;
+
+    juce::Rectangle<float> panelBounds (
+        availableArea.getX(),
+        availableArea.getBottom() - panelHeight,
+        panelWidth,
+        panelHeight);
+
+    g.setColour (juce::Colours::black.withAlpha (0.58f));
+    g.fillRoundedRectangle (panelBounds, 6.0f);
+
+    g.setColour (juce::Colours::white.withAlpha (0.14f));
+    g.drawRoundedRectangle (panelBounds, 6.0f, 1.0f);
+
+    auto content = panelBounds.reduced (10.0f);
+    auto header = content.removeFromTop (16.0f);
+
+    g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+    g.setColour (juce::Colours::white.withAlpha (0.84f));
+    g.drawText ("31-Band Correlation",
+                header,
+                juce::Justification::centredLeft,
+                false);
+
+    auto graphArea = content.reduced (0.0f, 3.0f);
+    const auto labelArea = graphArea.removeFromBottom (12.0f);
+    graphArea.removeFromBottom (2.0f);
+    const auto zeroY = graphArea.getCentreY();
+
+    g.setColour (juce::Colours::white.withAlpha (0.11f));
+    g.drawHorizontalLine (juce::roundToInt (zeroY),
+                          graphArea.getX(),
+                          graphArea.getRight());
+
+    const auto bandCount =
+        FrequencyCorrelationDisplayData::numBands;
+
+    const auto bandGap = 2.0f;
+    const auto barWidth =
+        juce::jmax (2.0f,
+                    (graphArea.getWidth()
+                     - bandGap * static_cast<float> (bandCount - 1))
+                        / static_cast<float> (bandCount));
+
+    auto x = graphArea.getX();
+
+    for (const auto& band : frequencyCorrelationData.bands)
+    {
+        const auto correlation =
+            juce::jlimit (-1.0f, 1.0f, band.smoothedCorrelation);
+
+        const auto barHeight =
+            std::abs (correlation) * (graphArea.getHeight() * 0.45f);
+
+        auto barArea =
+            correlation >= 0.0f
+                ? juce::Rectangle<float> (x,
+                                          zeroY - barHeight,
+                                          barWidth,
+                                          barHeight)
+                : juce::Rectangle<float> (x,
+                                          zeroY,
+                                          barWidth,
+                                          barHeight);
+
+        const auto colour =
+            correlation >= 0.0f
+                ? juce::Colour::fromRGB (120, 255, 160)
+                : juce::Colour::fromRGB (255, 110, 110);
+
+        g.setColour (colour.withAlpha (band.valid ? 0.78f : 0.16f));
+        g.fillRoundedRectangle (barArea, 1.5f);
+
+        x += barWidth + bandGap;
+    }
+
+    g.setFont (juce::FontOptions (9.0f));
+    g.setColour (juce::Colours::white.withAlpha (0.48f));
+    g.drawText ("-1",
+                graphArea.withWidth (24.0f),
+                juce::Justification::bottomLeft,
+                false);
+    g.drawText ("+1",
+                graphArea.withWidth (24.0f),
+                juce::Justification::topLeft,
+                false);
+
+    const std::array<float, 10> labelFrequencies {{
+        20.0f,
+        50.0f,
+        100.0f,
+        200.0f,
+        500.0f,
+        1000.0f,
+        2000.0f,
+        5000.0f,
+        10000.0f,
+        20000.0f
+    }};
+
+    auto formatBandLabel = [] (float frequencyHz)
+    {
+        if (frequencyHz >= 1000.0f)
+        {
+            const auto kilohertz = frequencyHz / 1000.0f;
+            const auto roundedKilohertz = juce::roundToInt (kilohertz);
+
+            if (std::abs (kilohertz - static_cast<float> (roundedKilohertz)) < 0.01f)
+                return juce::String (roundedKilohertz) + "k";
+
+            return juce::String (kilohertz, 1) + "k";
+        }
+
+        return juce::String (juce::roundToInt (frequencyHz));
+    };
+
+    g.setFont (juce::FontOptions (8.0f));
+    g.setColour (juce::Colours::white.withAlpha (0.38f));
+
+    auto lastLabelRight = labelArea.getX() - 100.0f;
+
+    for (const auto frequencyHz : labelFrequencies)
+    {
+        auto closestBand = 0;
+        auto closestDistance = std::numeric_limits<float>::max();
+
+        for (int band = 0; band < bandCount; ++band)
+        {
+            const auto centre =
+                frequencyCorrelationData.bands[static_cast<size_t> (band)]
+                    .centreFrequencyHz;
+
+            const auto distance = std::abs (std::log2 (
+                juce::jmax (1.0f, centre)
+                / juce::jmax (1.0f, frequencyHz)));
+
+            if (distance < closestDistance)
+            {
+                closestDistance = distance;
+                closestBand = band;
+            }
+        }
+
+        const auto label = formatBandLabel (frequencyHz);
+        const auto labelWidth =
+            juce::GlyphArrangement::getStringWidth (
+                g.getCurrentFont(),
+                label)
+            + 4.0f;
+
+        const auto labelCentreX =
+            graphArea.getX()
+            + static_cast<float> (closestBand) * (barWidth + bandGap)
+            + barWidth * 0.5f;
+
+        auto labelBounds =
+            juce::Rectangle<float> (labelCentreX - labelWidth * 0.5f,
+                                    labelArea.getY(),
+                                    labelWidth,
+                                    labelArea.getHeight());
+
+        if (labelBounds.getX() < lastLabelRight + 2.0f)
+            continue;
+
+        if (labelBounds.getRight() > labelArea.getRight())
+            labelBounds.setX (labelArea.getRight() - labelWidth);
+
+        g.drawText (label,
+                    labelBounds,
+                    juce::Justification::centred,
+                    false);
+
+        lastLabelRight = labelBounds.getRight();
+    }
 }
 
 void SpectrumDisplay::drawCorrelationMeter (
@@ -1968,7 +2412,7 @@ void SpectrumDisplay::drawFrozenReferenceCurve (juce::Graphics& g,
                                 *referenceData,
                                 reference.dataMinFrequencyHz,
                                 reference.dataMaxFrequencyHz,
-                                juce::Colours::white.withAlpha (isActive ? 0.40f : 0.20f),
+                                reference.colour.withAlpha (isActive ? 0.44f : 0.20f),
                                 isActive ? 1.35f : 1.0f);
     }
 }

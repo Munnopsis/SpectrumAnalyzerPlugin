@@ -3,7 +3,9 @@
 #include "../analyzer/AnalyzerCurveSource.h"
 #include "../analyzer/AnalyzerDisplayResolution.h"
 #include "../analyzer/AnalyzerFrequencyRange.h"
+#include "../analyzer/AnalyzerReferenceManager.h"
 
+#include <array>
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
@@ -34,6 +36,37 @@ public:
         float widthPercent = 0.0f;
         float monoCompatibilityDb = 0.0f;
         std::vector<juce::Point<float>> goniometerPoints;
+    };
+
+    struct LoudnessMeterDisplayData
+    {
+        float momentaryLufs = -100.0f;
+        float shortTermLufs = -100.0f;
+        float integratedLufs = -100.0f;
+        float loudnessRangeLu = 0.0f;
+        float samplePeakDb = -100.0f;
+        float truePeakDb = -100.0f;
+        float rmsDb = -100.0f;
+        float crestDb = 0.0f;
+        float peakHoldDb = -100.0f;
+        bool hasIntegratedMeasurement = false;
+        bool hasLoudnessRange = false;
+        bool hasTruePeak = false;
+    };
+
+    struct FrequencyCorrelationDisplayData
+    {
+        static constexpr int numBands = 31;
+
+        struct Band
+        {
+            float centreFrequencyHz = 0.0f;
+            float correlation = 0.0f;
+            float smoothedCorrelation = 0.0f;
+            bool valid = false;
+        };
+
+        std::array<Band, numBands> bands {};
     };
 
     void setInputLevelDb (float newLevelDb);
@@ -67,6 +100,8 @@ public:
     void clearFrozenReferenceSpectrum();
     bool hasFrozenReferenceSpectrum() const noexcept;
     void addCurrentSpectrumAsReference();
+    void setReferenceCurves (const std::vector<AnalyzerReferenceCurve>& references,
+                             int activeIndex);
     void clearAllReferenceCurves();
     void removeActiveReferenceCurve();
     void setActiveReferenceIndex (int index);
@@ -79,6 +114,11 @@ public:
     void setDifferenceCurveSource (AnalyzerCurveSource source);
     void setStereoMeterData (const StereoMeterDisplayData& data);
     void setStereoMeterVisible (bool shouldBeVisible);
+    void setLoudnessMeterData (const LoudnessMeterDisplayData& data);
+    void setLoudnessMeterVisible (bool shouldBeVisible);
+    void setFrequencyCorrelationData (
+        const FrequencyCorrelationDisplayData& data);
+    void setFrequencyCorrelationVisible (bool shouldBeVisible);
 
     std::function<void (float minimumHz, float maximumHz)> onVisibleFrequencyRangeChanged;
 
@@ -136,6 +176,7 @@ private:
         std::vector<float> energyDb;
         std::vector<float> peakHoldDb;
         bool visible = true;
+        juce::Colour colour = juce::Colours::white;
     };
 
     enum class CurveRenderMode
@@ -177,7 +218,15 @@ private:
                                              juce::Rectangle<int> bounds);
     void drawMouseReadout (juce::Graphics& g, juce::Rectangle<int> bounds);
     void drawPeakNoteLabels (juce::Graphics& g, juce::Rectangle<int> bounds);
+    bool hasAnyVisibleSpectrumCurve() const noexcept;
+    void drawNoVisibleCurvesHint (juce::Graphics& g,
+                                  juce::Rectangle<int> bounds);
+    void drawMissingDifferenceReferenceHint (juce::Graphics& g,
+                                             juce::Rectangle<int> bounds);
     void drawStereoMeterPanel (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawLoudnessMeterPanel (juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawFrequencyCorrelationPanel (juce::Graphics& g,
+                                        juce::Rectangle<int> bounds);
     void drawCorrelationMeter (juce::Graphics& g, juce::Rectangle<float> area);
     void drawGoniometer (juce::Graphics& g, juce::Rectangle<float> area);
     void drawStereoBalanceAndWidthText (juce::Graphics& g,
@@ -291,11 +340,15 @@ private:
     bool showDipMarkers = true;
     bool showDifferenceCurve = false;
     bool showStereoMeter = true;
+    bool showLoudnessMeter = true;
+    bool showFrequencyCorrelation = true;
     bool hasMouseReadout = false;
     bool isPanningVisibleFrequencyRange = false;
     AnalyzerCurveSource peakDipCurveSource = AnalyzerCurveSource::live;
     AnalyzerCurveSource differenceCurveSource = AnalyzerCurveSource::live;
     StereoMeterDisplayData stereoMeterData;
+    LoudnessMeterDisplayData loudnessMeterData;
+    FrequencyCorrelationDisplayData frequencyCorrelationData;
     float lastPanMouseX = 0.0f;
     juce::Point<float> mousePosition;
 

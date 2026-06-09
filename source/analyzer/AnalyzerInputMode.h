@@ -41,10 +41,24 @@ inline AnalyzerInputMode analyzerInputModeGetPrimaryMode (
 {
     switch (mode)
     {
-        case AnalyzerInputMode::leftRightDual: return AnalyzerInputMode::left;
-        case AnalyzerInputMode::midSideDual:   return AnalyzerInputMode::mid;
-        default:                               return mode;
+        case AnalyzerInputMode::stereoSum:
+        case AnalyzerInputMode::left:
+        case AnalyzerInputMode::right:
+        case AnalyzerInputMode::mid:
+        case AnalyzerInputMode::side:
+            return mode;
+
+        case AnalyzerInputMode::leftRightDual:
+            return AnalyzerInputMode::left;
+
+        case AnalyzerInputMode::midSideDual:
+            return AnalyzerInputMode::mid;
+
+        case AnalyzerInputMode::count:
+            break;
     }
+
+    return AnalyzerInputMode::stereoSum;
 }
 
 inline AnalyzerInputMode analyzerInputModeGetSecondaryMode (
@@ -52,10 +66,22 @@ inline AnalyzerInputMode analyzerInputModeGetSecondaryMode (
 {
     switch (mode)
     {
-        case AnalyzerInputMode::leftRightDual: return AnalyzerInputMode::right;
-        case AnalyzerInputMode::midSideDual:   return AnalyzerInputMode::side;
-        default:                               return AnalyzerInputMode::stereoSum;
+        case AnalyzerInputMode::leftRightDual:
+            return AnalyzerInputMode::right;
+
+        case AnalyzerInputMode::midSideDual:
+            return AnalyzerInputMode::side;
+
+        case AnalyzerInputMode::stereoSum:
+        case AnalyzerInputMode::left:
+        case AnalyzerInputMode::right:
+        case AnalyzerInputMode::mid:
+        case AnalyzerInputMode::side:
+        case AnalyzerInputMode::count:
+            break;
     }
+
+    return AnalyzerInputMode::stereoSum;
 }
 
 inline float makeAnalyzerMonoSample (float left, float right, AnalyzerInputMode mode) noexcept

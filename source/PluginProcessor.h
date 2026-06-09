@@ -15,7 +15,13 @@
 #include "analyzer/AnalyzerSlope.h"
 #include "analyzer/AnalyzerDisplayResolution.h"
 #include "analyzer/AnalyzerCurveSource.h"
+#include "analyzer/AnalyzerReferenceManager.h"
 #include "analyzer/AnalyzerVqtLiveCurveProfile.h"
+#include "analyzer/FrequencyCorrelationMeter.h"
+#include "analyzer/LoudnessMeter.h"
+
+#include <cstdint>
+#include <mutex>
 
 #if (MSVC)
 #include "ipps.h"
@@ -103,6 +109,9 @@ public:
     static inline const juce::String showPeakDipMarkersParamId { "showPeakDipMarkers" };
     static inline const juce::String showDifferenceCurveParamId { "showDifferenceCurve" };
     static inline const juce::String showStereoMeterParamId { "showStereoMeter" };
+    static inline const juce::String showLoudnessMeterParamId { "showLoudnessMeter" };
+    static inline const juce::String showFrequencyCorrelationParamId { "showFrequencyCorrelation" };
+    static inline const juce::String resetLoudnessParamId { "resetLoudness" };
     static inline const juce::String inputModeParamId { "inputMode" };
     static inline const juce::String fftSizeParamId { "fftSize" };
     static inline const juce::String peakHoldDecayParamId { "peakHoldDecay" };
@@ -154,6 +163,18 @@ public:
         return parameters.getRawParameterValue (showStereoMeterParamId)->load() > 0.5f;
     }
 
+    bool shouldShowLoudnessMeter() const noexcept
+    {
+        return parameters.getRawParameterValue (showLoudnessMeterParamId)->load() > 0.5f;
+    }
+
+    bool shouldShowFrequencyCorrelation() const noexcept
+    {
+        return parameters.getRawParameterValue (showFrequencyCorrelationParamId)->load() > 0.5f;
+    }
+
+    void validateRestoredAnalyzerState();
+
     float getAnalyzerMinimumDecibels() const noexcept;
     float getAnalyzerSlopeDbPerOctave() const noexcept;
     AnalyzerDisplayResolution getAnalyzerDisplayResolution() const noexcept;
@@ -183,6 +204,26 @@ public:
     void syncSecondaryAnalyzerRuntimeForCurrentInputMode();
     StereoMeterSnapshot getStereoMeterSnapshot() const noexcept;
     void copyGoniometerPoints (std::vector<juce::Point<float>>& destination) const;
+    LoudnessMeter::Snapshot getLoudnessSnapshot() const noexcept;
+    FrequencyCorrelationMeter::Snapshot getFrequencyCorrelationSnapshot() const noexcept;
+
+    void resetLoudnessMeter() noexcept
+    {
+        loudnessMeter.reset();
+    }
+
+    int addReferenceFromCurrentAnalyzerFrame();
+    void clearReferenceCurves();
+    bool removeActiveReferenceCurve();
+    bool setActiveReferenceIndex (int index);
+    int getNumReferenceCurves() const;
+    int getActiveReferenceIndex() const;
+    juce::String getReferenceCurveName (int index) const;
+    std::vector<AnalyzerReferenceCurve> getReferenceCurvesSnapshot() const;
+    uint64_t getReferenceStateRevision() const noexcept
+    {
+        return referenceStateRevision.load (std::memory_order_relaxed);
+    }
 
     void requestClearPeakHold() noexcept
     {
@@ -230,6 +271,11 @@ private:
     AnalyzerEngine analyzerEngine;
     AnalyzerFifo secondaryAnalyzerFifo;
     AnalyzerEngine secondaryAnalyzerEngine;
+    LoudnessMeter loudnessMeter;
+    FrequencyCorrelationMeter frequencyCorrelationMeter;
+    AnalyzerReferenceManager referenceManager;
+    mutable std::mutex referenceMutex;
+    std::atomic<uint64_t> referenceStateRevision { 1 };
     std::atomic<bool> secondaryAnalyzerEnabled { false };
     std::atomic<bool> secondaryAnalyzerThreadStarted { false };
 
