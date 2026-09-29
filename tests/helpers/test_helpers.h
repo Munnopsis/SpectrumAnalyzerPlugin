@@ -22,7 +22,7 @@
 [[maybe_unused]] static void runWithinPluginEditor (const std::function<void (PluginProcessor& plugin)>& testCode)
 {
     PluginProcessor plugin;
-    const auto editor = plugin.createEditorIfNeeded();
+    const auto editor = plugin.createEditorAndMakeActive();
 
     testCode (plugin);
 

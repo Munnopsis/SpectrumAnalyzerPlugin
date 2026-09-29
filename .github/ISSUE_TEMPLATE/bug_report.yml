@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a reproducible problem in FullSpectrum.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For vulnerabilities, use the private reporting link in SECURITY.md. Remove personal paths, secrets and private audio from attachments.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Include the commit hash if built from source.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, DAW/version or standalone, plugin format, sample rate and buffer size.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, screenshots or minimal example
+      description: Share only material you have permission to publish.

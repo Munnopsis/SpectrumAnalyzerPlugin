@@ -24,7 +24,7 @@
 #include <cstdint>
 #include <mutex>
 
-#if (MSVC)
+#ifdef PAMPLEJUCE_IPP
 #include "ipps.h"
 #endif
 

@@ -28,3 +28,41 @@ cmake-build-debug
 cmake-build-release
 cmake-build-relwithdebinfo
 packaging/Output/*
+
+# Local configuration, credentials and signing material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.mobileprovision
+*.keychain
+*.keychain-db
+.secrets/
+
+# Additional build directories and local tooling
+/build/
+/build-*/
+/cmake-build-*/
+.cache/
+.vscode/
+.claude/
+.codex/
+*.user
+*.swp
+*.swo
+*.dmp
+*.log
+
+# Generated installers and platform bundles
+*.dmg
+*.pkg
+*.vst3/
+*.component/
+*.app/
+/packaging/distribution.xml
+/packaging/dmg/
+/packaging/*.plist

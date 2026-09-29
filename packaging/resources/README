@@ -1,5 +1,10 @@
-Thanks for installing!
+FullSpectrum
 
-This plugin was made with the Pamplejuce template.
+Spectrum analysis, reference curves, stereo analysis and loudness metering.
 
-TODO: Update this text with what you want to show up in your macOS installer.
+FullSpectrum is in early development. For build and usage instructions, see:
+https://github.com/Munnopsis/SpectrumAnalyzerPlugin
+
+This packaging directory is development scaffolding. Automated builds do not
+currently publish signed or notarized installers. Review licensing, signing
+and installation behavior before distributing packages.

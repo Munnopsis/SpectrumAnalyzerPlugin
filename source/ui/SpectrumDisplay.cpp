@@ -1845,7 +1845,7 @@ void SpectrumDisplay::drawPlaceholderCurve (juce::Graphics& g, juce::Rectangle<i
 
     curve.startNewSubPath (area.getX(), area.getCentreY());
 
-    for (int i = 0; i < area.getWidth(); ++i)
+    for (int i = 0; static_cast<float> (i) < area.getWidth(); ++i)
     {
         const auto x = area.getX() + static_cast<float> (i);
         const auto normalisedX = static_cast<float> (i) / juce::jmax (1.0f, area.getWidth());

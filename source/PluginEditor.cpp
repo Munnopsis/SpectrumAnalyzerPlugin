@@ -22,7 +22,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     {
         auto supportedFileCount = 0;
         auto addedReferenceCount = 0;
-        auto failedReferenceCount = 0;
 
         auto lastAddedReferenceIndex = -1;
         juce::String lastAddedReferenceName;
@@ -60,8 +59,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
             if (! importResult.succeeded())
             {
-                ++failedReferenceCount;
-
                 if (firstErrorMessage.isEmpty())
                     firstErrorMessage = importResult.errorMessage;
 

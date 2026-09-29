@@ -33,17 +33,6 @@ namespace
         return juce::jmax (-100.0f, 20.0f * std::log10 (gain));
     }
 
-    float getOfflineReferenceBinFrequency (int binIndex,
-                                           float minimumHz,
-                                           float maximumHz) noexcept
-    {
-        const auto normalised =
-            static_cast<float> (binIndex)
-            / static_cast<float> (juce::jmax (1, offlineReferenceBinCount - 1));
-
-        return minimumHz * std::pow (maximumHz / minimumHz, normalised);
-    }
-
     std::vector<int64_t> buildOfflineReferenceAnalysisPositions (
     int64_t totalSamples)
     {

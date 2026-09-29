@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.25)
 
+# Keep development builds predictable; installation is an explicit opt-in.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build configuration" FORCE)
+endif()
+option(FULLSPECTRUM_COPY_PLUGIN_AFTER_BUILD "Install plugins into the local plugin folders after building" OFF)
+option(FULLSPECTRUM_USE_IPP "Enable optional Intel IPP acceleration" OFF)
+
 # This tells cmake we have goodies in the /cmake folder
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include (PamplejuceVersion)
@@ -13,7 +20,6 @@ include(PamplejuceMacOS)
 # Couple tweaks that IMO should be JUCE defaults
 include(JUCEDefaults)
 
-# Change me!
 # This is the internal name of the project and the name of JUCE's shared code target
 # Note: This cannot have spaces (it may be 2024, but you can't have it all!)
 # Worry not, JUCE's PRODUCT_NAME can have spaces (and is what DAWs display)
@@ -27,13 +33,13 @@ set(PROJECT_NAME "FullSpectrum")
 # allowing you to change parameters and behavior without breaking existing user projects
 set(PRODUCT_NAME "FullSpectrum")
 
-# Change me! Used for the MacOS bundle name and Installers
+# Established manufacturer name; keep plugin identities stable.
 set(COMPANY_NAME "Jakob")
 
-# Change me! Used for the MacOS bundle identifier (and signing)
+# Established macOS bundle identifier
 set(BUNDLE_ID "com.jakob.fullspectrum")
 
-# Change me! Set the plugin formats you want built
+# Standard JUCE formats; CLAP is added separately below.
 # Valid choices: AAX Unity VST VST3 AU AUv3 Standalone
 set(FORMATS Standalone VST3)
 
@@ -50,7 +56,7 @@ include(PamplejuceLog)
 
 # JUCE is setup as a submodule in the /JUCE folder
 # Locally, you must run `git submodule update --init --recursive` once
-# and later `git submodule update --remote --merge` to keep it up to date
+# Use the committed submodule revisions for reproducible builds.
 # On Github Actions, this is done as a part of actions/checkout
 add_subdirectory(JUCE)
 
@@ -68,7 +74,6 @@ juce_add_plugin("${PROJECT_NAME}"
     # Icons for the standalone app
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icon.png"
 
-    # Change me!
     COMPANY_NAME "${COMPANY_NAME}"
     BUNDLE_ID "${BUNDLE_ID}"
 
@@ -76,15 +81,13 @@ juce_add_plugin("${PROJECT_NAME}"
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "FullSpectrum needs microphone access to analyse incoming audio."
 
-    # On MacOS, plugin is copied to /Users/yourname/Library/Audio/Plug-Ins/
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    # Optional installation into the local plugin folders
+    COPY_PLUGIN_AFTER_BUILD ${FULLSPECTRUM_COPY_PLUGIN_AFTER_BUILD}
 
-    # Change me!
     # A four-character plugin id
     # First character MUST be uppercase for AU formats
     PLUGIN_MANUFACTURER_CODE Jkob
 
-    # Change me!
     # A unique four-character plugin id
     # Note: this must have at least one upper-case character
     PLUGIN_CODE Fsp1
@@ -131,9 +134,6 @@ target_compile_definitions(SharedCode
     JUCE_USE_CURL=0     # If you set this to 1, add `NEEDS_CURL TRUE` to the `juce_add_plugin` call
     JUCE_VST3_CAN_REPLACE_VST2=0
 
-    # Uncomment if you are paying for a an Indie/Pro license or releasing under GPLv3
-    # JUCE_DISPLAY_SPLASH_SCREEN=0
-
     # lets the app known if we're Debug or Release
     CMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
     VERSION="${CURRENT_VERSION}"
@@ -165,8 +165,10 @@ target_link_libraries(SharedCode
 # Link the JUCE plugin targets our SharedCode target
 target_link_libraries("${PROJECT_NAME}" PRIVATE SharedCode)
 
-# IPP support, comment out to disable
-include(PamplejuceIPP)
+# Normal development and CI builds do not download optional IPP dependencies.
+if(FULLSPECTRUM_USE_IPP)
+    include(PamplejuceIPP)
+endif()
 
 # Everything related to the tests target
 include(Tests)
